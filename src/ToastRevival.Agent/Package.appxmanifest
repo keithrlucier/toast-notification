@@ -7,8 +7,8 @@
 
   <Identity
       Name="Toast2IT.ToastNotification.Agent"
-      Publisher="CN=&quot;Toast2IT, LLC&quot;, S=Florida, C=US"
-      Version="0.2.0.0"
+      Publisher="CN=&quot;Toast2IT, LLC&quot;, O=&quot;Toast2IT, LLC&quot;, S=Florida, C=US"
+      Version="0.2.0.1"
       ProcessorArchitecture="x64" />
 
   <Properties>

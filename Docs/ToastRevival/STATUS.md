@@ -8,9 +8,9 @@ Last updated: 2026-05-07
 
 **M0A: COMPLETE.** Signed MSI installs cleanly on a Win11 lab machine, agent runs in user context, toast survives login and reboot. Brand on every user-facing surface flipped from project codename to product name.
 
-**M0 D2: BUILD COMPLETE (2026-05-07), signing + install validation pending Keith handoff.** Single-Project MSIX produced from `src/ToastRevival.Agent` via WinAppSDK 1.7's vendor-native packaging (`-p:WindowsPackageType=MSIX`). Identity surface audited - `Publisher` matches Sectigo OV cert subject exactly, every user-visible string is product name. Output: `artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix` (63.53 MB, UNSIGNED). See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`.
+**M0 D2: BUILT + SIGNED + VERIFIED (2026-05-07). Install validation on Win11 lab is the only remaining step.** Single-Project MSIX produced from `src/ToastRevival.Agent` via WinAppSDK 1.7's vendor-native packaging. Signed with the Sectigo OV cert on the Thales SafeNet token via `signtool.exe` (DigiCert Cert Utility v2.x does not support MSIX — that was the M0 D2 surprise). `Get-AuthenticodeSignature` reports Status=Valid, Signer=`CN="Toast2IT, LLC", O="Toast2IT, LLC", S=Florida, C=US`, Issuer=Sectigo Public Code Signing CA R36, NotAfter 2027-04-15, DigiCert-timestamped. Output: `artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix` (63.56 MB, SIGNED). See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `EVIDENCE/2026-05-07-m0-d2-msix-publisher-fix.md`, `EVIDENCE/2026-05-07-m0-d2-msix-signed.md`. Tooling lessons codified in `CONTEXT.md` -> Code Signing section and `scripts/sign-msix.ps1`.
 
-**Next after Keith signs:** install validation on Win11 lab (and ideally Win10 1809 machine), then M0 D3 (MSI wrapper with scheduled task in user context).
+**Next:** install validation on Win11 lab machine (`Add-AppxPackage` or double-click). Win10 1809 verification deferred to M0 D4 (no 1809 lab on hand). After install verifies, M0 D3 (MSI scheduled-task variant) starts.
 
 Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
 
@@ -30,7 +30,7 @@ Codex is also working on this project. Coordinate before running commands on the
 
 - `artifacts/installer/ToastRevival.Agent-0.1.0.0.msi` - signed, installed on lab machine. Pre-rebrand.
 - `artifacts/installer/ToastNotification.Agent-0.2.0.0.msi` - rebranded user-facing surfaces. Same UpgradeCode -> MajorUpgrade replaces 0.1.0.0 cleanly. Awaiting Keith's re-sign before redeploy. Re-test on lab machine declined (rename does not change install / login / reboot mechanics).
-- `artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix` - 63.53 MB, UNSIGNED. M0 D2 build output. Awaiting Keith sign with Thales+Sectigo, then install validation on Win11 lab.
+- `artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix` - 63.56 MB, **SIGNED** (Sectigo OV via Thales token, signtool.exe, DigiCert-timestamped). Status=Valid via `Get-AuthenticodeSignature`. Awaiting install validation on Win11 lab.
 
 ## Server (52.21.249.120)
 
@@ -52,7 +52,7 @@ See `CONTEXT.md` -> Server Infrastructure for full details.
 - Repo-local `NuGet.config` for nuget.org.
 - Windows App SDK CLI builds require `<EnableMsixTooling>true</EnableMsixTooling>`.
 - MSIX build is single-csproj conditional: `dotnet build -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false` -> wrapped in `scripts/build-msix.ps1`. The Single-Project MSIX targets need `Properties/launchSettings.json` with a `MsixPackage` profile present (added 2026-05-07).
-- Code-signing flow: Thales hardware token + Sectigo OV cert. Keith handles signing for both MSI and MSIX. Cert subject `CN="Toast2IT, LLC", S=Florida, C=US` MUST equal `Package.Identity.Publisher` exactly or MSIX install fails with `0x800B0109`.
+- Code-signing flow: Thales hardware token + Sectigo OV cert. Keith handles signing for both MSI and MSIX. **The OV cert subject is `CN="Toast2IT, LLC", O="Toast2IT, LLC", S=Florida, C=US`** (CN, O, S, C - four RDNs, both CN and O contain a comma so both need quotes). `Package.Identity.Publisher` MUST match this string exactly across all four RDNs or signing fails (0x80091005 in DigiCert Utility / 0x800B0109 in signtool) and any installed signed MSIX rejects with 0x800B0109. The authoritative reference is the cert utility's Details -> Subject field (NOT `Get-AuthenticodeSignature` on a previously-signed MSI - that display can truncate the subject).
 
 ## Open Items (carried into M0 or later)
 

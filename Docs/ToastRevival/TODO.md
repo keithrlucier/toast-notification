@@ -10,7 +10,8 @@ Project status: **M0A COMPLETE (2026-05-07).** Signed MSI installed and verified
 - [x] Confirm signing requires a hardware token (Thales).
 - [x] Sign first MSI (ToastRevival.Agent-0.1.0.0.msi).
 - [ ] Re-sign the rebranded MSI when needed (`artifacts/installer/ToastNotification.Agent-0.2.0.0.msi`).
-- [ ] Sign the M0 D2 MSIX (`artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix`) with Thales+Sectigo, then validate clean install on the Win11 lab machine.
+- [x] Sign the M0 D2 MSIX (`artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix`) - DONE 2026-05-07 via `signtool.exe` (NOT DigiCert Utility - it doesn't support MSIX). Used `scripts/sign-msix.ps1`.
+- [ ] Validate clean install of signed 0.2.0.1 MSIX on the Win11 lab machine. `Add-AppxPackage` or double-click; verify Start Menu tile, Settings -> Apps entry, toast fires on launch.
 - [x] Confirm Microsoft Partner Center access (Keith signed in 2026-05-07). Verifying app ID `9P5L0MRMFRRF` is reachable from this account is M0 D5 work.
 - [ ] Accept the updated App Developer Agreement in Partner Center if prompted (only when M0 D5 actually flights a build).
 - [ ] Confirm domain/DNS control for `toastnotification.com` (gates M7).
@@ -33,8 +34,9 @@ Project status: **M0A COMPLETE (2026-05-07).** Signed MSI installed and verified
 
 ## Engineering - M0 next session (Foundation & Deployment Validation)
 
-- [x] **M0 D2 build:** MSIX package built via WinAppSDK 1.7 SingleProject path, identity surface audited, `Publisher` matches cert subject exactly. Output: `artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix` (UNSIGNED).
-- [ ] **M0 D2 sign + install:** Keith signs with Thales+Sectigo, installs on Win11 lab and (ideally) Win10 1809. Same signtool flow as M0A MSI.
+- [x] **M0 D2 build:** MSIX package built via WinAppSDK 1.7 SingleProject path. First build (0.2.0.0) failed signing with 0x80091005 because the manifest Publisher was missing the `O=Toast2IT, LLC` RDN. Manifest corrected (CN/O/S/C now matches OV cert subject), rebuilt as 0.2.0.1.
+- [x] **M0 D2 sign:** Signed 2026-05-07 via `signtool.exe` (sourced from the WinAppSDK NuGet's `Microsoft.Windows.SDK.BuildTools` package — DigiCert Utility doesn't sign MSIX). `scripts/sign-msix.ps1` codifies the working flow.
+- [ ] **M0 D2 install validation:** Install the signed 0.2.0.1 MSIX on the Win11 lab machine; capture EVIDENCE.
 - [ ] M0 D3: MSI wrapper that creates a Scheduled Task in user context (replacing the current Startup-folder shortcut for better GPO/Intune compatibility).
 - [ ] M0 D4: Verify scheduled task survives standard enterprise GPOs, domain-joined machines, Intune-managed devices, multi-user scenarios. Apply `FIX-MSIX-002` (manifest MinVersion vs runtime gate divergence) first.
 - [ ] M0 D5: Push skeleton app to existing Store listing 9P5L0MRMFRRF (private/hidden flight). Apply `FIX-MSIX-001` (bump `TargetPlatformVersion` to 10.0.22621.0) first.

@@ -160,3 +160,54 @@ Extracted `AppxManifest.xml` from the produced `.msix` via `System.IO.Compressio
   - Verify: `Get-AuthenticodeSignature` should report Status=Valid, Signer="Toast2IT, LLC", Issuer=Sectigo Public Code Signing CA R36.
   - Install: Win11 lab machine confirmed for M0A. Win10 1809 is not on hand; that gap may need to be closed during M0 D4.
 - `signtool.exe` and `makeappx.exe` still not on PATH locally - MSIX packaging used `MakeAppx` from the `Microsoft.Windows.SDK.BuildTools` transitive NuGet of WinAppSDK 1.7, which is invoked by the WinAppSDK packaging targets directly. signtool is still not present locally; Keith's signing workstation has it.
+
+## 2026-05-07 (M0 D2 Publisher fix - 0x80091005)
+
+### First sign attempt (0.2.0.0) failed
+
+Keith opened `ToastNotification.Agent-0.2.0.0.msix` in DigiCert Certificate Utility, selected the Toast2IT, LLC cert (Sectigo OV via Thales token, cert chain validated OK), clicked Sign. Sign failed with:
+
+```
+The file C:\SOURCE\toast\artifacts\installer\msix\ToastNotification.Agent-0.2.0.0.msix could not be signed (0x80091005).
+```
+
+### Root cause - cert subject has more RDNs than the manifest Publisher had
+
+Cert utility Details tab Subject field (the authoritative source for cert subject):
+
+```
+CN = Toast2IT, LLC
+O  = Toast2IT, LLC
+S  = Florida
+C  = US
+```
+
+Manifest 0.2.0.0 Publisher (incomplete): `CN="Toast2IT, LLC", S=Florida, C=US` - missing `O=Toast2IT, LLC`.
+
+### Fix - rebuild 0.2.0.1 with corrected Publisher
+
+`src/ToastRevival.Agent/Package.appxmanifest` Identity element updated:
+
+```xml
+Publisher="CN=&quot;Toast2IT, LLC&quot;, O=&quot;Toast2IT, LLC&quot;, S=Florida, C=US"
+Version="0.2.0.1"
+```
+
+Rebuilt via `.\scripts\build-msix.ps1 -Version 0.2.0.1 -SkipAssetGeneration`: passed, 0 errors, 1 mspdbcmf warning (cosmetic). Output: `artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix` (63.53 MB, UNSIGNED).
+
+Verified by extracting `AppxManifest.xml` from the new .msix:
+
+```
+Name      : Toast2IT.ToastNotification.Agent
+Publisher : CN="Toast2IT, LLC", O="Toast2IT, LLC", S=Florida, C=US
+Version   : 0.2.0.1
+```
+
+Old artifacts deleted: `ToastNotification.Agent-0.2.0.0.msix`, `ToastRevival.Agent_0.2.0.0_x64_Test/`. Only 0.2.0.1 outputs remain on disk.
+
+### Lesson captured (also in EVIDENCE/2026-05-07-m0-d2-msix-publisher-fix.md and project context)
+
+- MSI signing does NOT enforce Publisher-vs-cert match; MSIX signing DOES. The M0A MSI signed fine with a manifest-less Publisher; the MSIX rejected because the four-RDN cert subject only had three of those RDNs in the manifest.
+- The team's prior memory string `CN="Toast2IT, LLC", S=Florida, C=US` came from a transcription of `Get-AuthenticodeSignature` output on the M0A MSI, which truncated/abbreviated the subject. That string is NOT authoritative for MSIX work.
+- Authoritative cert subject sources: cert utility Details tab; `Get-ChildItem Cert:\...\My | Where Subject -like "*<co>*" | Select Subject`; or `(Get-AuthenticodeSignature <signed-msix>).SignerCertificate.Subject` (after a successful MSIX sign).
+- Code Sweep Step 4 must enumerate every RDN in the cert subject and verify each appears in the manifest Publisher in the same order with the same quoting before any sign handoff.

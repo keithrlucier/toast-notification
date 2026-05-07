@@ -70,11 +70,18 @@ if (-not $msixCandidates) {
 
 $msix = $msixCandidates | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 Write-Host ""
-Write-Host "MSIX ready (UNSIGNED - hand off to Keith for Sectigo OV signing):"
+Write-Host "MSIX ready (UNSIGNED):"
 Write-Host "  Path : $($msix.FullName)"
 Write-Host ("  Size : {0:N2} MB" -f ($msix.Length / 1MB))
 Write-Host ""
-Write-Host "Verify identity surface before signing:"
-Write-Host "  Package.Identity.Publisher must equal cert subject EXACTLY:"
-Write-Host "    CN=`"Toast2IT, LLC`", S=Florida, C=US"
-Write-Host "  Mismatch causes 0x800B0109 install failure."
+Write-Host "To sign with the Sectigo OV cert on the Thales token:"
+Write-Host "  1. Plug in the token, unlock it via the SafeNet tray app."
+Write-Host "  2. Run: .\scripts\sign-msix.ps1 -Path `"$($msix.FullName)`""
+Write-Host "  3. SafeNet PIN dialog pops; enter PIN."
+Write-Host ""
+Write-Host "Reminders (before sign):"
+Write-Host "  - DigiCert Certificate Utility v2.x does NOT sign MSIX -- only signtool does."
+Write-Host "  - Package.Identity.Publisher must equal cert Subject EXACTLY:"
+Write-Host "      CN=`"Toast2IT, LLC`", O=`"Toast2IT, LLC`", S=Florida, C=US"
+Write-Host "    (CN, O, S, C -- four RDNs. CN and O have commas, both need quotes.)"
+Write-Host "  - Mismatch causes 0x80091005 / 0x800B0109 sign failure."

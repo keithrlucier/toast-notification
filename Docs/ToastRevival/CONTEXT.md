@@ -66,6 +66,65 @@ Three-component product with shared .NET 8 ecosystem:
 - Auto-update via Velopack (toggle-able via registry key)
 - RMM tools: NinjaOne, Datto RMM, ConnectWise Automate, etc.
 
+## Code Signing (MSI and MSIX)
+
+The Sectigo OV cert lives on a Thales SafeNet hardware token. Keith plugs in the token, unlocks it via the SafeNet tray app, and the cert becomes available to Windows CryptoAPI for any signing tool. Cert details:
+
+- **Subject (authoritative)**: `CN="Toast2IT, LLC", O="Toast2IT, LLC", S=Florida, C=US`
+  - Four RDNs in this order. CN and O contain commas, so both are quoted.
+  - This is the string MSIX `Package.Identity.Publisher` MUST match exactly. Read it from the DigiCert Cert Utility's Details tab Subject field, or `(Get-AuthenticodeSignature <signed-file>).SignerCertificate.Subject`.
+- **Issuer**: `CN=Sectigo Public Code Signing CA R36, O=Sectigo Limited, C=GB`
+- **Thumbprint**: `19B07B46712C2D87FF6AA99842F7EF6B036FEDA7`
+- **NotAfter**: 2027-04-15
+- **Timestamp authority**: `http://timestamp.digicert.com` (timestamped signatures stay valid past cert expiry)
+
+### Tools that work for each format
+
+| Format | DigiCert Cert Utility (v2.x) | signtool.exe (Windows SDK) |
+|---|---|---|
+| .exe / .dll | YES | YES |
+| .msi        | YES (this is how M0A signed) | YES |
+| .msix       | **NO** — utility doesn't support MSIX format | YES |
+| .appx / .appxbundle | NO | YES |
+
+**For MSIX, signtool.exe is the only path.** The DigiCert Certificate Utility 2.x is built around classic Authenticode formats; MSIX (with its AppxBlockMap, AppxSignature.p7x, and Publisher-vs-cert-subject DN match enforcement) is unsupported.
+
+### Where signtool.exe lives on this dev box
+
+Two reliable locations. The script `scripts/sign-msix.ps1` searches both:
+
+1. **Windows SDK**: `C:\Program Files (x86)\Windows Kits\10\bin\<sdk-version>\x64\signtool.exe`
+   - Only present if "Windows SDK Signing Tools for Desktop Apps" was selected during SDK install.
+   - On this dev box the SDK is installed but the signing tools sub-component was NOT — so this path is empty.
+2. **NuGet cache**: `%USERPROFILE%\.nuget\packages\microsoft.windows.sdk.buildtools\<ver>\bin\<ver>\x64\signtool.exe`
+   - **ALWAYS present** after a successful WinAppSDK build because Microsoft.WindowsAppSDK 1.7 brings `Microsoft.Windows.SDK.BuildTools` as a transitive dep, and that package ships signtool.
+   - This is the path that worked for M0 D2 signing.
+
+### Signing flow
+
+```powershell
+# Plug in token, unlock via SafeNet tray app, then:
+.\scripts\sign-msix.ps1 -Path artifacts\installer\msix\ToastNotification.Agent-0.2.0.1.msix
+```
+
+The script:
+1. Searches both signtool locations and picks the highest-versioned x64 binary.
+2. Invokes `signtool sign /a /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 <file>`. `/a` lets signtool pick the cert from any provider, including the token's CSP/KSP. SafeNet's PIN dialog pops automatically when signtool reaches for the private key.
+3. Verifies via `Get-AuthenticodeSignature` that Status=Valid and the signer/issuer/timestamp match expectations.
+
+### MSIX-specific failure modes (what we hit at M0 D2)
+
+- `0x80091005` from the DigiCert Cert Utility on first MSIX sign attempt. **Two causes**:
+  1. The utility doesn't support MSIX at all — switch to signtool.
+  2. Manifest `Package.Identity.Publisher` does not match cert Subject DN exactly. Every RDN in the cert (CN, OU, O, L, S, C — whichever the cert has) must appear in the manifest Publisher in the same order with the same quoting. Our M0 D2 first build had only `CN, S, C` and missed `O=Toast2IT, LLC`; sign rejected with 0x80091005 even before we hit the format-support issue.
+- `0x800B0109` (`CERT_E_UNTRUSTEDROOT`) at install time on the endpoint: cert chain isn't trusted on the target machine. For sideload, deploy the Sectigo intermediate via Intune cert profile or trust manually.
+
+### Standing rules
+
+1. **Authoritative cert subject reference**: the DigiCert Cert Utility Details tab Subject field, or `(Get-AuthenticodeSignature <signed-file>).SignerCertificate.Subject` from a previously-signed binary. **NOT** the team's prior memory string — that's been wrong (truncated) before.
+2. **Code Sweep Step 4 for any change to MSIX manifest Publisher**: enumerate every RDN in the cert subject; verify each appears in the manifest Publisher in the same order; build the .msix; extract `AppxManifest.xml` from the produced .msix and re-verify (the build pipeline normalizes whitespace/quoting); only then hand off for sign.
+3. **Token signing is not "hard"** — the SafeNet client exposes the token cert to Windows CryptoAPI when unlocked. Any signtool/signtool-wrapper that talks to CryptoAPI (DigiCert Utility, signtool.exe, custom wrappers) sees the cert through that surface. The token is incidental once SafeNet is set up.
+
 ## Security Architecture
 
 ### Authentication & Authorization

@@ -42,3 +42,4 @@ coverage/
 Thumbs.db
 .DS_Store
 .docpro/
+.claude/

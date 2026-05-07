@@ -1,0 +1,35 @@
+name: Agent MSI Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-msi:
+    name: Build unsigned MSI
+    runs-on: [self-hosted, windows, x64, toast-build]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore
+        shell: powershell
+        run: dotnet restore .\ToastRevival.sln
+
+      - name: Build
+        shell: powershell
+        run: dotnet build .\ToastRevival.sln --configuration Release --no-restore
+
+      - name: Build unsigned MSI
+        shell: powershell
+        run: .\scripts\build-msi.ps1 -Version "0.2.${{ github.run_number }}.0"
+
+      - name: Upload unsigned MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-msi
+          path: artifacts/installer/*.msi
+          retention-days: 30

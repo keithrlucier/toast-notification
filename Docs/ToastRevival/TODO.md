@@ -10,6 +10,7 @@ Project status: **M0A COMPLETE (2026-05-07).** Signed MSI installed and verified
 - [x] Confirm signing requires a hardware token (Thales).
 - [x] Sign first MSI (ToastRevival.Agent-0.1.0.0.msi).
 - [ ] Re-sign the rebranded MSI when needed (`artifacts/installer/ToastNotification.Agent-0.2.0.0.msi`).
+- [ ] Sign the M0 D2 MSIX (`artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix`) with Thales+Sectigo, then validate clean install on the Win11 lab machine.
 - [x] Confirm Microsoft Partner Center access (Keith signed in 2026-05-07). Verifying app ID `9P5L0MRMFRRF` is reachable from this account is M0 D5 work.
 - [ ] Accept the updated App Developer Agreement in Partner Center if prompted (only when M0 D5 actually flights a build).
 - [ ] Confirm domain/DNS control for `toastnotification.com` (gates M7).
@@ -32,10 +33,11 @@ Project status: **M0A COMPLETE (2026-05-07).** Signed MSI installed and verified
 
 ## Engineering - M0 next session (Foundation & Deployment Validation)
 
-- [ ] **M0 D2 (next session start):** Build an MSIX package signed with the OV cert, install cleanly on Windows 10 1809+ and Windows 11. Unblocks Store + Intune LOB.
+- [x] **M0 D2 build:** MSIX package built via WinAppSDK 1.7 SingleProject path, identity surface audited, `Publisher` matches cert subject exactly. Output: `artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix` (UNSIGNED).
+- [ ] **M0 D2 sign + install:** Keith signs with Thales+Sectigo, installs on Win11 lab and (ideally) Win10 1809. Same signtool flow as M0A MSI.
 - [ ] M0 D3: MSI wrapper that creates a Scheduled Task in user context (replacing the current Startup-folder shortcut for better GPO/Intune compatibility).
-- [ ] M0 D4: Verify scheduled task survives standard enterprise GPOs, domain-joined machines, Intune-managed devices, multi-user scenarios.
-- [ ] M0 D5: Push skeleton app to existing Store listing 9P5L0MRMFRRF (private/hidden flight).
+- [ ] M0 D4: Verify scheduled task survives standard enterprise GPOs, domain-joined machines, Intune-managed devices, multi-user scenarios. Apply `FIX-MSIX-002` (manifest MinVersion vs runtime gate divergence) first.
+- [ ] M0 D5: Push skeleton app to existing Store listing 9P5L0MRMFRRF (private/hidden flight). Apply `FIX-MSIX-001` (bump `TargetPlatformVersion` to 10.0.22621.0) first.
 - [ ] M0 D6: Document deployment findings + any fallback mechanisms needed.
 
 ## Deferred (later milestones)

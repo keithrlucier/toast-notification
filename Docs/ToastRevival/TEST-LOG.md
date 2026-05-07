@@ -110,3 +110,53 @@ Read directly from the MSI Property table via WindowsInstaller COM:
 - Lab machine SmartScreen behavior on the OV-signed MSI was not specifically captured (presumed clean from "no issues" but no screenshot filed).
 - Re-test of the rebranded 0.2.0.0 MSI on the lab machine was declined - rename does not change install / login / reboot mechanics, only display strings.
 - Domain-joined / GPO / Intune / multi-user scenarios are M0 D4, not M0A.
+
+## 2026-05-07 (M0 D2 MSIX build)
+
+### MSIX Tile Asset Generation
+
+- `.\scripts\generate-msix-tile-assets.ps1`: passed. Produced `src/ToastRevival.Agent/Images/Square44x44Logo.png` (44x44, 240 B), `Square150x150Logo.png` (150x150, 914 B), `Wide310x150Logo.png` (310x150, 9,735 B), `StoreLogo.png` (50x50, 257 B). Image dimensions verified via `[System.Drawing.Image]::FromFile`.
+
+### MSIX Build
+
+- `.\scripts\build-msix.ps1 -SkipAssetGeneration`: initial run produced the .msix at `artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix` (63.53 MB) BUT failed afterwards on missing `Properties/launchSettings.json` (required by `Microsoft.WindowsAppSDK.SingleProject.targets`).
+- Added `src/ToastRevival.Agent/Properties/launchSettings.json` with `MsixPackage` profile.
+- `.\scripts\build-msix.ps1 -SkipAssetGeneration` (re-run): passed. 0 errors, 1 warning (`mspdbcmf.exe` missing - symbols package skipped, benign; FIX-MSIX-003).
+
+### Manifest Verification (read directly from the .msix)
+
+Extracted `AppxManifest.xml` from the produced `.msix` via `System.IO.Compression.ZipFile.ExtractToDirectory`:
+- `Identity.Name` = `Toast2IT.ToastNotification.Agent`
+- `Identity.Publisher` = `CN="Toast2IT, LLC", S=Florida, C=US` (XML-escaped `&quot;` in source) - matches Sectigo OV cert subject exactly.
+- `Identity.Version` = `0.2.0.0`
+- `Identity.ProcessorArchitecture` = `x64`
+- `Properties.DisplayName` = `Toast Notification`
+- `Properties.PublisherDisplayName` = `Toast2IT, LLC`
+- `Application.Executable` = `ToastNotification.Agent.exe`
+- `Application.EntryPoint` = `Windows.FullTrustApplication`
+- `VisualElements.DisplayName` = `Toast Notification`
+- `VisualElements.Description` = `Managed Windows toast notifications for MSP-managed endpoints.`
+- `VisualElements.BackgroundColor` = `#0F1117`
+- All Logo paths point at `Images\*.png`.
+- `<rescap:Capability Name="runFullTrust" />` present.
+- Zero occurrences of "ToastRevival" in any user-visible field. M0A standing rule held.
+
+### Package Contents Verification
+
+- `ToastNotification.Agent.exe` present, 282,624 bytes.
+- 458 files total; WinAppSDK 1.7 self-contained runtime DLLs bundled (`Microsoft.WindowsAppRuntime.dll` 1,890,360 bytes, `Microsoft.WindowsAppRuntime.Bootstrap.dll` 396,344 bytes).
+- `Assets/` folder shipped with all three toast PNGs (`toast-hero.png` 11,818 B, `toast-logo.png` 296 B, `toast-inline.png` 3,872 B).
+- `Images/` folder shipped with all four tile PNGs (matching the manifest Logo paths).
+
+### Regression Check
+
+- `dotnet build src\ToastRevival.Agent\ToastRevival.Agent.csproj -c Release` (default unpackaged path): passed. 0 warnings, 0 errors, 2.17s elapsed. Output landed in `bin/Release/net8.0-windows10.0.19041.0/ToastNotification.Agent.dll` (separate from MSIX path at `bin/x64/Release/.../win-x64/`).
+- `scripts/build-msi.ps1` not re-run this session - file content unchanged, no edits affecting MSI publish path. Existing M0A MSI artifact unaffected.
+
+### Boundaries
+
+- The .msix produced is UNSIGNED. M0 D2 deliverable says "signed with OV cert, installs cleanly on Win10 1809+ / Win11" - signing and install validation are Keith handoff steps:
+  - Sign: Thales hardware token + Sectigo OV cert (same flow used for M0A MSI). `signtool.exe sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a /n "Toast2IT, LLC" "<path>\ToastNotification.Agent-0.2.0.0.msix"`
+  - Verify: `Get-AuthenticodeSignature` should report Status=Valid, Signer="Toast2IT, LLC", Issuer=Sectigo Public Code Signing CA R36.
+  - Install: Win11 lab machine confirmed for M0A. Win10 1809 is not on hand; that gap may need to be closed during M0 D4.
+- `signtool.exe` and `makeappx.exe` still not on PATH locally - MSIX packaging used `MakeAppx` from the `Microsoft.Windows.SDK.BuildTools` transitive NuGet of WinAppSDK 1.7, which is invoked by the WinAppSDK packaging targets directly. signtool is still not present locally; Keith's signing workstation has it.

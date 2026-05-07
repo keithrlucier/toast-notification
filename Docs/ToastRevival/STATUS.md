@@ -8,7 +8,9 @@ Last updated: 2026-05-07
 
 **M0A: COMPLETE.** Signed MSI installs cleanly on a Win11 lab machine, agent runs in user context, toast survives login and reboot. Brand on every user-facing surface flipped from project codename to product name.
 
-**Next: M0 (Foundation & Deployment Validation).** Starting with M0 D2 (MSIX package signed with the OV cert, installable on Win10 1809+ / Win11) - MSIX unblocks the Microsoft Store listing and Intune LOB sideload paths. MSI scheduled-task variant (M0 D3) is downstream.
+**M0 D2: BUILD COMPLETE (2026-05-07), signing + install validation pending Keith handoff.** Single-Project MSIX produced from `src/ToastRevival.Agent` via WinAppSDK 1.7's vendor-native packaging (`-p:WindowsPackageType=MSIX`). Identity surface audited - `Publisher` matches Sectigo OV cert subject exactly, every user-visible string is product name. Output: `artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix` (63.53 MB, UNSIGNED). See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`.
+
+**Next after Keith signs:** install validation on Win11 lab (and ideally Win10 1809 machine), then M0 D3 (MSI wrapper with scheduled task in user context).
 
 Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
 
@@ -28,6 +30,7 @@ Codex is also working on this project. Coordinate before running commands on the
 
 - `artifacts/installer/ToastRevival.Agent-0.1.0.0.msi` - signed, installed on lab machine. Pre-rebrand.
 - `artifacts/installer/ToastNotification.Agent-0.2.0.0.msi` - rebranded user-facing surfaces. Same UpgradeCode -> MajorUpgrade replaces 0.1.0.0 cleanly. Awaiting Keith's re-sign before redeploy. Re-test on lab machine declined (rename does not change install / login / reboot mechanics).
+- `artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix` - 63.53 MB, UNSIGNED. M0 D2 build output. Awaiting Keith sign with Thales+Sectigo, then install validation on Win11 lab.
 
 ## Server (52.21.249.120)
 
@@ -48,13 +51,18 @@ See `CONTEXT.md` -> Server Infrastructure for full details.
 - Git, .NET SDK `8.0.420` (pinned via `global.json`), Windows App SDK 1.7.250310001 via NuGet, WiX 5.0.2 (`dotnet tool install --global wix --version 5.*`).
 - Repo-local `NuGet.config` for nuget.org.
 - Windows App SDK CLI builds require `<EnableMsixTooling>true</EnableMsixTooling>`.
-- Code-signing flow: Thales hardware token + Sectigo OV cert. Keith handles signing.
+- MSIX build is single-csproj conditional: `dotnet build -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false` -> wrapped in `scripts/build-msix.ps1`. The Single-Project MSIX targets need `Properties/launchSettings.json` with a `MsixPackage` profile present (added 2026-05-07).
+- Code-signing flow: Thales hardware token + Sectigo OV cert. Keith handles signing for both MSI and MSIX. Cert subject `CN="Toast2IT, LLC", S=Florida, C=US` MUST equal `Package.Identity.Publisher` exactly or MSIX install fails with `0x800B0109`.
 
 ## Open Items (carried into M0 or later)
 
-- M0: MSIX package (D2), scheduled-task MSI variant (D3), GPO / domain / Intune / multi-user matrix (D4), Store submission flight (D5).
+- M0 D2: Keith sign + install validation on Win11 lab and Win10 1809 (signing handoff documented in `EVIDENCE/2026-05-07-m0-d2-msix-build.md`).
+- M0 D3: MSI wrapper with scheduled task in user context (replaces Startup-folder shortcut).
+- M0 D4: GPO / domain / Intune / multi-user matrix.
+- M0 D5: Store submission flight to 9P5L0MRMFRRF (apply `FIX-MSIX-001` first - bump `TargetPlatformVersion` to 10.0.22621.0).
+- M0 D6: Document deployment findings + fallback mechanisms.
 - M0+: GitHub Actions self-hosted runner on the build server (Codex owns).
-- M4 design: curated per-template hero / logo imagery to replace generated brand placeholders. Open Diana question - `AppNotificationButtonStyle.Critical` vs `Success` for security-framed actions.
+- M4 design: curated per-template hero / logo imagery + curated MSIX tile imagery to replace generated brand placeholders. Open Diana question - `AppNotificationButtonStyle.Critical` vs `Success` for security-framed actions.
 - Future templates: inline image, text input, selection input controls not yet exercised.
 - M2: HMAC payload verification, SignalR reconnect, missed notification catch-up.
 - No automated tests exist yet (first tests expected at M1 backend / M2 agent integration).

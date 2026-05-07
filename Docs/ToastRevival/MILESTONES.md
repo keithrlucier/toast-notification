@@ -28,8 +28,10 @@
 **Goal**: Prove the deployment model works on real enterprise images before writing product code.
 
 ### Deliverables
-- **D1**: Skeleton WinUI 3 / .NET 8 app that displays a hardcoded toast notification on launch
-- **D2**: MSIX package built, signed with OV cert, installs cleanly on Windows 10 (1809+) and Windows 11
+- **D1** [x]: Skeleton WinUI 3 / .NET 8 app that displays a hardcoded toast notification on launch (closed under M0A — same agent project carried forward)
+- **D2** [build complete, signing+install pending Keith]: MSIX package built, signed with OV cert, installs cleanly on Windows 10 (1809+) and Windows 11
+  - Build complete 2026-05-07 — `artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix` (63.53 MB, UNSIGNED). Identity surface verified (Publisher = cert subject exact match). See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`.
+  - Pending Keith: sign with Thales+Sectigo, install on Win11 lab and (ideally) Win10 1809 machine.
 - **D3**: MSI wrapper that installs the agent + creates a scheduled task in user context
 - **D4**: Verify scheduled task survives: standard enterprise GPOs, domain-joined machines, Intune-managed devices, multi-user scenarios
 - **D5**: Verify Store submission pipeline — push skeleton app to the existing 9P5L0MRMFRRF listing (private/hidden flight)

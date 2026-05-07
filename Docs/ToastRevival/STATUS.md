@@ -39,14 +39,22 @@ The GitHub repository at `https://github.com/keithrlucier/toast` now has the ini
 - Windows App SDK CLI builds required `<EnableMsixTooling>true</EnableMsixTooling>` in the agent project.
 - `signtool.exe` and `makeappx.exe` are not currently on PATH.
 - No code-signing certificate with a private key was visible in `Cert:\CurrentUser\My` or `Cert:\LocalMachine\My`.
+- The renewed code-signing certificate is token-backed, so signing will likely require the vendor middleware/provider and an interactive PIN/signing flow unless the token supports unattended signing policy.
 - Publish artifact sizes: framework-dependent is about 35.83 MB; self-contained is about 160.62 MB.
+
+## Product Toast Target
+
+The current M0A notification is intentionally plain. The product target is rich, curated Windows app notifications with template-specific content, hero images, app logo overrides, action buttons, scenario/audio choices, and eventually structured inputs where they are useful.
+
+The next notification spike should exercise this richer payload surface before backend work begins.
 
 ## Immediate Goal
 
 Continue `M0A - Signed Toast Agent Spike`:
 
-1. Decide the first package path: MSIX first, MSI first, or both in sequence.
-2. Install/locate signing and packaging tools.
-3. Make the renewed certificate available to Windows signing tools.
-4. Package and sign the agent.
-5. Install on a clean Windows machine and confirm toast behavior after login/reboot.
+1. Add a rich local notification spike with hero image, logo, action buttons, and audio.
+2. Decide the first package path: MSIX first, MSI first, or both in sequence.
+3. Install/locate signing and packaging tools.
+4. Make the token-backed renewed certificate available to Windows signing tools.
+5. Package and sign the agent.
+6. Install on a clean Windows machine and confirm toast behavior after login/reboot.

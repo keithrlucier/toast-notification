@@ -53,6 +53,9 @@ Results:
 ## Notes
 
 - This is intentionally unpackaged for the first local proof.
+- This is intentionally anemic: it proves local notification registration, display, publish, and activation callback handling only.
+- The intended product notification surface is richer: hero images, app logo override, action buttons, scenario/audio choices, and later inputs/dropdowns where useful.
 - Packaging, signing, Store submission, Intune deployment, and RMM deployment are still future M0A/M0 steps.
+- The renewed code-signing certificate is token-backed, so the signing path must account for token middleware/provider and PIN/interactive signing behavior.
 - Microsoft documents that app notifications are not supported for elevated/admin processes, so this spike should be run unelevated.
 - This evidence does not yet prove package install behavior, signing, reboot/login behavior, or deployment channel behavior.

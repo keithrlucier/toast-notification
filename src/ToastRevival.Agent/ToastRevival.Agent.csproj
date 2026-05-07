@@ -8,6 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>ToastRevival.Agent</RootNamespace>
+    <AssemblyName>ToastNotification.Agent</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>

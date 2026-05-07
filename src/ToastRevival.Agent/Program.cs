@@ -6,7 +6,7 @@ var options = AgentOptions.Parse(args);
 
 if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
 {
-    Console.Error.WriteLine("ToastRevival.Agent requires Windows 10 2004 / build 19041 or later for this spike.");
+    Console.Error.WriteLine("Toast Notification agent requires Windows 10 2004 / build 19041 or later for this spike.");
     return 2;
 }
 
@@ -42,7 +42,7 @@ try
         var notification = ToastTemplateBuilder.Build(template, assets, options.OverrideTitle, options.OverrideBody);
         AppNotificationManager.Default.Show(notification);
 
-        Console.WriteLine($"ToastRevival M0A notification sent. Template: {template.Key}");
+        Console.WriteLine($"Toast Notification sent. Template: {template.Key}");
         Console.WriteLine($"Title: {options.OverrideTitle ?? template.Title}");
         Console.WriteLine($"Body:  {options.OverrideBody  ?? template.BodyLine1}");
         if (template.BodyLine2 is { Length: > 0 } body2)
@@ -69,7 +69,7 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine("Failed to send ToastRevival M0A notification.");
+    Console.Error.WriteLine("Failed to send Toast Notification.");
     Console.Error.WriteLine(ex);
     return 1;
 }
@@ -147,7 +147,7 @@ namespace ToastRevival.Agent
 
         private static void PrintUsageAndExit()
         {
-            Console.WriteLine("Usage: ToastRevival.Agent [options]");
+            Console.WriteLine("Usage: ToastNotification.Agent [options]");
             Console.WriteLine();
             Console.WriteLine("  --template <name>   plain | announcement | alert | action | reminder | celebration | maintenance");
             Console.WriteLine("  --title <text>      override the template title");

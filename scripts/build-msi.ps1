@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string] $Version = "0.1.0.0",
+    [string] $Version = "0.2.0.0",
     [string] $RuntimeIdentifier = "win-x64"
 )
 
@@ -11,7 +11,7 @@ $projectPath  = Join-Path $repoRoot "src\ToastRevival.Agent\ToastRevival.Agent.c
 $publishDir   = Join-Path $repoRoot "artifacts\ToastRevival.Agent\$RuntimeIdentifier-self-contained"
 $installerSrc = Join-Path $repoRoot "installer\ToastRevival.Agent.Setup.wxs"
 $installerOut = Join-Path $repoRoot "artifacts\installer"
-$msiPath      = Join-Path $installerOut "ToastRevival.Agent-$Version.msi"
+$msiPath      = Join-Path $installerOut "ToastNotification.Agent-$Version.msi"
 
 Write-Host "==> Publishing self-contained agent ($RuntimeIdentifier)..."
 dotnet publish $projectPath `
@@ -43,4 +43,4 @@ $msi = Get-Item $msiPath
 Write-Host ""
 Write-Host "MSI ready:"
 Write-Host "  Path : $($msi.FullName)"
-Write-Host "  Size : {0:N2} MB" -f ($msi.Length / 1MB)
+Write-Host ("  Size : {0:N2} MB" -f ($msi.Length / 1MB))

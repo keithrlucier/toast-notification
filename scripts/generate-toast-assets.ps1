@@ -92,7 +92,7 @@ $heroPath   = Join-Path $OutputDir "toast-hero.png"
 $logoPath   = Join-Path $OutputDir "toast-logo.png"
 $inlinePath = Join-Path $OutputDir "toast-inline.png"
 
-New-GradientPng -Width 364 -Height 180 -ColorA $brandTeal     -ColorB $brandTealDark -Path $heroPath   -Wordmark "ToastRevival"
+New-GradientPng -Width 364 -Height 180 -ColorA $brandTeal     -ColorB $brandTealDark -Path $heroPath   -Wordmark "Toast Notification" -WordmarkSize 24
 New-LogoPng     -Size  48                                                            -Path $logoPath
 New-GradientPng -Width 200 -Height 120 -ColorA $panelMid      -ColorB $panelDark     -Path $inlinePath -Wordmark "Action"      -WordmarkSize 18
 

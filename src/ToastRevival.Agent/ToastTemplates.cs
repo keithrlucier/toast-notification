@@ -31,7 +31,7 @@ internal static class ToastTemplateCatalog
 {
     public static ToastTemplate Plain { get; } = new(
         ToastTemplateKey.Plain,
-        Title: "ToastRevival agent spike",
+        Title: "Toast Notification agent spike",
         BodyLine1: "M0A local Windows App SDK notification is working.",
         BodyLine2: null,
         UseHeroImage: false,

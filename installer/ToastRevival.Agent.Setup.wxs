@@ -2,27 +2,27 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
   <Package
-      Name="ToastRevival Agent"
-      Manufacturer="TOAST2IT LLC"
+      Name="Toast Notification Agent"
+      Manufacturer="Toast2IT, LLC"
       Version="$(var.ProductVersion)"
       UpgradeCode="A6F3D8F1-7B22-4E5A-9E3C-2A4F8B1C9D70"
       Scope="perMachine"
       Compressed="yes"
       InstallerVersion="500">
 
-    <SummaryInformation Description="ToastRevival Agent - M0A spike installer" />
+    <SummaryInformation Description="Toast Notification Agent installer" />
 
     <MediaTemplate EmbedCab="yes" />
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="ToastRevival" />
+      <Directory Id="INSTALLFOLDER" Name="Toast Notification" />
     </StandardDirectory>
 
     <StandardDirectory Id="StartupFolder" />
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="AppStartMenuFolder" Name="ToastRevival" />
+      <Directory Id="AppStartMenuFolder" Name="Toast Notification" />
     </StandardDirectory>
 
     <ComponentGroup Id="AgentFiles" Directory="INSTALLFOLDER">
@@ -32,13 +32,13 @@
     <ComponentGroup Id="Shortcuts">
       <Component Id="StartupShortcut" Directory="StartupFolder" Guid="C9C0F2A3-1D44-4E97-9B40-5C2F8AD93A11">
         <Shortcut Id="StartupAgentShortcut"
-                  Name="ToastRevival Agent"
-                  Target="[INSTALLFOLDER]ToastRevival.Agent.exe"
+                  Name="Toast Notification"
+                  Target="[INSTALLFOLDER]ToastNotification.Agent.exe"
                   Arguments="--template alert --no-wait"
                   WorkingDirectory="INSTALLFOLDER"
-                  Description="Fires the ToastRevival M0A alert toast at login." />
+                  Description="Fires the Toast Notification alert at login." />
         <RegistryValue Root="HKMU"
-                       Key="Software\TOAST2IT\ToastRevival\Install"
+                       Key="Software\Toast2IT\Toast Notification\Install"
                        Name="StartupShortcut"
                        Type="integer"
                        Value="1"
@@ -47,14 +47,14 @@
 
       <Component Id="StartMenuShortcut" Directory="AppStartMenuFolder" Guid="2D1A8E37-B7F0-4F4B-AE5C-71E2A9D6CA42">
         <Shortcut Id="StartMenuAgentShortcut"
-                  Name="ToastRevival Agent"
-                  Target="[INSTALLFOLDER]ToastRevival.Agent.exe"
+                  Name="Toast Notification"
+                  Target="[INSTALLFOLDER]ToastNotification.Agent.exe"
                   Arguments="--template alert --no-wait"
                   WorkingDirectory="INSTALLFOLDER"
-                  Description="Run the ToastRevival M0A agent (alert toast)." />
+                  Description="Run the Toast Notification agent (alert toast)." />
         <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
         <RegistryValue Root="HKMU"
-                       Key="Software\TOAST2IT\ToastRevival\Install"
+                       Key="Software\Toast2IT\Toast Notification\Install"
                        Name="StartMenuShortcut"
                        Type="integer"
                        Value="1"
@@ -62,7 +62,7 @@
       </Component>
     </ComponentGroup>
 
-    <Feature Id="Main" Title="ToastRevival Agent" Level="1">
+    <Feature Id="Main" Title="Toast Notification Agent" Level="1">
       <ComponentGroupRef Id="AgentFiles" />
       <ComponentGroupRef Id="Shortcuts" />
     </Feature>

@@ -1,24 +1,26 @@
 # ToastRevival — Milestones
 
-## M0A: Signed Toast Agent Spike
+## M0A: Signed Toast Agent Spike  **[COMPLETE 2026-05-07]**
 **Goal**: Prove the smallest possible Windows endpoint path before platform work begins.
 
-### Deliverables
-- **D1**: Development machine has the required .NET SDK, Windows App SDK, and packaging tools installed
-- **D2**: Minimal Windows agent project created
-- **D3**: Agent displays one hardcoded real Windows toast notification
-- **D4**: Agent can be packaged locally
-- **D5**: Package can be signed with the renewed code signing certificate
-- **D6**: Signed package installs on a clean Windows 10/11 machine
-- **D7**: Agent runs in the logged-in user context
-- **D8**: Toast still works after logout/login and reboot
-- **D9**: Findings, screenshots, signing notes, and install notes captured in `Docs/ToastRevival/EVIDENCE`
+### Deliverables (all closed)
+- **D1** [x]: .NET SDK 8.0.420, Windows App SDK 1.7.250310001, WiX 5.0.2, Thales token + Sectigo OV cert installed.
+- **D2** [x]: `src/ToastRevival.Agent` on `net8.0-windows10.0.19041.0`.
+- **D3** [x]: Agent displays toast notifications - 7 templates (plain + 6 DESIGN-SPEC templates) via `AppNotificationBuilder`.
+- **D4** [x]: MSI built locally via WiX 5 (`installer/ToastRevival.Agent.Setup.wxs`).
+- **D5** [x]: Signed with Sectigo OV cert via Thales hardware token (timestamp valid past cert expiry).
+- **D6** [x]: Installed on clean Win11 lab machine - no issues.
+- **D7** [x]: Agent runs in logged-in user context via Startup-folder shortcut.
+- **D8** [x]: Toast fires after reboot (lab machine confirmed).
+- **D9** [x]: Evidence captured - `EVIDENCE/2026-05-07-m0a-*.md` (4 entries).
 
-### Open Research
-- Does the renewed certificate signing flow work cleanly from this workstation?
-- Does a minimal packaged agent need Store identity or a COM activator for the first spike?
-- Which packaging path should be validated first: MSIX, MSI, or both?
-- What is the least invasive way to run the agent for every user on an MSP-managed endpoint?
+### Resolved Research
+- Signing flow: Thales hardware token + Sectigo OV cert works cleanly from the dev workstation; Keith handles the PIN/middleware.
+- COM activator / Store identity: not needed for the first spike. Unpackaged Windows App SDK 1.7 works fine for unsigned dev runs and for the per-machine MSI install.
+- Packaging path: MSI first (this milestone). MSIX comes in M0 D2.
+- Per-user run mechanism: Startup-folder shortcut (all-users) for M0A. Scheduled Task in user context is a more robust alternative for MSP-managed endpoints and is M0 D3.
+
+---
 
 ---
 

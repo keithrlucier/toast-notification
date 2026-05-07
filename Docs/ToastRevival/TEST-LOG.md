@@ -75,3 +75,38 @@
 - Templates were verified at the API level (build, send, output reporting). Visual rendering in Action Center has not been pixel-checked by Diana - that is a manual review pending Keith pulling open Action Center on the dev workstation.
 - No packaged install was run. No signing was attempted. No reboot/login persistence was tested.
 - `signtool.exe` and `makeappx.exe` are still not on PATH locally; the renewed token-backed OV cert is still not available to Windows signing tools.
+
+## 2026-05-07 (M0A close - signed MSI install)
+
+### Packaging
+
+- WiX 5.0.2 installed via `dotnet tool install --global wix --version 5.*` (WiX 7 declined - requires paid OSMF EULA).
+- `scripts/build-msi.ps1` produces a per-machine self-contained MSI in `artifacts/installer/`.
+- 0.1.0.0 build: `ToastRevival.Agent-0.1.0.0.msi`, 50.60 MB. Pre-rebrand naming.
+- 0.2.0.0 build: `ToastNotification.Agent-0.2.0.0.msi`, 50.60 MB. Rebranded user-facing surfaces. Same UpgradeCode for clean MajorUpgrade.
+
+### Signing
+
+- Keith signed `ToastRevival.Agent-0.1.0.0.msi` locally with the Thales hardware token.
+- `Get-AuthenticodeSignature` verification: Status `Valid`, Signer `CN="Toast2IT, LLC", S=Florida, C=US`, Issuer `CN=Sectigo Public Code Signing CA R36`, NotAfter 2027-04-15, Thumbprint 19B07B46712C2D87FF6AA99842F7EF6B036FEDA7, Timestamp `CN=DigiCert SHA256 RSA4096 Timestamp Responder 2025 1`.
+- The 0.2.0.0 rebrand MSI was rebuilt after install and is awaiting re-sign before redeploy.
+
+### MSI Property Verification (0.2.0.0)
+
+Read directly from the MSI Property table via WindowsInstaller COM:
+- `ProductName` = `Toast Notification Agent`
+- `Manufacturer` = `Toast2IT, LLC`
+- `ProductVersion` = `0.2.0.0`
+- `UpgradeCode` = `{A6F3D8F1-7B22-4E5A-9E3C-2A4F8B1C9D70}` (matches 0.1.0.0)
+
+### Clean-Machine Install (Win11 lab)
+
+- App installed - no issues reported.
+- Shortly after reboot, toasts were seen. No issues reported.
+- This closes M0A D6 (clean-machine install), D7 (user context), D8 (login + reboot persistence).
+
+### Boundaries
+
+- Lab machine SmartScreen behavior on the OV-signed MSI was not specifically captured (presumed clean from "no issues" but no screenshot filed).
+- Re-test of the rebranded 0.2.0.0 MSI on the lab machine was declined - rename does not change install / login / reboot mechanics, only display strings.
+- Domain-joined / GPO / Intune / multi-user scenarios are M0 D4, not M0A.

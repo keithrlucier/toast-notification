@@ -1,4 +1,6 @@
-# ToastRevival - Toast Notification Platform v2
+# Toast Notification - Platform v2
+
+> Repo / project codename: **ToastRevival** (internal). Product / user-facing brand: **Toast Notification** (toastnotification.com).
 
 ## Overview
 
@@ -6,7 +8,7 @@ Full commercial revival of the Toast Notification platform — an enterprise pus
 
 ## Current Status
 
-ToastRevival is currently at Pre-M0. No product code has been started yet. The immediate focus is the `M0A - Signed Toast Agent Spike`, which proves that a minimal signed Windows agent can install, run in the logged-in user context, and display a real toast on a clean Windows machine.
+**M0A complete (2026-05-07).** Signed MSI installs cleanly on Win11 lab machine, agent runs in user context, toast survives login and reboot. Up next: **M0 (Foundation & Deployment Validation)**, starting with M0 D2 (signed MSIX package for Store + Intune LOB).
 
 See `STATUS.md` for the current project state.
 

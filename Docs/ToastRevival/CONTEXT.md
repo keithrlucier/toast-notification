@@ -199,6 +199,41 @@ AuditLog
   - IpAddress, Timestamp
 ```
 
+## Server Infrastructure
+
+### Production/Build Server (AWS EC2)
+| Property | Value |
+|---|---|
+| IP | 52.21.249.120 |
+| Platform | AWS EC2 Windows Server |
+| Hostname | EC2AMAZ-A5EU435 |
+| SSH | Port 22 (OpenSSH — password auth) |
+| RDP | Port 3389 |
+| Username | Administrator |
+| Password | See `Docs/ToastRevival/.env` (gitignored) |
+
+**Installed as of 2026-05-07 (provisioned by Codex):**
+- .NET SDK 8.0.420 (matches repo `global.json` pin)
+- Git 2.53.0
+- Visual Studio Build Tools 2022 (17.14.31)
+- IIS (inetpub present, no sites configured yet)
+- Amazon SSM Agent, EC2Launch, AWS PV Drivers
+
+**Connection (SSH via Posh-SSH from dev machine):**
+```powershell
+Import-Module Posh-SSH
+$pass = ConvertTo-SecureString $env:TOAST_SERVER_PASS -AsPlainText -Force
+$cred = New-Object System.Management.Automation.PSCredential('Administrator', $pass)
+$session = New-SSHSession -ComputerName 52.21.249.120 -Credential $cred -AcceptKey
+```
+
+**Notes:**
+- WinRM ports (5985/5986) blocked by Security Group — SSH only
+- PATH not set for SSH sessions — use full paths: `C:\Program Files\dotnet\dotnet.exe`, `C:\Program Files\Git\cmd\git.exe`
+- Codex is handling provisioning — coordinate before running commands during active installs
+
+---
+
 ## Competitive Landscape
 
 | Product | Status | Gap |

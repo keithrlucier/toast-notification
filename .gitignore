@@ -40,3 +40,4 @@ coverage/
 *.swp
 Thumbs.db
 .DS_Store
+.docpro/

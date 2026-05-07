@@ -37,6 +37,7 @@ coverage/
 # Local editor and OS files
 .idea/
 .vscode/
+*.code-workspace
 *.swp
 Thumbs.db
 .DS_Store

@@ -2,9 +2,9 @@
 
 ## Current Reality
 
-Project status: Pre-M0.
+Project status: M0A started.
 
-Only the code signing certificate renewal is known to be complete. Previous checked items represented intended planning status, not verified implementation status.
+The first local unpackaged agent spike has been created, built, and run. Packaging, signing, and clean-machine validation are still open.
 
 ## Keith
 
@@ -17,15 +17,16 @@ Only the code signing certificate renewal is known to be complete. Previous chec
 
 ## Engineering
 
-- [ ] Install .NET SDK on the development machine.
+- [x] Install .NET SDK on the development machine.
 - [ ] Install/verify Windows App SDK and Visual Studio workloads required for WinUI 3/MSIX.
-- [ ] Create repository baseline and push to GitHub.
-- [ ] Create `M0A - Signed Toast Agent Spike`.
-- [ ] Build a minimal Windows agent that displays one hardcoded toast.
+- [x] Create repository baseline and push to GitHub.
+- [x] Create `M0A - Signed Toast Agent Spike`.
+- [x] Build a minimal Windows agent that sends one hardcoded local app notification.
+- [x] Produce local Release publish artifacts for the minimal agent.
 - [ ] Package the minimal agent.
 - [ ] Sign the package with the renewed certificate.
 - [ ] Test install/run/toast behavior on a clean Windows 10/11 machine.
-- [ ] Record evidence in `Docs/ToastRevival/EVIDENCE`.
+- [x] Record initial evidence in `Docs/ToastRevival/EVIDENCE`.
 
 ## Deferred
 

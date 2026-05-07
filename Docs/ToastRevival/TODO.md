@@ -10,8 +10,8 @@ Project status: **M0A COMPLETE (2026-05-07).** Signed MSI installed and verified
 - [x] Confirm signing requires a hardware token (Thales).
 - [x] Sign first MSI (ToastRevival.Agent-0.1.0.0.msi).
 - [ ] Re-sign the rebranded MSI when needed (`artifacts/installer/ToastNotification.Agent-0.2.0.0.msi`).
-- [ ] Confirm Microsoft Partner Center access to app ID `9P5L0MRMFRRF` (gates M0 D5 Store flight).
-- [ ] Accept the updated App Developer Agreement in Partner Center if prompted.
+- [x] Confirm Microsoft Partner Center access (Keith signed in 2026-05-07). Verifying app ID `9P5L0MRMFRRF` is reachable from this account is M0 D5 work.
+- [ ] Accept the updated App Developer Agreement in Partner Center if prompted (only when M0 D5 actually flights a build).
 - [ ] Confirm domain/DNS control for `toastnotification.com` (gates M7).
 - [ ] Confirm Stripe account status later, after deployment spike is proven (gates M6).
 

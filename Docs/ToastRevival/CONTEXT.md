@@ -234,6 +234,22 @@ $session = New-SSHSession -ComputerName 52.21.249.120 -Credential $cred -AcceptK
 
 ---
 
+### Server Verification Update - 2026-05-07
+
+The server infrastructure section above was created during active provisioning. Direct verification later in the same session found:
+
+- Key-based SSH from the development workstation works.
+- .NET SDK `8.0.420` is installed at `C:\Program Files\dotnet\dotnet.exe`.
+- Git `2.53.0.windows.2` is installed at `C:\Program Files\Git\cmd\git.exe`.
+- Repo is cloned at `C:\toast` and tracks `https://github.com/keithrlucier/toast`.
+- Visual Studio Build Tools installation was still running during the last verification.
+- `vswhere` returned an empty product list.
+- `signtool.exe` and `makeappx.exe` were not found yet.
+- GitHub Actions self-hosted runner is not installed yet.
+- The Administrator password was pasted into chat and should be rotated; do not document passwords in the repository.
+
+Use the verification update as the current source of truth until the installer state is checked again.
+
 ## Competitive Landscape
 
 | Product | Status | Gap |

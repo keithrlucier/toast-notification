@@ -1,0 +1,42 @@
+# Secrets
+.env
+.env.*
+!.env.example
+Docs/ToastRevival/.env
+
+# .NET
+bin/
+obj/
+artifacts/
+publish/
+TestResults/
+*.user
+*.suo
+.vs/
+
+# Windows packaging and signing outputs
+*.pfx
+*.p12
+*.pvk
+*.spc
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.appinstaller
+*.msi
+*.nupkg
+
+# JavaScript / frontend
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+
+# Local editor and OS files
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store

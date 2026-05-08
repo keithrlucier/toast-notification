@@ -76,16 +76,20 @@ Deployment documentation deferred. Everything worth capturing is in CONTEXT.md a
 
 ---
 
-## Next: M1 — Backend API (START HERE)
-ASP.NET Core 8 / EF Core / PostgreSQL / SignalR. This is what makes the agent a product.
-- [ ] D1: ASP.NET Core 8 project scaffolding with EF Core + PostgreSQL
-- [ ] D2: Multi-tenant data model (Tenant, User, Device, DeviceGroup, Notification, NotificationDelivery)
-- [ ] D3: Auth system — JWT, user registration/login, RBAC (Technician/Admin/SuperAdmin)
-- [ ] D4: Device registration API — agent registers with tenant ID, receives device token
-- [ ] D5: Notification send API — create notification, target devices/groups, queue for delivery
-- [ ] D6: SignalR hub — authenticated, tenant-scoped, push notification payloads to connected agents
-- [ ] D7: Basic rate limiting — per-tenant, per-device
-- [ ] D8: Audit logging — all notification sends logged
+## M1 — Backend API — COMPLETE 2026-05-08
+
+All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 8 / Npgsql / ASP.NET Identity / SignalR. Clean build, migration generated. INFO-M1-001 to INFO-M1-006 in FIX-LIST.md.
+
+## Next: M2 — Windows Agent Full Implementation (START HERE)
+- [ ] D1: SignalR client — connect to `/hubs/notifications`, auto-reconnect, exponential backoff
+- [ ] D2: Toast rendering from backend payload — receive `ReceiveNotification`, render all template types
+- [ ] D3: Device registration flow — first-run POST /api/devices/register, store JWT, heartbeat ping
+- [ ] D4: Payload HMAC verification — server signs, agent verifies before rendering
+- [ ] D5: Interaction tracking — `ReportDelivery` and `ReportInteraction` hub calls
+- [ ] D6: Missed notification catch-up — on reconnect, fetch pending deliveries
+- [ ] D7: System tray icon with connection status
+- [ ] D8: Auto-update — Velopack (MSI channel); Store handles MSIX
+- [ ] D9: Installer properties — CLIENTID + SERVERURL MSI properties; INFO-D5-001 mutex guard; INFO-MSIX-004-D activation handler
 
 ## Engineering - M2 follow-up (logged during M0 D2)
 

@@ -51,22 +51,26 @@
 
 ---
 
-## M1: Backend API — Core Infrastructure
+## M1: Backend API — Core Infrastructure  **[COMPLETE 2026-05-08]**
 **Goal**: Functioning multi-tenant API with auth, device registration, and notification send.
 
-### Deliverables
-- **D1**: ASP.NET Core 8 project scaffolding with EF Core + PostgreSQL
-- **D2**: Multi-tenant data model — Tenant, User, Device, DeviceGroup, Notification, NotificationDelivery
-- **D3**: Auth system — JWT-based, user registration/login, RBAC (Technician/Admin/SuperAdmin)
-- **D4**: Device registration API — agent registers with tenant ID, receives device token
-- **D5**: Notification send API — create notification, target devices/groups, queue for delivery
-- **D6**: SignalR hub — authenticated, tenant-scoped, push notification payloads to connected agents
-- **D7**: Basic rate limiting — per-tenant, per-device limits
-- **D8**: Audit logging — all notification sends logged with sender, content, targets
+### Deliverables (all closed)
+- **D1** [x]: ASP.NET Core 8 project `src/ToastRevival.Api` scaffolded with EF Core 8 + Npgsql + ASP.NET Identity. `ToastRevival.sln` updated. Build: 0 warnings, 0 errors.
+- **D2** [x]: Multi-tenant data model — `Tenant`, `AppUser`, `Device`, `DeviceGroup`, `DeviceGroupMember`, `NotificationTemplate`, `Notification`, `NotificationDelivery`, `AssetLibrary`, `AuditLog`. EF Core global query filters enforce per-tenant isolation on all reads. `InitialCreate` migration generated.
+- **D3** [x]: JWT auth — `POST /api/auth/register` (tenant + admin user, transactional), `POST /api/auth/login`. `TokenService` issues user tokens (60 min) and device tokens (365 days). `ITenantProvider`/`HttpContextTenantProvider` resolves tenant from JWT claim.
+- **D4** [x]: `POST /api/devices/register` (unauthenticated) — agent registers, receives JWT device token. `GET /api/devices`, `GET /api/devices/{id}`, `DELETE /api/devices/{id}` (decommission), `POST /api/devices/ping` (heartbeat). SHA-256 token hash stored; raw token transmitted once.
+- **D5** [x]: `POST /api/notifications` — create notification, expand device/group/all targets, create per-device `NotificationDelivery` records, enqueue. `GET /api/notifications` (history), `GET /api/notifications/{id}`. `NotificationQueueService` background service pushes via SignalR.
+- **D6** [x]: `NotificationHub` at `/hubs/notifications` — JWT-authenticated, tenant-scoped groups (`tenant-{id}`, `device-{id}`). `ReportDelivery` / `ReportInteraction` hub methods. `ConnectedDevices` registry for presence tracking.
+- **D7** [x]: Built-in ASP.NET Core rate limiting — `tenant-per-minute` sliding window (60 req/min, partition by tenantId), `device-per-hour` fixed window (10 req/hr, partition by deviceId). Applied via `[EnableRateLimiting]` attributes.
+- **D8** [x]: `AuditService` writes `AuditLog` entries on all device registration, device decommission, and notification send events. Scope-factory pattern (works from background service context).
+
+### Code Sweep
+- Commit (pending): SHIP WITH NOTES — INFO-M1-001 through INFO-M1-006 logged (see FIX-LIST.md).
+- INFO-M1-002 (transaction gap in Register) fixed before commit.
 
 ### Agent Deployment
-- Anthony: D1-D3, D6 (core architecture, SignalR hub — must be one person's mental model)
-- Abish: D4-D5, D7-D8 (bounded CRUD, rate limiting is a well-defined pattern)
+- Anthony: D1-D3, D6 ✓
+- Abish: D4-D5, D7-D8 (implemented inline with Anthony's track) ✓
 
 ---
 

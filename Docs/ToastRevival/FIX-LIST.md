@@ -94,6 +94,41 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Add `-p:SymbolPackageFormat=none` to the `dotnet build` invocation in `build-msix.ps1`, OR install Visual Studio Build Tools 2022's debugging tools workload. Cosmetic only.
 **Blocking:** No.
 
+### INFO-M1-001 — DeviceGroupMember missing global query filter (low)
+**Filed:** 2026-05-08 (M1 Code Sweep)
+**Surface:** `Data/AppDbContext.cs`, EF model validation warning
+**Issue:** EF Core warning: "Entity 'Device' has a global query filter defined and is the required end of a relationship with 'DeviceGroupMember'." `DeviceGroupMember` has no TenantId column so cannot have its own filter. In practice it is only ever loaded through Device or DeviceGroup (both filtered), so cross-tenant leakage is not possible via normal query paths.
+**Fix:** Acceptable as-is for M1. Could add a TenantId column to DeviceGroupMember in a future migration if the warning becomes a compliance concern.
+**Blocking:** No.
+
+### INFO-M1-003 — Device registration trusts TenantId from request body (medium)
+**Filed:** 2026-05-08 (M1 Code Sweep)
+**Surface:** `Controllers/DevicesController.cs` `POST /api/devices/register`
+**Issue:** Any client that knows a valid TenantId can register a device for that tenant. No pre-shared enrollment key gates the endpoint.
+**Fix:** M3 hardening — add `EnrollmentKey` column to Tenant, require it in `RegisterDeviceRequest`, validate server-side before allowing registration.
+**Blocking:** No. Endpoint behavior is noted in code comment.
+
+### INFO-M1-004 — No test coverage (low)
+**Filed:** 2026-05-08 (M1 Code Sweep)
+**Surface:** `src/ToastRevival.Api/` — entire project
+**Issue:** Zero unit tests, zero integration tests.
+**Fix:** M8 integration testing milestone. For earlier milestones, individual controller/service tests can be added incrementally.
+**Blocking:** No.
+
+### INFO-M1-005 — Scheduled notifications lost on restart (low)
+**Filed:** 2026-05-08 (M1 Code Sweep)
+**Surface:** `Services/NotificationQueueService.cs`
+**Issue:** The `Channel<Guid>` is in-memory and unbounded. Notifications queued for future delivery (`ScheduledAt > now`) are not re-queued on service restart because they are never written to the channel.
+**Fix:** On startup, load all `Notification` rows with `Status = Queued` and `ScheduledAt <= now` and enqueue them. Long-term: replace with durable queue (e.g., PostgreSQL-backed queue or dedicated message broker).
+**Blocking:** No. Not a concern until real users schedule future notifications.
+
+### INFO-M1-006 — JWT key requires environment-specific override (low)
+**Filed:** 2026-05-08 (M1 Code Sweep)
+**Surface:** `appsettings.json`
+**Issue:** `Jwt:Key` placeholder is in committed `appsettings.json`. No runtime assertion enforces minimum key length or environment-specific override.
+**Fix:** Add a startup check: `if (jwtKey.Length < 32 && !app.Environment.IsDevelopment()) throw`. Use environment variable `Jwt__Key` for production overrides.
+**Blocking:** No. Covered by deployment documentation (M7/M9).
+
 ## Resolved
 
 - **FIX-MSIX-004** (medium) - 2026-05-08, commit `6e3495c`. Packaged MSIX install did not fire toasts because `<com:ExeServer>` was missing `Arguments="----AppNotificationActivated:"`. Patched, signed, installed; visible toast verified on Win11 lab with button-click routing through `NotificationInvoked`. See entry above for full root-cause detail.

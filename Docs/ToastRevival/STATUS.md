@@ -20,7 +20,9 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **M0 D5: BUILD COMPLETE 2026-05-08 (pending Keith sign + Store submission).** MSIX `ToastNotification.Agent-0.2.1.0.msix` (63.82 MB, unsigned) built and verified. Three code changes shipped: (1) `uap5:StartupTask` extension added to manifest (MSIX/Store logon-launch parity with MSI Scheduled Task channel); (2) `TargetPlatformVersion=10.0.22621.0` baked into `build-msix.ps1` via command-line flag (FIX-MSIX-001 resolved — csproj PropertyGroup approach silently failed due to TFM override in late .targets import); (3) CONTEXT.md standing rules updated with discovery. Produced manifest verified: `MinVersion=10.0.19041.0`, `MaxVersionTested=10.0.22621.0`, all three extensions present. **Keith handoff:** sign the MSIX with Thales token, then flight to Partner Center listing 9P5L0MRMFRRF. Accept Developer Agreement if prompted.
 
-**Next: M1 — Backend API.** M0 D6 deployment documentation deferred — everything worth capturing from M0 is already in CONTEXT.md. The critical path is the backend: multi-tenant auth, device registration, notification send, SignalR hub. Without it the agent is a smoke test, not a product.
+**M1: COMPLETE 2026-05-08.** `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 8 / Npgsql / ASP.NET Identity / SignalR. All 8 deliverables shipped: scaffolding, multi-tenant data model with global query filters, JWT auth with user+device tokens, device registration API, notification send API with queue background service, SignalR hub with tenant/device groups, rate limiting, audit logging. `InitialCreate` migration generated. Build: 0 warnings, 0 errors. INFO-M1-001 through INFO-M1-006 logged (see FIX-LIST.md).
+
+**Next: M2 — Windows Agent Full Implementation.** SignalR client integration, device registration flow, HMAC payload verification, interaction tracking, system tray icon, auto-update.
 
 Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
 

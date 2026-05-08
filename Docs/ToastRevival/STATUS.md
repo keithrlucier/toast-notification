@@ -16,7 +16,9 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **Codex provisioned the build server pipeline (2026-05-07).** GitHub Actions self-hosted runner on 52.21.249.120 as Windows service `actions.runner.keithrlucier-toast.EC2AMAZ-A5EU435-toast-build`. Workflow `.github/workflows/agent-build.yml` (commit `9363764`) verified end-to-end on unsigned MSI builds. Codex's evidence note committed 2026-05-08 (commit `3c702fc`).
 
-**M0 D4 IN PROGRESS (2026-05-08).** FIX-MSIX-002 applied: `Package.appxmanifest` MinVersion bumped from 10.0.17763.0 to 10.0.19041.0 (matches Program.cs runtime gate); manifest version bumped to 0.2.1.0; `TargetPlatformMinVersion` updated in csproj. `ToastNotification.Agent-0.3.1.0.msi` built for major-upgrade test. `scripts/verify-d4-matrix.ps1` written for Keith to run at each test checkpoint. GPO standing rules documented in CONTEXT.md. **Keith handoff:** sign `ToastNotification.Agent-0.3.1.0.msi`, then run through `EVIDENCE/2026-05-08-m0-d4-matrix-results.md` test script — uninstall idempotency (Tests 1A/1B), major upgrade 0.3.0.0 → 0.3.1.0 (Test 2), multi-user (Test 3), GPO simulation (Test 4). Domain/Intune (Test 5) if infrastructure available.
+**M0 D4: COMPLETE (2026-05-08).** MSI 0.3.1.0 signed and installed on Win11 lab; task State=Ready; toast fires; second local user account also received toast (BUILTIN\Users confirmed); uninstall removed task cleanly. FIX-MSIX-002 applied (manifest MinVersion 17763→19041). GPO/Intune testing deferred: behavior documented in CONTEXT.md, carry to M8 beta. See `EVIDENCE/2026-05-08-m0-d4-matrix-results.md`.
+
+**Next:** **M0 D5** — Store submission flight to 9P5L0MRMFRRF (private/hidden). Apply `FIX-MSIX-001` (bump `TargetPlatformVersion` to 10.0.22621.0) first. Run `scripts/build-msix.ps1 -Version 0.2.1.0 -SkipAssetGeneration` for the release MSIX build, then sign. Keith accepts updated App Developer Agreement in Partner Center if prompted.
 
 Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
 

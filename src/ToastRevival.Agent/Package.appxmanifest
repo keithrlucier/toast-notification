@@ -9,14 +9,14 @@
     IgnorableNamespaces="uap uap5 rescap com desktop">
 
   <Identity
-      Name="Toast2IT.ToastNotification.Agent"
-      Publisher="CN=&quot;Toast2IT, LLC&quot;, O=&quot;Toast2IT, LLC&quot;, S=Florida, C=US"
+      Name="FileUnityCloud.ToastNotification"
+      Publisher="CN=A6ED11E0-AF8D-4915-9F9C-DC58C9005BEE"
       Version="0.2.1.0"
       ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>Toast Notification</DisplayName>
-    <PublisherDisplayName>Toast2IT, LLC</PublisherDisplayName>
+    <PublisherDisplayName>TOAST2IT, LLC</PublisherDisplayName>
     <Logo>Images\StoreLogo.png</Logo>
   </Properties>
 

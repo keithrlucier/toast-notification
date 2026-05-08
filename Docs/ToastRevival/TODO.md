@@ -71,8 +71,21 @@ Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08). M0 D3 
 - [ ] **Keith**: Flight signed MSIX to Partner Center listing 9P5L0MRMFRRF (private/hidden). Verify package passes certification.
 - [ ] **Diana**: Deliver curated tile assets (Square44x44, Square150x150, Wide310x150, StoreLogo) before any expansion beyond private/hidden flight.
 
-### M0 D6
-- [ ] Document deployment findings + any fallback mechanisms needed. Incorporate INFO-D5-002 (MSI+MSIX coexistence) and INFO-D5-001 (multiple-instance guard) context.
+### M0 D6 — DEFERRED
+Deployment documentation deferred. Everything worth capturing is in CONTEXT.md already. Fold into M1 prep or skip — not on the critical path.
+
+---
+
+## Next: M1 — Backend API (START HERE)
+ASP.NET Core 8 / EF Core / PostgreSQL / SignalR. This is what makes the agent a product.
+- [ ] D1: ASP.NET Core 8 project scaffolding with EF Core + PostgreSQL
+- [ ] D2: Multi-tenant data model (Tenant, User, Device, DeviceGroup, Notification, NotificationDelivery)
+- [ ] D3: Auth system — JWT, user registration/login, RBAC (Technician/Admin/SuperAdmin)
+- [ ] D4: Device registration API — agent registers with tenant ID, receives device token
+- [ ] D5: Notification send API — create notification, target devices/groups, queue for delivery
+- [ ] D6: SignalR hub — authenticated, tenant-scoped, push notification payloads to connected agents
+- [ ] D7: Basic rate limiting — per-tenant, per-device
+- [ ] D8: Audit logging — all notification sends logged
 
 ## Engineering - M2 follow-up (logged during M0 D2)
 

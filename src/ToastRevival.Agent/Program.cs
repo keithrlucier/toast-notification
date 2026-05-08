@@ -9,7 +9,7 @@ var options = AgentOptions.Parse(args);
 
 if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
 {
-    Console.Error.WriteLine("Toast Notification agent requires Windows 10 2004 / build 19041 or later for this spike.");
+    Console.Error.WriteLine("Toast Notification agent requires Windows 10 2004 / build 19041 or later.");
     DiagLog.Write("EXIT 2: runtime gate IsWindowsVersionAtLeast(10,0,19041) failed.");
     return 2;
 }

@@ -10,13 +10,20 @@
 **Fix when M0 D5 starts:** Bump `<TargetPlatformVersion>` to `10.0.22621.0` in the conditional MSIX PropertyGroup. Re-test sideload install on Win11 lab machine. Re-sign.
 **Blocking:** No — only blocks Store flight, not sideload.
 
-### FIX-MSIX-002 (low) - Manifest MinVersion vs. runtime gate divergence
+### FIX-MSIX-002 (low) - Manifest MinVersion vs. runtime gate divergence — **RESOLVED 2026-05-08**
 
 **Filed:** 2026-05-07 (M0 D2 Code Sweep)
-**Surface:** `src/ToastRevival.Agent/Package.appxmanifest` `TargetDeviceFamily MinVersion="10.0.17763.0"` (Win10 1809) vs. `src/ToastRevival.Agent/Program.cs` `OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041)` (Win10 2004 / build 19041).
-**Issue:** A Win10 1809 install will succeed via MSIX MinVersion check but the agent will exit 2 at runtime with the message "Toast Notification agent requires Windows 10 2004 / build 19041 or later for this spike." Confusing UX — install looks healthy, runtime fails silently.
-**Fix when M0 D4 starts:** Either (a) relax the runtime check to 17763 if AppNotificationManager actually works there, or (b) bump `TargetDeviceFamily MinVersion` to `10.0.19041.0` so the install fails up front on incompatible Windows builds. Option (b) is the safer default; the M0A spike already runs on 19041.
-**Blocking:** No — milestone target is 1809+ but lab machine is Win11; Win10 1809 verification is the M0 D4 GPO matrix work.
+**Resolved:** 2026-05-08 (M0 D4 pre-work, commit pending)
+**Surface:** `src/ToastRevival.Agent/Package.appxmanifest`, `src/ToastRevival.Agent/ToastRevival.Agent.csproj`
+
+**Fix applied (Option b):** bumped `TargetDeviceFamily MinVersion` and `<TargetPlatformMinVersion>` from
+`10.0.17763.0` (Win10 1809) to `10.0.19041.0` (Win10 2004 / build 19041), matching the `Program.cs`
+runtime check. Manifest version bumped to `0.2.1.0`. Win10 1809 installs now fail at `Add-AppxPackage`
+with a clear "requires Windows 10.0.19041.0" error rather than installing successfully and failing
+silently at runtime. See `EVIDENCE/2026-05-08-m0-d4-fix-msix-002.md`.
+
+**Win10 1809 lab verification:** not performed (no 1809 lab machine). Acceptable — the fix is
+preventative for a platform below the product's stated floor, and the lab machine is Win11.
 
 ### FIX-MSIX-004 (medium) - Packaged MSIX install does not fire toasts - **RESOLVED 2026-05-08 (commit `6e3495c`)**
 

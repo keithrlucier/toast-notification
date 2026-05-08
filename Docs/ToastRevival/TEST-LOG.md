@@ -213,6 +213,53 @@ Old artifacts deleted: `ToastNotification.Agent-0.2.0.0.msix`, `ToastRevival.Age
 - Code Sweep Step 4 must enumerate every RDN in the cert subject and verify each appears in the manifest Publisher in the same order with the same quoting before any sign handoff.
 
 
+## 2026-05-08 (M0 D4 — FIX-MSIX-002 + MSI 0.3.1.0 build)
+
+### FIX-MSIX-002 Code Changes
+
+- `Package.appxmanifest`: `TargetDeviceFamily MinVersion` 10.0.17763.0 → 10.0.19041.0; `Version` 0.2.0.3 → 0.2.1.0.
+- `ToastRevival.Agent.csproj`: `<TargetPlatformMinVersion>` 10.0.17763.0 → 10.0.19041.0.
+- `Program.cs`: removed "spike" wording from Win-version error message (user-visible cleanup).
+
+### MSI 0.3.1.0 Build
+
+- `.\scripts\build-msi.ps1 -Version 0.3.1.0`: passed with 0 errors, 1 cosmetic mspdbcmf warning (FIX-MSIX-003, pre-existing).
+- Artifact: `artifacts/installer/ToastNotification.Agent-0.3.1.0.msi`, 50.61 MB.
+
+### MSI 0.3.1.0 Property Verification
+
+Read via WindowsInstaller COM:
+
+```
+ProductName    = Toast Notification Agent
+Manufacturer   = Toast2IT, LLC
+ProductVersion = 0.3.1.0
+UpgradeCode    = {A6F3D8F1-7B22-4E5A-9E3C-2A4F8B1C9D70}
+```
+
+UpgradeCode matches 0.3.0.0 — `<MajorUpgrade>` will fire on install of 0.3.1.0 over 0.3.0.0.
+
+### MSIX Smoke Check (Abish QA gate — Code Sweep standing rule)
+
+- `dotnet build src\ToastRevival.Agent\ToastRevival.Agent.csproj -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false`: passed. 0 errors, 1 cosmetic mspdbcmf warning (FIX-MSIX-003, pre-existing).
+- AppxManifest.xml extracted and verified from produced .msix:
+  - `Identity.Version = 0.2.1.0` ✓
+  - `TargetDeviceFamily.MinVersion = 10.0.19041.0` ✓ (FIX-MSIX-002 applied correctly)
+  - `TargetDeviceFamily.MaxVersionTested = 10.0.19041.0` — pre-existing: csproj `TargetPlatformVersion=10.0.19041.0` overrides source manifest value. Tracked under FIX-MSIX-001; fix before D5 Store flight.
+
+### Regression Check
+
+- `dotnet publish` (unpackaged, default path) compiled cleanly as part of the MSI build: 0 errors.
+- `scripts/build-msi.ps1` requires no changes for the version bump; `$Version` is a parameter.
+
+### Boundaries
+
+- MSI 0.3.1.0 is UNSIGNED. Keith signs before the major-upgrade test.
+- MSIX 0.2.1.0 not built in this session (D4 focus is MSI/scheduled-task matrix; MSIX path is D5).
+- D4 test matrix execution (Tests 1-5) is a Keith handoff.
+  See `EVIDENCE/2026-05-08-m0-d4-matrix-results.md` for the full test procedure.
+  See `scripts/verify-d4-matrix.ps1` for the pass/fail verification script.
+
 ## 2026-05-08 (M0 D3 build — MSI with Scheduled Task)
 
 ### Code Sweep — INFO findings (non-blocking)

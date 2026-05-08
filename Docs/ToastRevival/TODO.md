@@ -50,10 +50,25 @@ Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08). M0 D3 
 - [x] Captured `EVIDENCE/2026-05-08-m0-d3-task-fires-at-logon.md` with Get-ScheduledTask output and toast description.
 - [ ] (Deferred to M0 D4) Uninstall idempotency check + 0.3.x → 0.3.y major-upgrade race validation. Roll into the GPO matrix testing.
 
-## Engineering - M0 next deliverables
+## Engineering - M0 D4 (in progress 2026-05-08)
 
-- [ ] M0 D4: Verify scheduled task survives standard enterprise GPOs, domain-joined machines, Intune-managed devices, multi-user scenarios. Apply `FIX-MSIX-002` (manifest MinVersion vs runtime gate divergence) first.
-- [ ] M0 D5: Push skeleton app to existing Store listing 9P5L0MRMFRRF (private/hidden flight). Apply `FIX-MSIX-001` (bump `TargetPlatformVersion` to 10.0.22621.0) first. Add `<uap5:Extension Category="windows.startupTask">` to the MSIX manifest for parity with the MSI's logon-trigger behavior on the Store/MSIX channel.
+- [x] Apply FIX-MSIX-002: `Package.appxmanifest` MinVersion 17763→19041, `TargetPlatformMinVersion` updated, manifest version 0.2.0.3→0.2.1.0.
+- [x] Build `ToastNotification.Agent-0.3.1.0.msi` for major-upgrade test (UpgradeCode matches 0.3.0.0).
+- [x] Write `scripts/verify-d4-matrix.ps1` — pass/fail script for each test checkpoint.
+- [x] GPO standing rules documented in `CONTEXT.md` (notification policy, AppLocker, Intune, OS floor).
+- [x] Evidence shells: `EVIDENCE/2026-05-08-m0-d4-fix-msix-002.md`, `EVIDENCE/2026-05-08-m0-d4-matrix-results.md`.
+- [ ] **Keith**: sign `ToastNotification.Agent-0.3.1.0.msi` via Thales+Sectigo OV.
+- [ ] **Keith**: run Test 1A — install 0.3.1.0, then uninstall, verify task gone.
+- [ ] **Keith**: run Test 1B — reinstall, manually delete task, uninstall → verify exit 0.
+- [ ] **Keith**: run Test 2 — install 0.3.0.0, install 0.3.1.0 on top, verify task survives upgrade.
+- [ ] **Keith**: run Test 3 — log in as second local user, verify toast fires.
+- [ ] **Keith**: run Test 4 — GPOBlock simulation, verify agent runs but no toast visible.
+- [ ] **Keith**: run Test 5 — domain / Intune (if infrastructure available; defer if not).
+- [ ] Fill in `EVIDENCE/2026-05-08-m0-d4-matrix-results.md` from results.
+- [ ] Mark M0 D4 COMPLETE in MILESTONES.md.
+
+## Engineering - M0 next deliverables
+- [ ] M0 D5: Push skeleton app to existing Store listing 9P5L0MRMFRRF (private/hidden flight). Apply `FIX-MSIX-001` (bump `TargetPlatformVersion` to 10.0.22621.0) first. Sign new MSIX 0.2.1.0 built in D4. Add `<uap5:Extension Category="windows.startupTask">` to the MSIX manifest for parity with the MSI's logon-trigger behavior on the Store/MSIX channel.
 - [ ] M0 D6: Document deployment findings + any fallback mechanisms needed.
 
 ## Engineering - M2 follow-up (logged during M0 D2)

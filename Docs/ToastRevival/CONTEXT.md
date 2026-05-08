@@ -202,6 +202,43 @@ The Scheduled Task is the deployment-plumbing bridge from "MSI installed by SYST
 6. **Code Sweep Step 4 for any change to the task XML or WiX custom actions**: confirm XML encoding is UTF-16 LE with BOM (`FF FE`), confirm task path is under `\Toast2IT\`, confirm GroupId is `S-1-5-32-545` and RunLevel is `LeastPrivilege`, confirm install CA is sequenced after `InstallFiles` and uninstall CA before `RemoveFiles`, confirm install gating condition is `NOT REMOVE` and uninstall is `REMOVE="ALL"`.
 7. Reference: https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-schema
 
+### GPO / Enterprise Deployment Standing Rules (M0 D4)
+
+The Scheduled Task is MSP-managed infrastructure. The GPO and MDM landscape determines whether the
+agent fires, and whether the fired toast is visible.
+
+1. **"Turn off App Notifications" GPO suppresses toasts without blocking the task.**
+   Policy key: `HKCU\Software\Policies\Microsoft\Windows\CurrentVersion\PushNotifications\NoToastApplicationNotification = 1`
+   (set by `User Configuration\Administrative Templates\Start Menu and Taskbar\Notifications\Turn off toast notifications`).
+   The scheduled task fires and the agent process runs; `Register()` and `Show()` both return success;
+   but Windows silently discards the notification before it reaches the Action Center. No error, no
+   visible toast. MSPs deploying this tool **must not** have this policy active for target users.
+   There is no mechanism in the Windows App SDK or WinRT toast APIs to override a notification-block
+   policy; design documentation (M6 onboarding, M7 deployment guide) must call this out explicitly.
+
+2. **AppLocker / Software Restriction Policies can prevent the agent exe from running.**
+   If the organization uses AppLocker in Whitelist mode, `%ProgramFiles%\Toast Notification\ToastNotification.Agent.exe`
+   must be in the allowed publisher or path rule. MSPs should either:
+   (a) Trust any code-signed by `Toast2IT, LLC` (Sectigo OV cert, Thumbprint `19B07B46712C2D87FF6AA99842F7EF6B036FEDA7`), or
+   (b) Add a path rule for `%ProgramFiles%\Toast Notification\*`.
+   The scheduled task custom action does not need AppLocker exceptions — `schtasks.exe` is a system binary.
+
+3. **Task Scheduler cannot be disabled for user-context logon tasks via standard GPO.**
+   `Prevent Task Scheduler service from starting` (if set) would disable the service entirely, which
+   is extreme and breaks core Windows functionality. Assume Task Scheduler is running on any real
+   enterprise endpoint. The correct audit target is the notification policy and AppLocker, not Task Scheduler.
+
+4. **Intune LOB MSI deploys as SYSTEM; task runs as BUILTIN\Users — no conflict.**
+   Intune Win32 app deployment executes `msiexec /i /qn` under the SYSTEM account. The MSI's deferred
+   custom action also runs as SYSTEM (`Impersonate="no"`), which has the privilege to register a
+   BUILTIN\Users group task. The task's `LeastPrivilege` principal fires in the interactive user's
+   context at each logon — entirely separate from the SYSTEM install context.
+
+5. **`TargetDeviceFamily MinVersion="10.0.19041.0"` (Win10 2004 / build 19041) is the MSIX install
+   floor (FIX-MSIX-002, applied 2026-05-08).** The MSI has no install-time OS check; only the runtime
+   check in `Program.cs` (same 19041 floor) gates the MSI path. For MSI deployments to older Windows
+   versions, the installer succeeds but the agent exits 2 with a clear message and no toast.
+
 ### Toast Notification Constraints (Windows)
 - Max 3 text lines: 1 title + 2 body (truncates beyond)
 - Hero image: 364x180px effective (2:1 ratio)

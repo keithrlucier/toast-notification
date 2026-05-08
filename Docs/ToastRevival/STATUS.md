@@ -16,7 +16,7 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **Codex provisioned the build server pipeline (2026-05-07).** GitHub Actions self-hosted runner on 52.21.249.120 as Windows service `actions.runner.keithrlucier-toast.EC2AMAZ-A5EU435-toast-build`. Workflow `.github/workflows/agent-build.yml` (commit `9363764`) verified end-to-end on unsigned MSI builds. Codex's evidence note committed 2026-05-08 (commit `3c702fc`).
 
-**Next:** **M0 D4** — GPO / domain-joined / Intune-managed / multi-user matrix. Apply `FIX-MSIX-002` first (manifest MinVersion vs runtime gate divergence). Validate the M0 D3 scheduled task survives standard enterprise GPOs and rolls uninstall + major-upgrade scenarios end-to-end.
+**M0 D4 IN PROGRESS (2026-05-08).** FIX-MSIX-002 applied: `Package.appxmanifest` MinVersion bumped from 10.0.17763.0 to 10.0.19041.0 (matches Program.cs runtime gate); manifest version bumped to 0.2.1.0; `TargetPlatformMinVersion` updated in csproj. `ToastNotification.Agent-0.3.1.0.msi` built for major-upgrade test. `scripts/verify-d4-matrix.ps1` written for Keith to run at each test checkpoint. GPO standing rules documented in CONTEXT.md. **Keith handoff:** sign `ToastNotification.Agent-0.3.1.0.msi`, then run through `EVIDENCE/2026-05-08-m0-d4-matrix-results.md` test script — uninstall idempotency (Tests 1A/1B), major upgrade 0.3.0.0 → 0.3.1.0 (Test 2), multi-user (Test 3), GPO simulation (Test 4). Domain/Intune (Test 5) if infrastructure available.
 
 Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
 

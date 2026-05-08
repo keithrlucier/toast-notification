@@ -29,9 +29,11 @@
 
 ### Deliverables
 - **D1** [x]: Skeleton WinUI 3 / .NET 8 app that displays a hardcoded toast notification on launch (closed under M0A — same agent project carried forward)
-- **D2** [build complete, signing+install pending Keith]: MSIX package built, signed with OV cert, installs cleanly on Windows 10 (1809+) and Windows 11
-  - Build complete 2026-05-07 — `artifacts/installer/msix/ToastNotification.Agent-0.2.0.0.msix` (63.53 MB, UNSIGNED). Identity surface verified (Publisher = cert subject exact match). See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`.
-  - Pending Keith: sign with Thales+Sectigo, install on Win11 lab and (ideally) Win10 1809 machine.
+- **D2** [x **COMPLETE 2026-05-08**]: MSIX package built, signed with OV cert, installs cleanly on Windows 11 lab; visible toast fires from packaged context, button-click routes through NotificationInvoked handler.
+  - Build complete 2026-05-07 (initial 0.2.0.0). Signing tooling discovery + Publisher fix landed 0.2.0.1 same day.
+  - Install validation 2026-05-08: 0.2.0.1 installed cleanly but `AppNotificationManager.Default.Register()` threw `COMException 0x80070490` (ERROR_NOT_FOUND) — DiagLog isolated the failure to the Register() call. Root cause: missing `Arguments="----AppNotificationActivated:"` on `<com:ExeServer>` (FIX-MSIX-004).
+  - 0.2.0.3 patch shipped (commit `6e3495c`): Arguments token added, CLSID `7FA7762F-41EC-4D72-9F06-58964AB36FEA` retained. Signed + installed on Win11 lab; single visible toast fired, "Acknowledge" button click routed cleanly to `NotificationInvoked` handler with the expected argument payload (`action=acknowledge;source=m0a;template=Plain`). See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `2026-05-08-m0-d2-fix-msix-004-patch-build.md`, `2026-05-08-m0-d2-fix-msix-004-register-not-found.md`, `2026-05-08-m0-d2-toast-fires-packaged.md`.
+  - Win10 1809 install validation deferred to M0 D4 GPO matrix (no Win10 1809 lab machine on hand).
 - **D3**: MSI wrapper that installs the agent + creates a scheduled task in user context
 - **D4**: Verify scheduled task survives: standard enterprise GPOs, domain-joined machines, Intune-managed devices, multi-user scenarios
 - **D5**: Verify Store submission pipeline — push skeleton app to the existing 9P5L0MRMFRRF listing (private/hidden flight)

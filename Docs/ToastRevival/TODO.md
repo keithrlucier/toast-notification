@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A COMPLETE (2026-05-07).** Signed MSI installed and verified on Win11 lab machine. Login + reboot toast persistence confirmed. User-facing brand corrected from project codename to product name. Next milestone: **M0 - Foundation & Deployment Validation**, starting with M0 D2 (MSIX).
+Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08).** Signed MSIX (0.2.0.3) installs cleanly on Win11 lab; visible toast fires from packaged Start menu launch; button-click routes through `NotificationInvoked` handler. FIX-MSIX-004 resolved (missing `Arguments="----AppNotificationActivated:"` on `<com:ExeServer>`; framework was failing Register() with ERROR_NOT_FOUND without that four-dash sentinel). Next deliverable: **M0 D3 - MSI wrapper that creates a Scheduled Task in user context** (replaces Startup-folder shortcut for better GPO/Intune compatibility).
 
 ## Keith
 
@@ -10,8 +10,8 @@ Project status: **M0A COMPLETE (2026-05-07).** Signed MSI installed and verified
 - [x] Confirm signing requires a hardware token (Thales).
 - [x] Sign first MSI (ToastRevival.Agent-0.1.0.0.msi).
 - [ ] Re-sign the rebranded MSI when needed (`artifacts/installer/ToastNotification.Agent-0.2.0.0.msi`).
-- [x] Sign the M0 D2 MSIX (`artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix`) - DONE 2026-05-07 via `signtool.exe` (NOT DigiCert Utility - it doesn't support MSIX). Used `scripts/sign-msix.ps1`.
-- [ ] Validate clean install of signed 0.2.0.1 MSIX on the Win11 lab machine. `Add-AppxPackage` or double-click; verify Start Menu tile, Settings -> Apps entry, toast fires on launch.
+- [x] Sign the M0 D2 MSIX (`artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix`) - DONE 2026-05-07 via `signtool.exe`.
+- [x] Validate install of signed M0 D2 MSIX on Win11 lab. 0.2.0.1 installed but did not fire toasts (FIX-MSIX-004); 0.2.0.3 patched + signed + installed 2026-05-08, visible toast fires, NotificationInvoked routes cleanly.
 - [x] Confirm Microsoft Partner Center access (Keith signed in 2026-05-07). Verifying app ID `9P5L0MRMFRRF` is reachable from this account is M0 D5 work.
 - [ ] Accept the updated App Developer Agreement in Partner Center if prompted (only when M0 D5 actually flights a build).
 - [ ] Confirm domain/DNS control for `toastnotification.com` (gates M7).
@@ -32,17 +32,25 @@ Project status: **M0A COMPLETE (2026-05-07).** Signed MSI installed and verified
 - [x] Rebrand all user-facing strings to "Toast Notification" (commit 56b0adb).
 - [x] Record evidence in `Docs/ToastRevival/EVIDENCE` (4 entries this milestone).
 
-## Engineering - M0 next session (Foundation & Deployment Validation)
+## Engineering - M0 D2 (CLOSED 2026-05-08)
 
-- [x] **M0 D2 build:** MSIX package built via WinAppSDK 1.7 SingleProject path. First build (0.2.0.0) failed signing with 0x80091005 because the manifest Publisher was missing the `O=Toast2IT, LLC` RDN. Manifest corrected (CN/O/S/C now matches OV cert subject), rebuilt as 0.2.0.1.
-- [x] **M0 D2 sign:** Signed 2026-05-07 via `signtool.exe` (sourced from the WinAppSDK NuGet's `Microsoft.Windows.SDK.BuildTools` package — DigiCert Utility doesn't sign MSIX). `scripts/sign-msix.ps1` codifies the working flow.
-- [x] **M0 D2 install:** Installed cleanly on Win11 lab via Add-AppxPackage (2026-05-07). Start menu tile present, AUMID `Toast2IT.ToastNotification.Agent_8gxm9tzcy3sby!App`.
-- [ ] **M0 D2 visible-toast confirmation:** Launch from a NON-elevated PowerShell or by clicking the Start menu tile (the agent has an `IsElevated()` guard that exits 3 before firing). If banner doesn't appear bottom-right, check Action Center (Win+N) and Settings -> System -> Notifications -> Toast Notification -> Notification history. If still nothing, add file-based logging to Program.cs to trace `AppNotificationManager.Default.Register()` and `Show()` in the packaged context.
-- [ ] **Push Codex's runner-setup evidence note:** `Docs/ToastRevival/EVIDENCE/2026-05-07-codex-runner-setup.md` exists on build server (52.21.249.120, `C:\toast`) but isn't committed/pushed yet. Either Codex pushes from the server next session, or Keith pulls/pushes from local after Codex commits.
+- [x] **M0 D2 build:** MSIX package built via WinAppSDK 1.7 SingleProject path. First build (0.2.0.0) failed signing with 0x80091005 (manifest Publisher missing O=Toast2IT, LLC). Manifest corrected, rebuilt as 0.2.0.1.
+- [x] **M0 D2 sign:** Signed 2026-05-07 via `signtool.exe`. `scripts/sign-msix.ps1` codifies the working flow.
+- [x] **M0 D2 install:** 0.2.0.1 installed cleanly via Add-AppxPackage but did not fire toasts.
+- [x] **M0 D2 visible-toast confirmation:** Resolved via FIX-MSIX-004 (0.2.0.3 commit `6e3495c`). Single toast fires from packaged Start menu launch, button click routes through `NotificationInvoked` handler with expected argument payload.
+- [x] **Push Codex's runner-setup evidence note:** Committed 2026-05-08 (commit `3c702fc`).
+
+## Engineering - M0 next deliverables
+
 - [ ] M0 D3: MSI wrapper that creates a Scheduled Task in user context (replacing the current Startup-folder shortcut for better GPO/Intune compatibility).
 - [ ] M0 D4: Verify scheduled task survives standard enterprise GPOs, domain-joined machines, Intune-managed devices, multi-user scenarios. Apply `FIX-MSIX-002` (manifest MinVersion vs runtime gate divergence) first.
 - [ ] M0 D5: Push skeleton app to existing Store listing 9P5L0MRMFRRF (private/hidden flight). Apply `FIX-MSIX-001` (bump `TargetPlatformVersion` to 10.0.22621.0) first.
 - [ ] M0 D6: Document deployment findings + any fallback mechanisms needed.
+
+## Engineering - M2 follow-up (logged during M0 D2)
+
+- [ ] **INFO-MSIX-004-D**: Agent's `AgentOptions.Parse` silently ignores unknown args. When the user clicks a toast button on a deployed notification while no agent instance is running, the framework launches the exe with `----AppNotificationActivated:...` prepended; the agent currently falls through to default Plain template re-send instead of routing to a one-shot activation handler that exits cleanly. Detect the activation arg early in `Program.cs` and short-circuit before `Show()`.
+- [ ] **INFO-MSIX-004-A/B/C** (DiagLog hygiene): Before any production launch, gate DiagLog behind a `--diag` flag or add log rotation. Currently writes append-only with no size cap and silently swallows all I/O exceptions (intentional for diagnostics phase, not for steady state).
 
 ## Deferred (later milestones)
 

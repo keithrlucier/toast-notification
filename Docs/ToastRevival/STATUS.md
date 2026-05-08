@@ -2,19 +2,19 @@
 
 > Repo / project codename: **ToastRevival** (internal). Product / user-facing brand: **Toast Notification** (toastnotification.com).
 
-Last updated: 2026-05-07
+Last updated: 2026-05-08
 
 ## Project State
 
-**M0A: COMPLETE.** Signed MSI installs cleanly on a Win11 lab machine, agent runs in user context, toast survives login and reboot. Brand on every user-facing surface flipped from project codename to product name.
+**M0A: COMPLETE (2026-05-07).** Signed MSI installs cleanly on a Win11 lab machine, agent runs in user context, toast survives login and reboot. Brand on every user-facing surface flipped from project codename to product name.
 
-**M0 D2: BUILT + SIGNED + INSTALLED (2026-05-07). Toast firing from packaged context NOT YET visually confirmed - carry into next session.** Single-Project MSIX produced from `src/ToastRevival.Agent` via WinAppSDK 1.7's vendor-native packaging. Signed with the Sectigo OV cert on the Thales SafeNet token via `signtool.exe` (DigiCert Cert Utility v2.x does not support MSIX). `Get-AuthenticodeSignature` reports Status=Valid, Signer=`CN="Toast2IT, LLC", O="Toast2IT, LLC", S=Florida, C=US`, Sectigo issuer, NotAfter 2027-04-15, DigiCert-timestamped. Output: `artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix` (63.56 MB, SIGNED). Installed cleanly on Win11 lab via Add-AppxPackage; Start menu tile present, AUMID `Toast2IT.ToastNotification.Agent_8gxm9tzcy3sby!App`. See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`. Tooling lessons in `CONTEXT.md` -> Code Signing and `scripts/sign-msix.ps1`.
+**M0 D2: COMPLETE (2026-05-08).** Signed MSIX (`ToastNotification.Agent-0.2.0.3.msix`, commit `6e3495c`) installs cleanly via Add-AppxPackage on Win11 lab; single visible toast fires from packaged Start menu launch; "Acknowledge" button click routes through `NotificationInvoked` handler with expected argument payload (`action=acknowledge;source=m0a;template=Plain`). FIX-MSIX-004 resolved: missing `Arguments="----AppNotificationActivated:"` on `<com:ExeServer>` was causing `AppNotificationManager.Default.Register()` to throw `COMException 0x80070490` (ERROR_NOT_FOUND). DiagLog file-based diagnostic logging added in 0.2.0.2 (commit `eca31dc`) was what made the failure point isolatable in a single install cycle. Toast Activator CLSID locked at `7FA7762F-41EC-4D72-9F06-58964AB36FEA` for the lifetime of this product.
 
-**Open: visible toast confirmation.** Launched via `shell:appsfolder` from elevated PowerShell hit the agent's `IsElevated()` guard (Program.cs:13) which exits 3 before `Show()` is ever called. Unelevated launch attempt was inconclusive on Keith's box - cmd window flashed, toast not seen. Reproduce next session from a non-elevated shell, capture Action Center / Settings -> Notifications -> Toast Notification -> Notification history, and if still no toast, instrument the agent with file-based logging to trace `AppNotificationManager.Default.Register()` and `Show()` outcomes in the packaged context.
+See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`, `2026-05-08-m0-d2-fix-msix-004-patch-build.md`, `2026-05-08-m0-d2-fix-msix-004-register-not-found.md`, `2026-05-08-m0-d2-toast-fires-packaged.md`.
 
-**Codex finished server-side build pipeline same session (2026-05-07).** GitHub Actions self-hosted runner provisioned on 52.21.249.120 as Windows service `actions.runner.keithrlucier-toast.EC2AMAZ-A5EU435-toast-build` with labels `self-hosted, Windows, X64, toast-build`. Workflow `.github/workflows/agent-build.yml` (commit 9363764) verified end-to-end: manual run #4 and push run #5 both produced unsigned MSI artifacts. Run #4 artifact MSI properties confirmed `ProductName=Toast Notification Agent`, `Manufacturer=Toast2IT, LLC`, `ProductVersion=0.2.4.0`. Codex's evidence note (`Docs/ToastRevival/EVIDENCE/2026-05-07-codex-runner-setup.md`) is on the build server but not yet committed/pushed - flag for next session.
+**Codex provisioned the build server pipeline (2026-05-07).** GitHub Actions self-hosted runner on 52.21.249.120 as Windows service `actions.runner.keithrlucier-toast.EC2AMAZ-A5EU435-toast-build`. Workflow `.github/workflows/agent-build.yml` (commit `9363764`) verified end-to-end on unsigned MSI builds. Codex's evidence note committed 2026-05-08 (commit `3c702fc`).
 
-**Next:** (1) confirm visible toast from packaged install non-elevated; (2) push Codex's runner-setup evidence note from the build server; (3) M0 D3 starts (MSI scheduled-task variant).
+**Next:** **M0 D3** — MSI wrapper that creates a Scheduled Task in user context (replaces M0A's Startup-folder shortcut for better GPO/Intune compatibility).
 
 Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
 
@@ -33,8 +33,10 @@ Codex is also working on this project. Coordinate before running commands on the
 ## Current Build Outputs
 
 - `artifacts/installer/ToastRevival.Agent-0.1.0.0.msi` - signed, installed on lab machine. Pre-rebrand.
-- `artifacts/installer/ToastNotification.Agent-0.2.0.0.msi` - rebranded user-facing surfaces. Same UpgradeCode -> MajorUpgrade replaces 0.1.0.0 cleanly. Awaiting Keith's re-sign before redeploy. Re-test on lab machine declined (rename does not change install / login / reboot mechanics).
-- `artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix` - 63.56 MB, **SIGNED** (Sectigo OV via Thales token, signtool.exe, DigiCert-timestamped). Status=Valid via `Get-AuthenticodeSignature`. Awaiting install validation on Win11 lab.
+- `artifacts/installer/ToastNotification.Agent-0.2.0.0.msi` - rebranded user-facing surfaces. Same UpgradeCode -> MajorUpgrade replaces 0.1.0.0 cleanly. Awaiting re-sign before redeploy if needed.
+- `artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix` - signed; install validation revealed FIX-MSIX-004 (Register() ERROR_NOT_FOUND). Superseded.
+- `artifacts/installer/msix/ToastNotification.Agent-0.2.0.2.msix` - DiagLog scaffolding + initial COM activator declarations. Superseded by 0.2.0.3 (Register still threw without Arguments token).
+- **`artifacts/installer/msix/ToastNotification.Agent-0.2.0.3.msix` - 63.53 MB. Signed by Keith 2026-05-08, installed cleanly on Win11 lab; visible toast fires; NotificationInvoked routes cleanly. Current canonical M0 D2 build.**
 
 ## Server (52.21.249.120)
 
@@ -60,13 +62,14 @@ See `CONTEXT.md` -> Server Infrastructure for full details.
 
 ## Open Items (carried into M0 or later)
 
-- M0 D2: Keith sign + install validation on Win11 lab and Win10 1809 (signing handoff documented in `EVIDENCE/2026-05-07-m0-d2-msix-build.md`).
+- M0 D2 (Win10 1809 install validation): no Win10 1809 lab machine on hand; deferred to M0 D4 GPO matrix.
 - M0 D3: MSI wrapper with scheduled task in user context (replaces Startup-folder shortcut).
-- M0 D4: GPO / domain / Intune / multi-user matrix.
-- M0 D5: Store submission flight to 9P5L0MRMFRRF (apply `FIX-MSIX-001` first - bump `TargetPlatformVersion` to 10.0.22621.0).
+- M0 D4: GPO / domain / Intune / multi-user matrix. Apply `FIX-MSIX-002` first.
+- M0 D5: Store submission flight to 9P5L0MRMFRRF (apply `FIX-MSIX-001` first).
 - M0 D6: Document deployment findings + fallback mechanisms.
-- M0+: GitHub Actions self-hosted runner on the build server (Codex owns).
-- M4 design: curated per-template hero / logo imagery + curated MSIX tile imagery to replace generated brand placeholders. Open Diana question - `AppNotificationButtonStyle.Critical` vs `Success` for security-framed actions.
+- M2 follow-up: detect `----AppNotificationActivated:` arg in `AgentOptions.Parse` and route to one-shot activation handler instead of falling through to a default Plain template re-send (INFO-MSIX-004-D).
+- M2 follow-up: HMAC payload verification, SignalR reconnect, missed notification catch-up.
+- M1/M2 hygiene: gate DiagLog behind `--diag` flag or add rotation before launch (INFO-MSIX-004-A/B/C).
+- M4 design: curated per-template hero / logo imagery + curated MSIX tile imagery. Open Diana question - `AppNotificationButtonStyle.Critical` vs `Success` for security-framed actions.
 - Future templates: inline image, text input, selection input controls not yet exercised.
-- M2: HMAC payload verification, SignalR reconnect, missed notification catch-up.
 - No automated tests exist yet (first tests expected at M1 backend / M2 agent integration).

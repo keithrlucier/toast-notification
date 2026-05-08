@@ -50,6 +50,10 @@ if ($manifestVersion -ne $Version) {
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
 Write-Host "==> Building MSIX (-c Release -p:Platform=$Platform -p:WindowsPackageType=MSIX)"
+# TargetPlatformVersion must be passed on the command line. Setting it in a conditional csproj
+# PropertyGroup does not work — the .NET SDK re-sets it from the TFM in a late .targets import
+# that runs AFTER PropertyGroup evaluation, overriding any csproj value. Command-line flags have
+# higher MSBuild precedence than imported .targets and win reliably.
 & dotnet build $projectPath `
     -c Release `
     -p:Platform=$Platform `
@@ -57,6 +61,7 @@ Write-Host "==> Building MSIX (-c Release -p:Platform=$Platform -p:WindowsPackag
     -p:GenerateAppxPackageOnBuild=true `
     -p:AppxPackageSigningEnabled=false `
     -p:AppxPackageVersion=$Version `
+    -p:TargetPlatformVersion=10.0.22621.0 `
     -p:AppxPackageDir="$outputDir\" `
     -p:AppxBundle=Never `
     -p:AppxPackageOutput="$outputDir\ToastNotification.Agent-$Version.msix" `

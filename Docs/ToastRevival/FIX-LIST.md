@@ -2,13 +2,28 @@
 
 ## Open Issues
 
-### FIX-MSIX-001 (low) - TargetPlatformVersion caps MaxVersionTested at Win10 2004
+### FIX-MSIX-001 — **RESOLVED 2026-05-08 (M0 D5)**
 
 **Filed:** 2026-05-07 (M0 D2 Code Sweep)
-**Surface:** `src/ToastRevival.Agent/ToastRevival.Agent.csproj` conditional MSIX PropertyGroup
-**Issue:** `<TargetPlatformVersion>10.0.19041.0</TargetPlatformVersion>` propagates into the generated manifest as `TargetDeviceFamily MaxVersionTested="10.0.19041.0"`. Sideload install is unaffected, but Microsoft Store flighting (M0 D5) will want a current Win11 build claim (10.0.22621.0 or higher).
-**Fix when M0 D5 starts:** Bump `<TargetPlatformVersion>` to `10.0.22621.0` in the conditional MSIX PropertyGroup. Re-test sideload install on Win11 lab machine. Re-sign.
-**Blocking:** No — only blocks Store flight, not sideload.
+**Surface:** `scripts/build-msix.ps1`
+**Root cause discovered (M0 D5):** Setting `<TargetPlatformVersion>` in a csproj conditional PropertyGroup does NOT work. The .NET SDK TFM (`net8.0-windows10.0.19041.0`) sets `TargetPlatformVersion=10.0.19041.0` in a late `.targets` import that runs AFTER PropertyGroup evaluation, silently overriding any csproj value.
+**Fix applied:** Added `-p:TargetPlatformVersion=10.0.22621.0` to the `dotnet build` invocation in `scripts/build-msix.ps1`. Command-line flags have higher MSBuild precedence than imported `.targets`. Produced manifest verified: `MaxVersionTested="10.0.22621.0"` ✓. See CONTEXT.md standing rule #4.
+
+### INFO-D5-001 (M2) - No "already running" guard in Program.cs
+
+**Filed:** 2026-05-08 (M0 D5 Code Sweep)
+**Surface:** `src/ToastRevival.Agent/Program.cs`
+**Issue:** The agent unconditionally fires a toast on every launch. If multiple startup triggers fire (e.g., startupTask + manual launch + second session on same machine), multiple agent instances fire multiple toasts per logon. Not introduced by D5 — pre-existing — but surfaced by the addition of `windows.startupTask` which creates a second automatic launch path.
+**Fix:** Add a named mutex guard at process startup — exit cleanly if another instance is already running. M2 work.
+**Blocking:** No.
+
+### INFO-D5-002 (low) - MSI + MSIX simultaneous install fires two toasts per logon
+
+**Filed:** 2026-05-08 (M0 D5 Code Sweep)
+**Surface:** Deployment documentation (M0 D6, M7)
+**Issue:** If both the MSI (Scheduled Task channel) and MSIX (startupTask channel) are installed simultaneously on the same machine, both launch mechanisms fire independently at logon, producing two toasts per session.
+**Fix:** Document in M0 D6 deployment findings: "Do not install MSI and MSIX on the same endpoint. Choose one channel — MSI for RMM-managed deployment, MSIX/Store for user-managed." INFO-D5-001 mutex guard would also limit blast radius.
+**Blocking:** No.
 
 ### FIX-MSIX-002 (low) - Manifest MinVersion vs. runtime gate divergence — **RESOLVED 2026-05-08**
 

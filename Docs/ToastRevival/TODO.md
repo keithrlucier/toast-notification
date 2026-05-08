@@ -61,8 +61,18 @@ Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08). M0 D3 
 - [x] Mark M0 D4 COMPLETE in MILESTONES.md. **CLOSED 2026-05-08.**
 
 ## Engineering - M0 next deliverables
-- [ ] M0 D5: Push skeleton app to existing Store listing 9P5L0MRMFRRF (private/hidden flight). Apply `FIX-MSIX-001` (bump `TargetPlatformVersion` to 10.0.22621.0) first. Sign new MSIX 0.2.1.0 built in D4. Add `<uap5:Extension Category="windows.startupTask">` to the MSIX manifest for parity with the MSI's logon-trigger behavior on the Store/MSIX channel.
-- [ ] M0 D6: Document deployment findings + any fallback mechanisms needed.
+
+### M0 D5 (build complete 2026-05-08 — awaiting Keith sign + flight)
+- [x] FIX-MSIX-001: `-p:TargetPlatformVersion=10.0.22621.0` added to `build-msix.ps1` command line. (csproj PropertyGroup approach does not work — TFM late-import override; see CONTEXT.md rule #4.)
+- [x] Add `uap5:StartupTask` extension to manifest for Store/MSIX logon-launch parity.
+- [x] Build MSIX 0.2.1.0: `.\scripts\build-msix.ps1 -Version 0.2.1.0 -SkipAssetGeneration`. Verified: MinVersion=10.0.19041.0, MaxVersionTested=10.0.22621.0, all 3 extensions present. 63.82 MB unsigned artifact at `artifacts/installer/msix/ToastNotification.Agent-0.2.1.0.msix`.
+- [ ] **Keith**: Sign `ToastNotification.Agent-0.2.1.0.msix` via `.\scripts\sign-msix.ps1 -Path artifacts\installer\msix\ToastNotification.Agent-0.2.1.0.msix`
+- [ ] **Keith**: Accept updated App Developer Agreement in Partner Center if prompted.
+- [ ] **Keith**: Flight signed MSIX to Partner Center listing 9P5L0MRMFRRF (private/hidden). Verify package passes certification.
+- [ ] **Diana**: Deliver curated tile assets (Square44x44, Square150x150, Wide310x150, StoreLogo) before any expansion beyond private/hidden flight.
+
+### M0 D6
+- [ ] Document deployment findings + any fallback mechanisms needed. Incorporate INFO-D5-002 (MSI+MSIX coexistence) and INFO-D5-001 (multiple-instance guard) context.
 
 ## Engineering - M2 follow-up (logged during M0 D2)
 

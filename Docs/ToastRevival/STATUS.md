@@ -18,7 +18,9 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **M0 D4: COMPLETE (2026-05-08).** MSI 0.3.1.0 signed and installed on Win11 lab; task State=Ready; toast fires; second local user account also received toast (BUILTIN\Users confirmed); uninstall removed task cleanly. FIX-MSIX-002 applied (manifest MinVersion 17763→19041). GPO/Intune testing deferred: behavior documented in CONTEXT.md, carry to M8 beta. See `EVIDENCE/2026-05-08-m0-d4-matrix-results.md`.
 
-**Next:** **M0 D5** — Store submission flight to 9P5L0MRMFRRF (private/hidden). Apply `FIX-MSIX-001` (bump `TargetPlatformVersion` to 10.0.22621.0) first. Run `scripts/build-msix.ps1 -Version 0.2.1.0 -SkipAssetGeneration` for the release MSIX build, then sign. Keith accepts updated App Developer Agreement in Partner Center if prompted.
+**M0 D5: BUILD COMPLETE 2026-05-08 (pending Keith sign + Store submission).** MSIX `ToastNotification.Agent-0.2.1.0.msix` (63.82 MB, unsigned) built and verified. Three code changes shipped: (1) `uap5:StartupTask` extension added to manifest (MSIX/Store logon-launch parity with MSI Scheduled Task channel); (2) `TargetPlatformVersion=10.0.22621.0` baked into `build-msix.ps1` via command-line flag (FIX-MSIX-001 resolved — csproj PropertyGroup approach silently failed due to TFM override in late .targets import); (3) CONTEXT.md standing rules updated with discovery. Produced manifest verified: `MinVersion=10.0.19041.0`, `MaxVersionTested=10.0.22621.0`, all three extensions present. **Keith handoff:** sign the MSIX with Thales token, then flight to Partner Center listing 9P5L0MRMFRRF. Accept Developer Agreement if prompted.
+
+**Next after sign/submission:** **M0 D6** — Document deployment findings + fallback mechanisms. Diana delivers curated tile assets before any expansion beyond private/hidden flight.
 
 Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
 
@@ -42,6 +44,7 @@ Codex is also working on this project. Coordinate before running commands on the
 - `artifacts/installer/msix/ToastNotification.Agent-0.2.0.2.msix` - DiagLog scaffolding + initial COM activator declarations. Superseded by 0.2.0.3 (Register still threw without Arguments token).
 - **`artifacts/installer/msix/ToastNotification.Agent-0.2.0.3.msix` - 63.53 MB. Signed by Keith 2026-05-08, installed cleanly on Win11 lab; visible toast fires; NotificationInvoked routes cleanly. Current canonical M0 D2 build.**
 - **`artifacts/installer/ToastNotification.Agent-0.3.0.0.msi` - 50.61 MB. Signed by Keith 2026-05-08, installed cleanly on Win11 lab; scheduled task created (State=Ready); toast fires at logon. Canonical M0 D3 build.**
+- **`artifacts/installer/msix/ToastNotification.Agent-0.2.1.0.msix` - 63.82 MB. UNSIGNED. M0 D5 build. Three extensions: `windows.comServer`, `windows.toastNotificationActivation`, `windows.startupTask`. Manifest: MinVersion=10.0.19041.0, MaxVersionTested=10.0.22621.0. Awaiting Keith sign + Store flight.**
 
 ## Server (52.21.249.120)
 
@@ -62,15 +65,15 @@ See `CONTEXT.md` -> Server Infrastructure for full details.
 - Git, .NET SDK `8.0.420` (pinned via `global.json`), Windows App SDK 1.7.250310001 via NuGet, WiX 5.0.2 (`dotnet tool install --global wix --version 5.*`).
 - Repo-local `NuGet.config` for nuget.org.
 - Windows App SDK CLI builds require `<EnableMsixTooling>true</EnableMsixTooling>`.
-- MSIX build is single-csproj conditional: `dotnet build -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false` -> wrapped in `scripts/build-msix.ps1`. The Single-Project MSIX targets need `Properties/launchSettings.json` with a `MsixPackage` profile present (added 2026-05-07).
+- MSIX build wrapped in `scripts/build-msix.ps1`. Smoke check command (must include TargetPlatformVersion flag): `dotnet build src\ToastRevival.Agent\ToastRevival.Agent.csproj -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false -p:TargetPlatformVersion=10.0.22621.0`. Without the flag, the .NET SDK TFM late-import silently caps MaxVersionTested at 10.0.19041.0. See CONTEXT.md standing rule #4.
 - Code-signing flow: Thales hardware token + Sectigo OV cert. Keith handles signing for both MSI and MSIX. **The OV cert subject is `CN="Toast2IT, LLC", O="Toast2IT, LLC", S=Florida, C=US`** (CN, O, S, C - four RDNs, both CN and O contain a comma so both need quotes). `Package.Identity.Publisher` MUST match this string exactly across all four RDNs or signing fails (0x80091005 in DigiCert Utility / 0x800B0109 in signtool) and any installed signed MSIX rejects with 0x800B0109. The authoritative reference is the cert utility's Details -> Subject field (NOT `Get-AuthenticodeSignature` on a previously-signed MSI - that display can truncate the subject).
 
 ## Open Items (carried into M0 or later)
 
 - M0 D2 (Win10 1809 install validation): no Win10 1809 lab machine on hand; deferred to M0 D4 GPO matrix.
 - M0 D4: GPO / domain / Intune / multi-user matrix. Apply `FIX-MSIX-002` first. Roll uninstall idempotency + 0.3.x → 0.3.y major-upgrade race validation into this matrix.
-- M0 D5: Store submission flight to 9P5L0MRMFRRF (apply `FIX-MSIX-001` first).
-- M0 D6: Document deployment findings + fallback mechanisms.
+- M0 D5: Build complete; **Keith signs + flights to 9P5L0MRMFRRF**. Diana curated tile assets needed before public expansion.
+- M0 D6: Document deployment findings + fallback mechanisms. Diana tile assets delivery.
 - M2 follow-up: detect `----AppNotificationActivated:` arg in `AgentOptions.Parse` and route to one-shot activation handler instead of falling through to a default Plain template re-send (INFO-MSIX-004-D).
 - M2 follow-up: HMAC payload verification, SignalR reconnect, missed notification catch-up.
 - M1/M2 hygiene: gate DiagLog behind `--diag` flag or add rotation before launch (INFO-MSIX-004-A/B/C).

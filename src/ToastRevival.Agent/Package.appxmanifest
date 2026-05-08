@@ -2,10 +2,11 @@
 <Package
     xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
     xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
     xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
     xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
     xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-    IgnorableNamespaces="uap rescap com desktop">
+    IgnorableNamespaces="uap uap5 rescap com desktop">
 
   <Identity
       Name="Toast2IT.ToastNotification.Agent"
@@ -51,6 +52,9 @@
         <desktop:Extension Category="windows.toastNotificationActivation">
           <desktop:ToastNotificationActivation ToastActivatorCLSID="7FA7762F-41EC-4D72-9F06-58964AB36FEA" />
         </desktop:Extension>
+        <uap5:Extension Category="windows.startupTask">
+          <uap5:StartupTask TaskId="ToastNotificationAgent" Enabled="true" DisplayName="Toast Notification" />
+        </uap5:Extension>
       </Extensions>
     </Application>
   </Applications>

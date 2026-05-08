@@ -241,11 +241,17 @@ UpgradeCode matches 0.3.0.0 — `<MajorUpgrade>` will fire on install of 0.3.1.0
 
 ### MSIX Smoke Check (Abish QA gate — Code Sweep standing rule)
 
-- `dotnet build src\ToastRevival.Agent\ToastRevival.Agent.csproj -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false`: passed. 0 errors, 1 cosmetic mspdbcmf warning (FIX-MSIX-003, pre-existing).
+**MSIX smoke check command (canonical, updated M0 D5):**
+```powershell
+dotnet build src\ToastRevival.Agent\ToastRevival.Agent.csproj -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false -p:TargetPlatformVersion=10.0.22621.0
+```
+The `-p:TargetPlatformVersion=10.0.22621.0` flag is required. Without it the .NET SDK TFM (`net8.0-windows10.0.19041.0`) overwrites `TargetPlatformVersion` via a late `.targets` import that runs after PropertyGroup evaluation, silently capping `MaxVersionTested` at `10.0.19041.0`. Command-line flags have higher MSBuild precedence and win. Discovered M0 D5 (2026-05-08). See INFO-D5-003.
+
+- M0 D4 smoke check (before D5 flag discovery): passed, 0 errors, 1 mspdbcmf warning (FIX-MSIX-003, pre-existing).
 - AppxManifest.xml extracted and verified from produced .msix:
   - `Identity.Version = 0.2.1.0` ✓
   - `TargetDeviceFamily.MinVersion = 10.0.19041.0` ✓ (FIX-MSIX-002 applied correctly)
-  - `TargetDeviceFamily.MaxVersionTested = 10.0.19041.0` — pre-existing: csproj `TargetPlatformVersion=10.0.19041.0` overrides source manifest value. Tracked under FIX-MSIX-001; fix before D5 Store flight.
+  - `TargetDeviceFamily.MaxVersionTested = 10.0.19041.0` — pre-existing at D4; **RESOLVED M0 D5** via `-p:TargetPlatformVersion=10.0.22621.0` in `build-msix.ps1`.
 
 ### Regression Check
 

@@ -1,0 +1,18 @@
+* text=auto
+
+# UTF-16 LE files (Task Scheduler XML and similar) — must be treated as binary
+# so git's line-ending normalization does not corrupt the BOM or wide-char encoding.
+*.xml.utf16 binary
+installer/ToastNotificationLogon.xml binary
+
+# Code-signing tokens, packaging outputs, binary blobs
+*.pfx binary
+*.p12 binary
+*.pvk binary
+*.spc binary
+*.msix binary
+*.msixbundle binary
+*.appx binary
+*.appxbundle binary
+*.msi binary
+*.nupkg binary

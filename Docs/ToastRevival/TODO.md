@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08).** Signed MSIX (0.2.0.3) installs cleanly on Win11 lab; visible toast fires from packaged Start menu launch; button-click routes through `NotificationInvoked` handler. FIX-MSIX-004 resolved (missing `Arguments="----AppNotificationActivated:"` on `<com:ExeServer>`; framework was failing Register() with ERROR_NOT_FOUND without that four-dash sentinel). Next deliverable: **M0 D3 - MSI wrapper that creates a Scheduled Task in user context** (replaces Startup-folder shortcut for better GPO/Intune compatibility).
+Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08). M0 D3 BUILT 2026-05-08 — awaiting sign + lab install verification.** `ToastNotification.Agent-0.3.0.0.msi` registers `\Toast2IT\ToastNotificationAgentLogon` Scheduled Task (logon trigger, BUILTIN\Users group principal, LeastPrivilege, runs the agent in interactive user context — replaces M0A's all-users Startup-folder shortcut). Pre-install structural verification clean. Hand-off: Keith signs the MSI, installs on Win11 lab, verifies via `Get-ScheduledTask`, captures EVIDENCE, then we close M0 D3 and move to **M0 D4** — GPO/domain/Intune/multi-user matrix with `FIX-MSIX-002` applied first.
 
 ## Keith
 
@@ -40,11 +40,20 @@ Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08).** Sign
 - [x] **M0 D2 visible-toast confirmation:** Resolved via FIX-MSIX-004 (0.2.0.3 commit `6e3495c`). Single toast fires from packaged Start menu launch, button click routes through `NotificationInvoked` handler with expected argument payload.
 - [x] **Push Codex's runner-setup evidence note:** Committed 2026-05-08 (commit `3c702fc`).
 
+## Engineering - M0 D3 (BUILT 2026-05-08, pending sign + lab verify)
+
+- [x] M0 D3 build: WiX installer registers `\Toast2IT\ToastNotificationAgentLogon` Scheduled Task via deferred schtasks.exe /Create /XML /F custom action; uninstall via /Delete /F (Return=ignore for idempotency). StartupShortcut component dropped. Built `ToastNotification.Agent-0.3.0.0.msi` 50.61 MB.
+- [ ] **Keith**: sign `ToastNotification.Agent-0.3.0.0.msi` via Thales token + Sectigo OV cert (signtool or DigiCert Cert Utility — classic Authenticode MSI, no MSIX quirks here).
+- [ ] **Keith**: install signed MSI on Win11 lab (`msiexec /i ... /qn` for silent or interactive double-click). Confirm clean install / clean major upgrade from prior 0.1/0.2 versions.
+- [ ] **Keith**: verify task created — `Get-ScheduledTask -TaskPath '\Toast2IT\' -TaskName 'ToastNotificationAgentLogon'` should show State=Ready, Principal.GroupId=S-1-5-32-545, Principal.RunLevel=Limited, LogonTrigger.
+- [ ] **Keith**: log out, log back in (non-admin user). Verify alert toast fires from the scheduled task. Action Center entry should show.
+- [ ] **Keith**: uninstall and verify task is removed; reinstall and manually-delete the task before uninstall to verify idempotency.
+- [ ] Capture `EVIDENCE/2026-05-08-m0-d3-task-fires-at-logon.md` (or whichever date the lab install lands) with screenshots of Task Scheduler MMC and the toast banner; mark M0 D3 COMPLETE in MILESTONES.md.
+
 ## Engineering - M0 next deliverables
 
-- [ ] M0 D3: MSI wrapper that creates a Scheduled Task in user context (replacing the current Startup-folder shortcut for better GPO/Intune compatibility).
 - [ ] M0 D4: Verify scheduled task survives standard enterprise GPOs, domain-joined machines, Intune-managed devices, multi-user scenarios. Apply `FIX-MSIX-002` (manifest MinVersion vs runtime gate divergence) first.
-- [ ] M0 D5: Push skeleton app to existing Store listing 9P5L0MRMFRRF (private/hidden flight). Apply `FIX-MSIX-001` (bump `TargetPlatformVersion` to 10.0.22621.0) first.
+- [ ] M0 D5: Push skeleton app to existing Store listing 9P5L0MRMFRRF (private/hidden flight). Apply `FIX-MSIX-001` (bump `TargetPlatformVersion` to 10.0.22621.0) first. Add `<uap5:Extension Category="windows.startupTask">` to the MSIX manifest for parity with the MSI's logon-trigger behavior on the Store/MSIX channel.
 - [ ] M0 D6: Document deployment findings + any fallback mechanisms needed.
 
 ## Engineering - M2 follow-up (logged during M0 D2)

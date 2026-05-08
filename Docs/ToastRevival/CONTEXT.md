@@ -184,11 +184,23 @@ Submit Notification
 
 ### Deployment Flow (MSI/RMM)
 1. RMM pushes MSI as SYSTEM
-2. MSI installs agent binary + creates scheduled task in user context
-3. On user login, scheduled task starts agent
+2. MSI installs agent binary + registers `\Toast2IT\ToastNotificationAgentLogon` Scheduled Task via deferred schtasks /XML import (M0 D3, 2026-05-08; replaced M0A all-users Startup-folder shortcut)
+3. On user login, scheduled task starts agent in the logged-on user's context (BUILTIN\Users group principal `S-1-5-32-545`, RunLevel=LeastPrivilege — Windows App SDK toast APIs hard-fail under elevated/SYSTEM processes)
 4. Agent registers with backend (tenant ID from MSI property)
 5. Agent establishes SignalR connection
 6. Agent renders toast notifications on command
+
+### Scheduled Task primitive (M0 D3 standing rules)
+
+The Scheduled Task is the deployment-plumbing bridge from "MSI installed by SYSTEM" to "agent runs in interactive user context." It is also the audit and diagnostic surface MSPs use first when triaging an endpoint.
+
+1. **Task path is folder-namespaced under `\Toast2IT\`**. Flat task names pollute Task Scheduler MMC across MSPs running multiple management tools — never ship a flat name from this product.
+2. **Principal MUST be group `S-1-5-32-545` (BUILTIN\Users) at `LeastPrivilege`**. NOT a specific user, NOT highest privileges. Toast notifications fail under elevated/admin processes (Program.cs:17-22 hard-exits with code 3); the LeastPrivilege constraint is correctness-critical, not just defense-in-depth.
+3. **schtasks /XML is the registration mechanism**, not WiX-native scheduled task elements (none exist in WiX 5) and not PowerShell `Register-ScheduledTask` from a custom action (PS execution policy and module availability vary across enterprise images). The XML schema is the canonical Task Scheduler v1.4 (`http://schemas.microsoft.com/windows/2004/02/mit/task`) — same schema produced by `schtasks /Query /XML`. File encoding MUST be UTF-16 LE with BOM; schtasks rejects UTF-8-without-BOM XML on some Windows builds.
+4. **Custom actions run deferred + Impersonate="no" + ExeCommand**. Deferred runs in the context of the install script (post-CostFinalize) when properties are resolved; Impersonate=no means it executes as SYSTEM, which has the privilege to create per-group tasks. `Return="check"` on install (failure should fail install); `Return="ignore"` on uninstall (a missing task shouldn't break removal — idempotency).
+5. **Sequencing**: install custom action AFTER `InstallFiles` (XML must be on disk for schtasks to read); uninstall custom action BEFORE `RemoveFiles` (schtasks.exe is in System32 so it survives uninstall, but the MSI's own deferred actions can only run while the install script is active).
+6. **Code Sweep Step 4 for any change to the task XML or WiX custom actions**: confirm XML encoding is UTF-16 LE with BOM (`FF FE`), confirm task path is under `\Toast2IT\`, confirm GroupId is `S-1-5-32-545` and RunLevel is `LeastPrivilege`, confirm install CA is sequenced after `InstallFiles` and uninstall CA before `RemoveFiles`, confirm install gating condition is `NOT REMOVE` and uninstall is `REMOVE="ALL"`.
+7. Reference: https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-schema
 
 ### Toast Notification Constraints (Windows)
 - Max 3 text lines: 1 title + 2 body (truncates beyond)

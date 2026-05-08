@@ -211,3 +211,32 @@ Old artifacts deleted: `ToastNotification.Agent-0.2.0.0.msix`, `ToastRevival.Age
 - The team's prior memory string `CN="Toast2IT, LLC", S=Florida, C=US` came from a transcription of `Get-AuthenticodeSignature` output on the M0A MSI, which truncated/abbreviated the subject. That string is NOT authoritative for MSIX work.
 - Authoritative cert subject sources: cert utility Details tab; `Get-ChildItem Cert:\...\My | Where Subject -like "*<co>*" | Select Subject`; or `(Get-AuthenticodeSignature <signed-msix>).SignerCertificate.Subject` (after a successful MSIX sign).
 - Code Sweep Step 4 must enumerate every RDN in the cert subject and verify each appears in the manifest Publisher in the same order with the same quoting before any sign handoff.
+
+
+## 2026-05-08 (M0 D3 build — MSI with Scheduled Task)
+
+### Code Sweep — INFO findings (non-blocking)
+
+- **INFO-D3-1** (architectural): Major upgrade from a future 0.3.x to 0.3.y will fire `UninstallScheduledTask` during the old product's `RemoveExistingProducts` (sequence 1401, internal uninstall script with `REMOVE="ALL"`) and `InstallScheduledTask` during the new product's install (sequence 4001). The `/F` flag on `schtasks /Create` is the safety net for the brief overlap window. Validate this end-to-end during M0 D4 GPO matrix when running multi-version upgrade scenarios.
+- **INFO-D3-2** (path coupling): `installer/ToastNotificationLogon.xml` hard-codes `%ProgramFiles%\Toast Notification\ToastNotification.Agent.exe` literal. The WiX `INSTALLFOLDER` resolves to the same path under the default `<StandardDirectory Id="ProgramFiles64Folder">` placement. If a future installer change relocates `INSTALLFOLDER` (e.g., to `%LocalAppData%` for a per-user MSI variant), the XML would not auto-update. Captured as a CONTEXT.md standing rule under "Scheduled Task primitive (M0 D3 standing rules)."
+- **INFO-D3-3** (artifact noise): WindowsAppSDK self-contained publish ships `RestartAgent.exe` and `createdump.exe` alongside the agent. Microsoft-signed binaries used by certain WindowsAppSDK runtime paths. Not consumed by current product behavior. Acceptable.
+
+### Pre-install structural verification
+
+- **MSI build**: `scripts\build-msi.ps1` (default `$Version=0.3.0.0`) produced `artifacts\installer\ToastNotification.Agent-0.3.0.0.msi` (50.61 MB) with 0 errors and the pre-existing FIX-MSIX-003 mspdbcmf warning (cosmetic, unrelated to D3).
+- **XML schema parse** (System.Xml on `installer\ToastNotificationLogon.xml`): root `Task version=1.4`, URI `\Toast2IT\ToastNotificationAgentLogon`, `LogonTrigger` enabled, `GroupId=S-1-5-32-545`, `RunLevel=LeastPrivilege`, action `%ProgramFiles%\Toast Notification\ToastNotification.Agent.exe --template alert --no-wait`.
+- **MSI Custom Action table**: `InstallScheduledTask` Type=3106 (deferred + non-impersonate + ExeCommand + Source=Directory, return=check) with target `"[System64Folder]schtasks.exe" /Create /TN "\Toast2IT\ToastNotificationAgentLogon" /XML "[INSTALLFOLDER]ToastNotificationLogon.xml" /F`. `UninstallScheduledTask` Type=3170 (same + return=ignore for idempotency) with target `"[System64Folder]schtasks.exe" /Delete /TN "\Toast2IT\ToastNotificationAgentLogon" /F`.
+- **MSI InstallExecuteSequence**: `UninstallScheduledTask` at seq 3499 with `REMOVE="ALL"`; `RemoveFiles` at 3500; `InstallFiles` at 4000; `InstallScheduledTask` at 4001 with `NOT REMOVE`.
+- **MSI Shortcut table**: only `StartMenuAgentShortcut` remains. `StartupShortcut` removed cleanly.
+- **MSI File table / payload**: `ToastNotificationLogon.xml` mapped to component `LogonTaskXml`. Admin-install extract (`msiexec /a`) confirmed XML lands at `<INSTALLFOLDER>\ToastNotificationLogon.xml`, byte-identical to repo source (3,816 bytes, UTF-16 LE BOM `FF FE`).
+
+### Pre-flight: schtasks /Create from unprivileged shell
+
+- Command: `schtasks.exe /Create /TN \Toast2IT\_PreflightTest_M0D3 /XML installer\ToastNotificationLogon.xml /F`
+- Result: `ERROR: Access is denied.` (exit 1)
+- Interpretation: **expected and correct**. Creating a task with a group principal (`S-1-5-32-545` BUILTIN\Users) requires admin elevation. The error reached "Access is denied" rather than "task XML is not valid" — confirming Task Scheduler accepted the XML schema and only refused at the authorization step. The MSI deferred custom action runs as SYSTEM (`Impersonate="no"`), which has the privilege.
+
+### Boundaries
+
+- This confirms the MSI builds, the XML parses, the WiX table layout matches the design, and the XML payload survives the cab → admin-install extract round-trip byte-identical.
+- This does NOT confirm signed install on a Win11 lab, that the scheduled task is actually created on the endpoint, that the task fires at logon, that the toast renders, or that uninstall removes the task. Those checks are Keith's hand-off step (signed install + `Get-ScheduledTask` + log-out/in verification + uninstall verification + idempotency check). Hand-off detail in `EVIDENCE/2026-05-08-m0-d3-msi-build-with-scheduled-task.md` § Hand-off.

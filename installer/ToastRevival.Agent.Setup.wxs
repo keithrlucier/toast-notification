@@ -20,7 +20,6 @@
       <Directory Id="INSTALLFOLDER" Name="Toast Notification" />
     </StandardDirectory>
 
-    <StandardDirectory Id="StartupFolder" />
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="AppStartMenuFolder" Name="Toast Notification" />
     </StandardDirectory>
@@ -29,22 +28,16 @@
       <Files Include="$(var.PublishDir)\**" />
     </ComponentGroup>
 
-    <ComponentGroup Id="Shortcuts">
-      <Component Id="StartupShortcut" Directory="StartupFolder" Guid="C9C0F2A3-1D44-4E97-9B40-5C2F8AD93A11">
-        <Shortcut Id="StartupAgentShortcut"
-                  Name="Toast Notification"
-                  Target="[INSTALLFOLDER]ToastNotification.Agent.exe"
-                  Arguments="--template alert --no-wait"
-                  WorkingDirectory="INSTALLFOLDER"
-                  Description="Fires the Toast Notification alert at login." />
-        <RegistryValue Root="HKMU"
-                       Key="Software\Toast2IT\Toast Notification\Install"
-                       Name="StartupShortcut"
-                       Type="integer"
-                       Value="1"
-                       KeyPath="yes" />
+    <ComponentGroup Id="LogonTaskAssets" Directory="INSTALLFOLDER">
+      <Component Id="LogonTaskXml" Guid="78C12E0A-1F86-4D72-8B53-9F4D0A6E1C88">
+        <File Id="ToastNotificationLogonXml"
+              Source="$(var.LogonTaskXmlPath)"
+              Name="ToastNotificationLogon.xml"
+              KeyPath="yes" />
       </Component>
+    </ComponentGroup>
 
+    <ComponentGroup Id="Shortcuts">
       <Component Id="StartMenuShortcut" Directory="AppStartMenuFolder" Guid="2D1A8E37-B7F0-4F4B-AE5C-71E2A9D6CA42">
         <Shortcut Id="StartMenuAgentShortcut"
                   Name="Toast Notification"
@@ -64,8 +57,45 @@
 
     <Feature Id="Main" Title="Toast Notification Agent" Level="1">
       <ComponentGroupRef Id="AgentFiles" />
+      <ComponentGroupRef Id="LogonTaskAssets" />
       <ComponentGroupRef Id="Shortcuts" />
     </Feature>
+
+    <!--
+      Scheduled Task plumbing.
+
+      Replaces the M0A Startup-folder shortcut with a logon-triggered Scheduled Task
+      registered under \Toast2IT\ToastNotificationAgentLogon. The task runs in the
+      logged-on user's context (group principal BUILTIN\Users, RunLevel=LeastPrivilege)
+      because Windows App SDK toast notifications hard-fail under elevated/admin
+      processes (see Program.cs:17-22). Better GPO and Intune compatibility than the
+      per-machine Startup folder.
+
+      The schtasks.exe Create/Delete invocations run as deferred custom actions in the
+      install/uninstall script, executing as SYSTEM (Impersonate="no") because
+      registering a per-user-group task requires the privilege.
+
+      Uninstall returns "ignore" so a missing-task error on uninstall (e.g., a user
+      manually removed the task before uninstalling the MSI) does not break removal.
+    -->
+    <CustomAction Id="InstallScheduledTask"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationLogon.xml&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <CustomAction Id="UninstallScheduledTask"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Delete /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="InstallScheduledTask" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="UninstallScheduledTask" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
 
   </Package>
 </Wix>

@@ -12,9 +12,11 @@ Last updated: 2026-05-08
 
 See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`, `2026-05-08-m0-d2-fix-msix-004-patch-build.md`, `2026-05-08-m0-d2-fix-msix-004-register-not-found.md`, `2026-05-08-m0-d2-toast-fires-packaged.md`.
 
+**M0 D3: BUILT, AWAITING SIGN + LAB VERIFY (2026-05-08).** `ToastNotification.Agent-0.3.0.0.msi` built locally — per-machine MSI now registers `\Toast2IT\ToastNotificationAgentLogon` Scheduled Task at install (replaces M0A's all-users Startup-folder shortcut). Task is logon-triggered with BUILTIN\Users group principal (`S-1-5-32-545`) at `LeastPrivilege`, action runs `%ProgramFiles%\Toast Notification\ToastNotification.Agent.exe --template alert --no-wait`. Better GPO and Intune compatibility for the MSI/RMM deployment channel. Pre-install verification clean: XML parses, MSI Custom Action table correct (deferred + non-impersonate, sequenced after InstallFiles / before RemoveFiles), payload byte-identical from repo through cab. Pre-flight `schtasks /Create` from unprivileged shell rejected with "Access is denied" — confirming the schema parsed and the privilege model is enforced; MSI deferred CA running as SYSTEM during install will succeed. See `EVIDENCE/2026-05-08-m0-d3-msi-build-with-scheduled-task.md`. Hand-off to Keith for sign + lab install + Get-ScheduledTask verification.
+
 **Codex provisioned the build server pipeline (2026-05-07).** GitHub Actions self-hosted runner on 52.21.249.120 as Windows service `actions.runner.keithrlucier-toast.EC2AMAZ-A5EU435-toast-build`. Workflow `.github/workflows/agent-build.yml` (commit `9363764`) verified end-to-end on unsigned MSI builds. Codex's evidence note committed 2026-05-08 (commit `3c702fc`).
 
-**Next:** **M0 D3** — MSI wrapper that creates a Scheduled Task in user context (replaces M0A's Startup-folder shortcut for better GPO/Intune compatibility).
+**Next:** Keith signs `ToastNotification.Agent-0.3.0.0.msi`, installs on Win11 lab, verifies the scheduled task creates and fires at logon, captures evidence; then **M0 D4** — GPO/domain/Intune/multi-user matrix with `FIX-MSIX-002` applied first.
 
 Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
 
@@ -37,6 +39,7 @@ Codex is also working on this project. Coordinate before running commands on the
 - `artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix` - signed; install validation revealed FIX-MSIX-004 (Register() ERROR_NOT_FOUND). Superseded.
 - `artifacts/installer/msix/ToastNotification.Agent-0.2.0.2.msix` - DiagLog scaffolding + initial COM activator declarations. Superseded by 0.2.0.3 (Register still threw without Arguments token).
 - **`artifacts/installer/msix/ToastNotification.Agent-0.2.0.3.msix` - 63.53 MB. Signed by Keith 2026-05-08, installed cleanly on Win11 lab; visible toast fires; NotificationInvoked routes cleanly. Current canonical M0 D2 build.**
+- **`artifacts/installer/ToastNotification.Agent-0.3.0.0.msi` - 50.61 MB. Built 2026-05-08 with Scheduled Task primitive replacing M0A's Startup-folder shortcut. Awaiting Keith sign + lab install verification. Current candidate M0 D3 build.**
 
 ## Server (52.21.249.120)
 
@@ -63,7 +66,7 @@ See `CONTEXT.md` -> Server Infrastructure for full details.
 ## Open Items (carried into M0 or later)
 
 - M0 D2 (Win10 1809 install validation): no Win10 1809 lab machine on hand; deferred to M0 D4 GPO matrix.
-- M0 D3: MSI wrapper with scheduled task in user context (replaces Startup-folder shortcut).
+- M0 D3 close (signed install + Get-ScheduledTask verification + toast-fires-at-logon evidence): Keith-side; pending hand-off.
 - M0 D4: GPO / domain / Intune / multi-user matrix. Apply `FIX-MSIX-002` first.
 - M0 D5: Store submission flight to 9P5L0MRMFRRF (apply `FIX-MSIX-001` first).
 - M0 D6: Document deployment findings + fallback mechanisms.

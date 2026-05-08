@@ -9,6 +9,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>ToastRevival.Agent</RootNamespace>
     <AssemblyName>ToastNotification.Agent</AssemblyName>
+    <ApplicationIcon>ToastNotification.ico</ApplicationIcon>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(WindowsPackageType)' == 'MSIX'">

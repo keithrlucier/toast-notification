@@ -2,23 +2,29 @@ using Microsoft.Windows.AppNotifications;
 using System.Security.Principal;
 using ToastRevival.Agent;
 
+DiagLog.Init();
+DiagLog.Write($"==> Toast Notification agent start; pid={Environment.ProcessId}; args=[{string.Join(' ', args)}]; baseDir={AppContext.BaseDirectory}; packaged={DiagLog.IsPackaged}; logPath={DiagLog.LogFilePath}");
+
 var options = AgentOptions.Parse(args);
 
 if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
 {
     Console.Error.WriteLine("Toast Notification agent requires Windows 10 2004 / build 19041 or later for this spike.");
+    DiagLog.Write("EXIT 2: runtime gate IsWindowsVersionAtLeast(10,0,19041) failed.");
     return 2;
 }
 
 if (IsElevated())
 {
     Console.Error.WriteLine("App notifications are not supported for elevated/admin processes. Run this spike unelevated.");
+    DiagLog.Write("EXIT 3: process is elevated. App notifications require non-elevated context.");
     return 3;
 }
 
 if (!ToastTemplateCatalog.All.TryGetValue(options.Template, out var template))
 {
     Console.Error.WriteLine($"Unknown template: {options.Template}");
+    DiagLog.Write($"EXIT 4: unknown template '{options.Template}'.");
     return 4;
 }
 
@@ -29,18 +35,25 @@ try
     AppNotificationManager.Default.NotificationInvoked += (_, activationArgs) =>
     {
         Console.WriteLine($"Notification activated: {activationArgs.Argument}");
+        DiagLog.Write($"NotificationInvoked: argument='{activationArgs.Argument}'");
     };
 
+    DiagLog.Write("Calling AppNotificationManager.Default.Register()...");
     AppNotificationManager.Default.Register();
     registered = true;
+    DiagLog.Write("Register() returned without throwing.");
 
     try
     {
         var assets = new FileSystemToastAssets(AppContext.BaseDirectory);
         WarnIfAssetsMissing(template, assets);
+        DiagLog.Write($"Assets resolved: hero={assets.HeroImageUri?.ToString() ?? "(missing)"}; logo={assets.AppLogoUri?.ToString() ?? "(missing)"}; inline={assets.InlineImageUri?.ToString() ?? "(missing)"}");
 
         var notification = ToastTemplateBuilder.Build(template, assets, options.OverrideTitle, options.OverrideBody);
+        DiagLog.Write($"Notification built. Template={template.Key}; Scenario={template.Scenario}; Sound={(template.Sound?.ToString() ?? "(none)")}; Buttons={template.Buttons.Count}");
+        DiagLog.Write("Calling AppNotificationManager.Default.Show()...");
         AppNotificationManager.Default.Show(notification);
+        DiagLog.Write($"Show() returned without throwing. Notification.Id={notification.Id}; ExpiresOnReboot={notification.ExpiresOnReboot}");
 
         Console.WriteLine($"Toast Notification sent. Template: {template.Key}");
         Console.WriteLine($"Title: {options.OverrideTitle ?? template.Title}");
@@ -57,13 +70,16 @@ try
             await Task.Delay(TimeSpan.FromSeconds(options.WaitSeconds));
         }
 
+        DiagLog.Write("EXIT 0: clean.");
         return 0;
     }
     finally
     {
         if (registered)
         {
+            DiagLog.Write("Calling AppNotificationManager.Default.Unregister()...");
             AppNotificationManager.Default.Unregister();
+            DiagLog.Write("Unregister() returned.");
         }
     }
 }
@@ -71,6 +87,7 @@ catch (Exception ex)
 {
     Console.Error.WriteLine("Failed to send Toast Notification.");
     Console.Error.WriteLine(ex);
+    DiagLog.Write($"EXIT 1: exception {ex.GetType().FullName}: {ex.Message}\n{ex}");
     return 1;
 }
 
@@ -95,6 +112,55 @@ static void WarnIfAssetsMissing(ToastTemplate template, IToastAssets assets)
 
 namespace ToastRevival.Agent
 {
+    internal static class DiagLog
+    {
+        private static readonly object _lock = new();
+        public static string LogFilePath { get; private set; } = "";
+        public static bool IsPackaged { get; private set; }
+
+        public static void Init()
+        {
+            string dir;
+            try
+            {
+                dir = Windows.Storage.ApplicationData.Current.LocalFolder.Path;
+                IsPackaged = true;
+            }
+            catch
+            {
+                dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Toast2IT", "Toast Notification");
+                IsPackaged = false;
+            }
+            try
+            {
+                Directory.CreateDirectory(dir);
+                LogFilePath = Path.Combine(dir, "agent.log");
+            }
+            catch
+            {
+                LogFilePath = "";
+            }
+        }
+
+        public static void Write(string message)
+        {
+            if (string.IsNullOrEmpty(LogFilePath)) return;
+            var line = $"{DateTime.UtcNow:O} {message}{Environment.NewLine}";
+            try
+            {
+                lock (_lock)
+                {
+                    File.AppendAllText(LogFilePath, line);
+                }
+            }
+            catch
+            {
+            }
+        }
+    }
+
     internal sealed record AgentOptions(
         ToastTemplateKey Template,
         string? OverrideTitle,

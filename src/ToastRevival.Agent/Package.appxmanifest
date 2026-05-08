@@ -3,12 +3,14 @@
     xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
     xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
     xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-    IgnorableNamespaces="uap rescap">
+    xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+    xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+    IgnorableNamespaces="uap rescap com desktop">
 
   <Identity
       Name="Toast2IT.ToastNotification.Agent"
       Publisher="CN=&quot;Toast2IT, LLC&quot;, O=&quot;Toast2IT, LLC&quot;, S=Florida, C=US"
-      Version="0.2.0.1"
+      Version="0.2.0.2"
       ProcessorArchitecture="x64" />
 
   <Properties>
@@ -38,6 +40,18 @@
           Square44x44Logo="Images\Square44x44Logo.png">
         <uap:DefaultTile Wide310x150Logo="Images\Wide310x150Logo.png" />
       </uap:VisualElements>
+      <Extensions>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="ToastNotification.Agent.exe" DisplayName="Toast Notification Activator">
+              <com:Class Id="7FA7762F-41EC-4D72-9F06-58964AB36FEA" DisplayName="Toast Notification Activator" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="7FA7762F-41EC-4D72-9F06-58964AB36FEA" />
+        </desktop:Extension>
+      </Extensions>
     </Application>
   </Applications>
 

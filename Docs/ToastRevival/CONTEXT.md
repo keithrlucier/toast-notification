@@ -125,6 +125,23 @@ The script:
 2. **Code Sweep Step 4 for any change to MSIX manifest Publisher**: enumerate every RDN in the cert subject; verify each appears in the manifest Publisher in the same order; build the .msix; extract `AppxManifest.xml` from the produced .msix and re-verify (the build pipeline normalizes whitespace/quoting); only then hand off for sign.
 3. **Token signing is not "hard"** — the SafeNet client exposes the token cert to Windows CryptoAPI when unlocked. Any signtool/signtool-wrapper that talks to CryptoAPI (DigiCert Utility, signtool.exe, custom wrappers) sees the cert through that surface. The token is incidental once SafeNet is set up.
 
+## Toast Activator Class ID (MSIX, FIX-MSIX-004)
+
+**CLSID**: `7FA7762F-41EC-4D72-9F06-58964AB36FEA`
+
+Generated 2026-05-08 via `[guid]::NewGuid()`. Declared identically in both extension blocks of `src/ToastRevival.Agent/Package.appxmanifest`:
+
+- `<com:Extension Category="windows.comServer">` → `<com:Class Id="7FA7762F-41EC-4D72-9F06-58964AB36FEA">`
+- `<desktop:Extension Category="windows.toastNotificationActivation">` → `ToastActivatorCLSID="7FA7762F-41EC-4D72-9F06-58964AB36FEA"`
+
+**Why this exists.** Packaged WinAppSDK `AppNotificationManager.Default.Register()` does NOT auto-inject a CLSID into HKCU like the unpackaged path does — the framework looks up the activator CLSID from the manifest. Without these two extension declarations, `Register()` returns success but the activation channel never wires, so subsequent `Show()` calls produce no visible toast and no Action Center entry. That was FIX-MSIX-004.
+
+**Standing rules.**
+
+1. The two CLSIDs in the manifest MUST be byte-for-byte identical and stay locked at this value across all future versions of the product. Changing the CLSID after public distribution orphans every installed client (their HKCU\SOFTWARE\Classes\CLSID registration points at the old GUID). Until M0 D5 Store flight there is no installed base, so churning is cheap; once we flight, this GUID is permanent.
+2. Code Sweep Step 4 for any change to `<Extensions>`: confirm both CLSIDs match, confirm `xmlns:com` and `xmlns:desktop` are declared on `<Package>`, confirm `IgnorableNamespaces` includes `com desktop`, extract `AppxManifest.xml` from the produced .msix and re-verify post-build.
+3. Reference: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/notifications/app-notifications/app-notifications-quickstart (Packaged section).
+
 ## Security Architecture
 
 ### Authentication & Authorization

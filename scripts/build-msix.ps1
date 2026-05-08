@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string] $Version = "0.2.0.0",
+    [string] $Version = "0.2.0.2",
     [string] $Platform = "x64",
     [switch] $SkipAssetGeneration
 )

@@ -18,56 +18,45 @@
 **Fix when M0 D4 starts:** Either (a) relax the runtime check to 17763 if AppNotificationManager actually works there, or (b) bump `TargetDeviceFamily MinVersion` to `10.0.19041.0` so the install fails up front on incompatible Windows builds. Option (b) is the safer default; the M0A spike already runs on 19041.
 **Blocking:** No — milestone target is 1809+ but lab machine is Win11; Win10 1809 verification is the M0 D4 GPO matrix work.
 
-### FIX-MSIX-004 (medium) - Packaged MSIX install does not fire toasts (likely missing COM activator manifest extensions)
+### FIX-MSIX-004 (medium) - Packaged MSIX install does not fire toasts - PATCH BUILT 2026-05-08, AWAITING KEITH SIGN+INSTALL
 
 **Filed:** 2026-05-07 (M0 D2 install validation)
+**Patch built:** 2026-05-08 (`ToastNotification.Agent-0.2.0.2.msix`, unsigned)
 **Surface:** Win11 lab machine, signed `ToastNotification.Agent-0.2.0.1.msix` installed via Add-AppxPackage.
 
-**Symptom:** Console window flashes when the package launches via Start menu tile or `shell:appsfolder\<AUMID>`, but no toast banner appears, no entry lands in Action Center (Win+N), and Settings -> System -> Notifications -> Toast Notification shows no Notification history. The same agent code shipped via the M0A MSI fires toasts reliably (Startup-folder shortcut, unpackaged path).
+**Symptom (0.2.0.1):** Console window flashes when the package launches via Start menu tile or `shell:appsfolder\<AUMID>`, but no toast banner appears, no entry lands in Action Center (Win+N), and Settings -> System -> Notifications -> Toast Notification shows no Notification history. The same agent code shipped via the M0A MSI fires toasts reliably (Startup-folder shortcut, unpackaged path).
 
-**Leading hypothesis:** Our `Package.appxmanifest` is missing the COM activator declarations that the WinAppSDK packaged toast path requires.
+**Hypothesis:** `Package.appxmanifest` was missing the COM activator declarations that the WinAppSDK packaged toast path requires. For UNPACKAGED apps, `AppNotificationManager.Default.Register()` auto-injects a CLSID into `HKCU\SOFTWARE\Classes\CLSID\...` so the toast pipe is wired implicitly (that's why M0A MSI works). For PACKAGED apps, the framework looks up the activator CLSID from the manifest; without those declarations, `Register()` returns success at the API surface but the activation channel never wires.
 
-For UNPACKAGED apps, `AppNotificationManager.Default.Register()` auto-injects a CLSID into `HKCU\SOFTWARE\Classes\CLSID\...` and `HKCU\SOFTWARE\Classes\AppUserModelId\...` so the toast pipe is wired implicitly. That is why the M0A MSI works.
+**Patch shipped in 0.2.0.2 (commit pending):**
 
-For PACKAGED apps, the framework expects the COM CLSID to be declared in the manifest. Without those declarations, `AppNotificationManager.Default.Register()` likely succeeds at the API surface but fails to wire the activation channel; subsequent `Show()` calls get accepted by the runtime but produce no visible toast and no Action Center entry. (We catch and stderr exceptions, but the console closes before they can be read; a log capture in next session will confirm.)
+1. **CLSID locked**: `7FA7762F-41EC-4D72-9F06-58964AB36FEA` (generated 2026-05-08 via `[guid]::NewGuid()`; documented in `CONTEXT.md` -> Toast Activator Class ID).
+2. **Manifest patch in `src/ToastRevival.Agent/Package.appxmanifest`**:
+   - Added `xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"` and `xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"` to `<Package>`.
+   - Added `com desktop` to `IgnorableNamespaces`.
+   - Added `<Extensions>` **inside `<Application>`** (NOT at Package level — first build attempt with Extensions at Package level failed schema validation `C00CE014` "Element ... unexpected according to content model of parent element"). Both `<com:Extension Category="windows.comServer">` and `<desktop:Extension Category="windows.toastNotificationActivation">` go inside `<Application>` per Microsoft's quickstart.
+   - Both CLSIDs (`com:Class Id` and `ToastActivatorCLSID`) byte-for-byte identical.
+3. **Diagnostic logging in `src/ToastRevival.Agent/Program.cs`**: `DiagLog` static class writes to `Windows.Storage.ApplicationData.Current.LocalFolder.Path\agent.log` when packaged, falls back to `%LOCALAPPDATA%\Toast2IT\Toast Notification\agent.log` when unpackaged. Logs at app start (with pid/args/baseDir/IsPackaged), pre/post `Register()`, pre/post `Show()`, exception path, every exit code.
+4. **Version bumped to 0.2.0.2** in manifest + `scripts/build-msix.ps1` default.
 
-**Manifest patch shape (for next session, not yet applied):**
+**Hand-off (Keith):**
+  1. Sign: `.\scripts\sign-msix.ps1 -Path artifacts\installer\msix\ToastNotification.Agent-0.2.0.2.msix`.
+  2. Install on Win11 lab: `Add-AppxPackage -Path <signed-msix>` (or `-ForceUpdateFromAnyVersion` if 0.2.0.1 is still installed).
+  3. Launch from Start menu tile (NON-elevated; the IsElevated guard at Program.cs:13 exits 3 in elevated context).
+  4. Look for: visible toast banner (bottom-right), Action Center entry (Win+N), Settings -> System -> Notifications -> Toast Notification -> Notification history.
+  5. Pull `agent.log` from `%LOCALAPPDATA%\Packages\Toast2IT.ToastNotification.Agent_8gxm9tzcy3sby\LocalState\agent.log` and ship it back.
 
-```xml
-<!-- Add these namespaces to the <Package> element -->
-xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
-xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+**If toast fires:** mark M0 D2 complete in MILESTONES.md, move FIX-MSIX-004 to Resolved, capture EVIDENCE/2026-05-08-m0-d2-toast-fires-packaged.md.
 
-<!-- IgnorableNamespaces: add com desktop -->
+**If toast still doesn't fire (fallback diagnostic tree):**
+  - Read agent.log: did Register throw? Did Show return? What AUMID was used at runtime?
+  - Check `TargetDeviceFamily MaxVersionTested="10.0.19041.0"` vs lab Win11 build (`[Environment]::OSVersion.Version.Build`). If lab build > 22000 there could be a notifications-suppressed-when-tested-version-too-low side effect (FIX-MSIX-001 already tracks bumping MaxVersionTested for Store flight; consider pulling forward).
+  - Verify `BackgroundColor="#0F1117"` is a valid 6-char hex (it is; ruled out).
+  - Check packaged AUMID via `Get-StartApps | Where-Object { $_.Name -like '*Toast*' }` and compare to the Identity-derived AUMID (`Toast2IT.ToastNotification.Agent_8gxm9tzcy3sby!App`).
 
-<!-- After </Applications>, before <Capabilities> -->
-<Extensions>
-  <com:Extension Category="windows.comServer">
-    <com:ComServer>
-      <com:ExeServer Executable="ToastNotification.Agent.exe" DisplayName="Toast Notification Activator">
-        <com:Class Id="GENERATE-A-NEW-GUID" DisplayName="Toast Notification Activator" />
-      </com:ExeServer>
-    </com:ComServer>
-  </com:Extension>
-  <desktop:Extension Category="windows.toastNotificationActivation">
-    <desktop:ToastNotificationActivation ToastActivatorCLSID="SAME-GUID-AS-ABOVE" />
-  </desktop:Extension>
-</Extensions>
-```
+**Reference:** Microsoft docs on packaged WinAppSDK toast activation: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/notifications/app-notifications/app-notifications-quickstart (Packaged section).
 
-The CLSID GUID must be identical in both extension blocks. Generate once via `[guid]::NewGuid()` and bake in. Once baked, do NOT change it - it identifies the activation surface and any change would orphan registrations on already-installed clients.
-
-**Diagnostic plan for next session (in order):**
-  1. Add file-based logging to `Program.cs` immediately after `AppNotificationManager.Default.Register()` and `Show()` calls. Log to `(Windows.Storage.ApplicationData.Current.LocalFolder.Path)\agent.log` for packaged context, fallback to `%LOCALAPPDATA%\Toast2IT\Toast Notification\agent.log` for unpackaged. This proves whether Register succeeded, whether Show was reached, and what the AUMID looks like at runtime.
-  2. Rebuild + re-sign + reinstall the unmodified package (no manifest patch yet). Launch from Start menu tile. Read the log: did Register throw? Did Show return cleanly? What AUMID was used?
-  3. Apply the manifest patch above (com + desktop extensions, generated CLSID). Bump version to 0.2.0.2. Rebuild + re-sign + reinstall. Re-test. If toast now appears, the hypothesis is confirmed and patch lands as the fix.
-  4. If the manifest patch alone doesn't resolve it, look at: TargetDeviceFamily MaxVersionTested vs the lab Win11 build (mismatch can suppress notifications); manifest visualElements `BackgroundColor` (#0F1117 should be valid); the packaged AUMID hash vs what `Get-StartApps` reports.
-
-**Reference points:**
-  - M0A MSI's Startup-folder shortcut launches the same agent code unelevated at user login and toasts fire reliably - proves the agent code itself is correct in user context.
-  - Microsoft docs on packaged WinAppSDK toast activation: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/notifications/app-notifications/app-notifications-quickstart (Packaged section explicitly enumerates the com:Extension declarations).
-
-**Blocking:** YES for M0 D2 close. Cannot mark D2 complete until visible toast verified.
+**Blocking:** YES for M0 D2 close. Cannot mark D2 complete until visible toast verified on signed 0.2.0.2.
 
 ### FIX-MSIX-003 (cosmetic) - mspdbcmf.exe warning during MSIX build
 

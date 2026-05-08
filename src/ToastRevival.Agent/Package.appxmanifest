@@ -10,7 +10,7 @@
   <Identity
       Name="Toast2IT.ToastNotification.Agent"
       Publisher="CN=&quot;Toast2IT, LLC&quot;, O=&quot;Toast2IT, LLC&quot;, S=Florida, C=US"
-      Version="0.2.0.2"
+      Version="0.2.0.3"
       ProcessorArchitecture="x64" />
 
   <Properties>
@@ -43,7 +43,7 @@
       <Extensions>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
-            <com:ExeServer Executable="ToastNotification.Agent.exe" DisplayName="Toast Notification Activator">
+            <com:ExeServer Executable="ToastNotification.Agent.exe" Arguments="----AppNotificationActivated:" DisplayName="Toast Notification Activator">
               <com:Class Id="7FA7762F-41EC-4D72-9F06-58964AB36FEA" DisplayName="Toast Notification Activator" />
             </com:ExeServer>
           </com:ComServer>

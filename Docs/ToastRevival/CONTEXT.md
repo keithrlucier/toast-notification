@@ -139,8 +139,9 @@ Generated 2026-05-08 via `[guid]::NewGuid()`. Declared identically in both exten
 **Standing rules.**
 
 1. The two CLSIDs in the manifest MUST be byte-for-byte identical and stay locked at this value across all future versions of the product. Changing the CLSID after public distribution orphans every installed client (their HKCU\SOFTWARE\Classes\CLSID registration points at the old GUID). Until M0 D5 Store flight there is no installed base, so churning is cheap; once we flight, this GUID is permanent.
-2. Code Sweep Step 4 for any change to `<Extensions>`: confirm both CLSIDs match, confirm `xmlns:com` and `xmlns:desktop` are declared on `<Package>`, confirm `IgnorableNamespaces` includes `com desktop`, extract `AppxManifest.xml` from the produced .msix and re-verify post-build.
-3. Reference: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/notifications/app-notifications/app-notifications-quickstart (Packaged section).
+2. The `<com:ExeServer>` element MUST include `Arguments="----AppNotificationActivated:"`. The four-dash sentinel is the framework's marker for "this is the toast activator surface." Missing it causes `AppNotificationManager.Default.Register()` to throw `COMException 0x80070490` (HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) because the framework's COM class registration lookup fails. We hit this on 0.2.0.2 (commit `eca31dc`); fixed in 0.2.0.3.
+3. Code Sweep Step 4 for any change to `<Extensions>`: confirm both CLSIDs match, confirm `xmlns:com` and `xmlns:desktop` are declared on `<Package>`, confirm `IgnorableNamespaces` includes `com desktop`, confirm `Arguments="----AppNotificationActivated:"` is on `<com:ExeServer>`, extract `AppxManifest.xml` from the produced .msix and re-verify post-build.
+4. Reference: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/notifications/app-notifications/app-notifications-quickstart (Packaged section).
 
 ## Security Architecture
 

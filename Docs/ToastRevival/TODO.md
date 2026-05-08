@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08). M0 D3 BUILT 2026-05-08 — awaiting sign + lab install verification.** `ToastNotification.Agent-0.3.0.0.msi` registers `\Toast2IT\ToastNotificationAgentLogon` Scheduled Task (logon trigger, BUILTIN\Users group principal, LeastPrivilege, runs the agent in interactive user context — replaces M0A's all-users Startup-folder shortcut). Pre-install structural verification clean. Hand-off: Keith signs the MSI, installs on Win11 lab, verifies via `Get-ScheduledTask`, captures EVIDENCE, then we close M0 D3 and move to **M0 D4** — GPO/domain/Intune/multi-user matrix with `FIX-MSIX-002` applied first.
+Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08). M0 D3 COMPLETE (2026-05-08).** Signed `ToastNotification.Agent-0.3.0.0.msi` installed cleanly on Win11 lab; `\Toast2IT\ToastNotificationAgentLogon` Scheduled Task created with State=Ready, MSFT_TaskLogonTrigger, MSFT_TaskExecAction; alert toast fired at next user logon. Per-machine MSI now uses logon-triggered Scheduled Task in BUILTIN\Users group context (`S-1-5-32-545` at LeastPrivilege) instead of M0A's all-users Startup-folder shortcut — better GPO/Intune story for the MSI/RMM channel. Next deliverable: **M0 D4** — GPO/domain/Intune/multi-user matrix with `FIX-MSIX-002` applied first.
 
 ## Keith
 
@@ -40,15 +40,15 @@ Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08). M0 D3 
 - [x] **M0 D2 visible-toast confirmation:** Resolved via FIX-MSIX-004 (0.2.0.3 commit `6e3495c`). Single toast fires from packaged Start menu launch, button click routes through `NotificationInvoked` handler with expected argument payload.
 - [x] **Push Codex's runner-setup evidence note:** Committed 2026-05-08 (commit `3c702fc`).
 
-## Engineering - M0 D3 (BUILT 2026-05-08, pending sign + lab verify)
+## Engineering - M0 D3 (CLOSED 2026-05-08)
 
 - [x] M0 D3 build: WiX installer registers `\Toast2IT\ToastNotificationAgentLogon` Scheduled Task via deferred schtasks.exe /Create /XML /F custom action; uninstall via /Delete /F (Return=ignore for idempotency). StartupShortcut component dropped. Built `ToastNotification.Agent-0.3.0.0.msi` 50.61 MB.
-- [ ] **Keith**: sign `ToastNotification.Agent-0.3.0.0.msi` via Thales token + Sectigo OV cert (signtool or DigiCert Cert Utility — classic Authenticode MSI, no MSIX quirks here).
-- [ ] **Keith**: install signed MSI on Win11 lab (`msiexec /i ... /qn` for silent or interactive double-click). Confirm clean install / clean major upgrade from prior 0.1/0.2 versions.
-- [ ] **Keith**: verify task created — `Get-ScheduledTask -TaskPath '\Toast2IT\' -TaskName 'ToastNotificationAgentLogon'` should show State=Ready, Principal.GroupId=S-1-5-32-545, Principal.RunLevel=Limited, LogonTrigger.
-- [ ] **Keith**: log out, log back in (non-admin user). Verify alert toast fires from the scheduled task. Action Center entry should show.
-- [ ] **Keith**: uninstall and verify task is removed; reinstall and manually-delete the task before uninstall to verify idempotency.
-- [ ] Capture `EVIDENCE/2026-05-08-m0-d3-task-fires-at-logon.md` (or whichever date the lab install lands) with screenshots of Task Scheduler MMC and the toast banner; mark M0 D3 COMPLETE in MILESTONES.md.
+- [x] **Keith**: signed `ToastNotification.Agent-0.3.0.0.msi` via Thales+Sectigo OV.
+- [x] **Keith**: installed signed MSI on Win11 lab cleanly.
+- [x] **Keith**: verified task created via Get-ScheduledTask — State=Ready, MSFT_TaskLogonTrigger, MSFT_TaskExecAction.
+- [x] **Keith**: confirmed alert toast fires at next user logon (visible Critical-scenario banner with hero/logo/Acknowledge/Report buttons).
+- [x] Captured `EVIDENCE/2026-05-08-m0-d3-task-fires-at-logon.md` with Get-ScheduledTask output and toast description.
+- [ ] (Deferred to M0 D4) Uninstall idempotency check + 0.3.x → 0.3.y major-upgrade race validation. Roll into the GPO matrix testing.
 
 ## Engineering - M0 next deliverables
 

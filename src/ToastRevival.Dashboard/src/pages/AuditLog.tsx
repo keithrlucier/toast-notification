@@ -60,7 +60,7 @@ export default function AuditLog() {
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Time range selector */}
-          <div style={{ display: 'flex', background: 'var(--bg-secondary)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', background: 'var(--bg-secondary)', border: '1px solid rgba(15,23,42,0.12)', borderRadius: 4, overflow: 'hidden' }}>
             {DAYS_OPTIONS.map(d => (
               <button
                 key={d}
@@ -189,7 +189,7 @@ function ExportMenu({ onExport, busy }: { onExport: (fmt: 'csv' | 'pdf') => void
           <div style={{
             position: 'absolute', right: 0, top: '100%', marginTop: 4,
             background: 'var(--bg-tertiary)',
-            border: '1px solid rgba(255,255,255,0.10)',
+            border: '1px solid rgba(15,23,42,0.14)',
             borderRadius: 6,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
             zIndex: 20,

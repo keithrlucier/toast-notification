@@ -198,7 +198,7 @@ export default function ApiKeys() {
                       fontSize: 11,
                       textTransform: 'uppercase',
                       letterSpacing: '0.06em',
-                      borderBottom: '1px solid rgba(255,255,255,0.06)',
+                      borderBottom: '1px solid rgba(15,23,42,0.10)',
                     }}>
                       {h}
                     </th>
@@ -344,7 +344,7 @@ export default function ApiKeys() {
               width: '100%',
               maxWidth: 360,
               background: 'var(--bg-tertiary)',
-              border: '1px solid rgba(255,255,255,0.1)',
+              border: '1px solid rgba(15,23,42,0.14)',
               borderRadius: 4,
               padding: '9px 12px',
               color: 'var(--text-primary)',
@@ -362,7 +362,7 @@ export default function ApiKeys() {
             background: generating ? 'var(--accent-pressed)' : 'var(--accent)',
             border: 'none',
             borderRadius: 4,
-            color: '#0F1117',
+            color: '#FFFFFF',
             fontSize: 14,
             fontWeight: 600,
             padding: '9px 20px',
@@ -437,7 +437,7 @@ export default function ApiKeys() {
               style={{
                 width: '100%',
                 background: 'var(--bg-tertiary)',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid rgba(15,23,42,0.14)',
                 borderRadius: 4,
                 padding: '10px 12px',
                 color: 'var(--accent)',
@@ -458,7 +458,7 @@ export default function ApiKeys() {
                   background: 'var(--accent)',
                   border: 'none',
                   borderRadius: 4,
-                  color: '#0F1117',
+                  color: '#FFFFFF',
                   fontSize: 14,
                   fontWeight: 600,
                   padding: '9px 20px',
@@ -473,7 +473,7 @@ export default function ApiKeys() {
                 onClick={handleDone}
                 style={{
                   background: 'transparent',
-                  border: '1px solid rgba(255,255,255,0.15)',
+                  border: '1px solid rgba(15,23,42,0.20)',
                   borderRadius: 4,
                   color: 'var(--text-secondary)',
                   fontSize: 14,

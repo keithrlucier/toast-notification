@@ -47,31 +47,30 @@ public class BillingController : ControllerBase
 
         await _license.SyncConsumedCountAsync(tenant);
 
-        var limit = tenant.LicenseCount;
-        var consumed = tenant.ConsumedCount;
-        var isNearLimit  = limit > 0 && consumed >= (int)(limit * 0.9);
-        var isAtLimit    = limit > 0 && consumed >= limit;
+        var deviceCount = tenant.ConsumedCount;
+        var billableDevices = BillingPlanRules.BillableDevices(deviceCount);
 
         return Ok(new
         {
-            tier             = tenant.SubscriptionTier.ToString(),
-            tierLabel        = _license.GetTierLabel(tenant.SubscriptionTier),
-            licenseCount     = limit,
-            deviceLimit      = limit == 0 ? (int?)null : limit,
-            consumedCount    = consumed,
+            planName         = "Standard",
+            pricePerDevice   = BillingPlanRules.PricePerDevice,
+            minimumDevices   = BillingPlanRules.MinimumBillableDevices,
+            monthlyFloor     = BillingPlanRules.MonthlyFloor,
+            deviceCount,
+            billableDevices,
+            currentBill      = billableDevices * BillingPlanRules.PricePerDevice,
             billingStatus    = tenant.BillingStatus.ToString(),
             licenseStart     = tenant.LicenseStart,
             licenseEnd       = tenant.LicenseEnd,
+            trialEnd         = tenant.BillingStatus == BillingStatus.Trialing ? tenant.LicenseEnd : null,
             stripeCustomerId = tenant.StripeCustomerId,
-            isNearLimit,
-            isAtLimit,
         });
     }
 
     // ── POST /api/billing/checkout ────────────────────────────────────────────
 
     [HttpPost("checkout")]
-    public async Task<IActionResult> CreateCheckout([FromBody] CreateCheckoutRequest req)
+    public async Task<IActionResult> CreateCheckout()
     {
         if (!IsAdmin()) return Forbid();
 
@@ -80,20 +79,19 @@ public class BillingController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == tenantId);
         if (tenant is null) return NotFound();
 
+        if (!string.IsNullOrWhiteSpace(tenant.StripeSubscriptionId))
+            return BadRequest("Subscription already exists. Use the billing portal to manage it.");
+
         var secretKey = _config["Stripe:SecretKey"];
         if (string.IsNullOrWhiteSpace(secretKey) || secretKey.StartsWith("sk_test_REPLACE"))
             return StatusCode(503, "Billing is not configured on this server.");
 
-        var priceId = req.Tier switch
-        {
-            "Pro"        => _config["Stripe:ProPriceId"],
-            "Enterprise" => _config["Stripe:EnterprisePriceId"],
-            _            => null
-        };
-        if (string.IsNullOrWhiteSpace(priceId))
-            return BadRequest("Invalid tier. Valid values: Pro, Enterprise.");
+        var priceId = _config["Stripe:PerDevicePriceId"];
+        if (string.IsNullOrWhiteSpace(priceId) || priceId.StartsWith("price_REPLACE"))
+            return StatusCode(503, "Per-device billing price is not configured on this server.");
 
         StripeConfiguration.ApiKey = secretKey;
+        await _license.SyncConsumedCountAsync(tenant);
 
         // Ensure Stripe customer exists
         string customerId = tenant.StripeCustomerId ?? await CreateStripeCustomerAsync(tenant);
@@ -103,6 +101,7 @@ public class BillingController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
+        var billableDevices = BillingPlanRules.BillableDevices(tenant.ConsumedCount);
         var sessionService = new SessionService();
         var sessionOpts = new SessionCreateOptions
         {
@@ -110,11 +109,17 @@ public class BillingController : ControllerBase
             Mode     = "subscription",
             LineItems =
             [
-                new SessionLineItemOptions { Price = priceId, Quantity = 1 }
+                new SessionLineItemOptions { Price = priceId, Quantity = billableDevices }
             ],
             SuccessUrl = _config["Stripe:SuccessUrl"] ?? "http://localhost:5173/billing?session=success",
             CancelUrl  = _config["Stripe:CancelUrl"]  ?? "http://localhost:5173/billing",
+            ClientReferenceId = tenantId.ToString(),
             Metadata   = new Dictionary<string, string> { ["tenantId"] = tenantId.ToString() },
+            SubscriptionData = new SessionSubscriptionDataOptions
+            {
+                TrialPeriodDays = 14,
+                Metadata = new Dictionary<string, string> { ["tenantId"] = tenantId.ToString() },
+            },
         };
 
         var session = await sessionService.CreateAsync(sessionOpts);
@@ -303,15 +308,15 @@ public class BillingController : ControllerBase
 
         tenant.StripeCustomerId     = session.CustomerId;
         tenant.StripeSubscriptionId = session.SubscriptionId;
-        tenant.BillingStatus        = BillingStatus.Active;
+        tenant.BillingStatus        = ResolveBillingStatus(sub.Status);
         tenant.LicenseStart         = sub.CurrentPeriodStart;
         tenant.LicenseEnd           = sub.CurrentPeriodEnd;
-        tenant.SubscriptionTier     = ResolveTier(sub);
-        tenant.LicenseCount         = ResolveLicenseCount(tenant.SubscriptionTier);
+        tenant.SubscriptionTier     = SubscriptionTier.Standard;
+        tenant.LicenseCount         = 0;
         tenant.PastDueAt            = null;
 
         await db.SaveChangesAsync();
-        _logger.LogInformation("Tenant {TenantId} subscribed to {Tier}", tenantId, tenant.SubscriptionTier);
+        _logger.LogInformation("Tenant {TenantId} activated per-device billing.", tenantId);
     }
 
     private async Task HandleSubscriptionUpdated(Event evt, IServiceProvider services)
@@ -325,19 +330,19 @@ public class BillingController : ControllerBase
             .FirstOrDefaultAsync(t => t.StripeSubscriptionId == sub.Id);
         if (tenant is null) return;
 
-        tenant.SubscriptionTier = ResolveTier(sub);
-        tenant.LicenseCount     = ResolveLicenseCount(tenant.SubscriptionTier);
+        tenant.SubscriptionTier = SubscriptionTier.Standard;
+        tenant.LicenseCount     = 0;
         tenant.LicenseStart     = sub.CurrentPeriodStart;
         tenant.LicenseEnd       = sub.CurrentPeriodEnd;
+        tenant.BillingStatus    = ResolveBillingStatus(sub.Status);
 
-        if (sub.Status == "active" || sub.Status == "trialing")
-        {
-            tenant.BillingStatus = sub.Status == "trialing" ? BillingStatus.Trialing : BillingStatus.Active;
+        if (tenant.BillingStatus == BillingStatus.Active || tenant.BillingStatus == BillingStatus.Trialing)
             tenant.PastDueAt     = null;
-        }
+        else if (tenant.BillingStatus == BillingStatus.PastDue)
+            tenant.PastDueAt   ??= DateTime.UtcNow;
 
         await db.SaveChangesAsync();
-        _logger.LogInformation("Tenant {TenantId} subscription updated to {Tier}", tenant.Id, tenant.SubscriptionTier);
+        _logger.LogInformation("Tenant {TenantId} subscription updated with status {Status}.", tenant.Id, tenant.BillingStatus);
     }
 
     private async Task HandleSubscriptionDeleted(Event evt, IServiceProvider services)
@@ -414,23 +419,12 @@ public class BillingController : ControllerBase
         return customer.Id;
     }
 
-    private static SubscriptionTier ResolveTier(Subscription sub)
+    private static BillingStatus ResolveBillingStatus(string? stripeStatus) => stripeStatus switch
     {
-        // Map Stripe plan nickname or metadata to our tier enum.
-        // Fallback: infer from price amount.
-        var nickname = sub.Items?.Data?.FirstOrDefault()?.Price?.Nickname?.ToLower() ?? "";
-        if (nickname.Contains("enterprise")) return SubscriptionTier.Enterprise;
-        if (nickname.Contains("pro")) return SubscriptionTier.Pro;
-        return SubscriptionTier.Pro; // default paid = Pro
-    }
-
-    private static int ResolveLicenseCount(SubscriptionTier tier) => tier switch
-    {
-        SubscriptionTier.Free       => 10,
-        SubscriptionTier.Pro        => 250,
-        SubscriptionTier.Enterprise => 0,   // 0 = unlimited
-        _                           => 10,
+        "trialing" => BillingStatus.Trialing,
+        "active" => BillingStatus.Active,
+        "canceled" => BillingStatus.Canceled,
+        "past_due" or "unpaid" or "incomplete" or "incomplete_expired" => BillingStatus.PastDue,
+        _ => BillingStatus.PastDue,
     };
 }
-
-public record CreateCheckoutRequest(string Tier);

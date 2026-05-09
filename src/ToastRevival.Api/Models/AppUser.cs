@@ -6,6 +6,7 @@ public class AppUser : IdentityUser<Guid>
 {
     public Guid TenantId { get; set; }
     public UserRole Role { get; set; } = UserRole.Technician;
+    public bool IsPlatformAdmin { get; set; }
     public string? MfaSecret { get; set; }
     public DateTime? LastLogin { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

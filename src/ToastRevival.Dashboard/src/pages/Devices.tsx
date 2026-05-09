@@ -95,14 +95,14 @@ export default function Devices() {
           style={{
             flex: 1,
             background: 'var(--bg-secondary)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            border: '1px solid rgba(15,23,42,0.12)',
             borderRadius: 'var(--radius-sm)',
             color: 'var(--text-primary)',
             padding: '9px 12px',
             fontSize: 14,
           }}
         />
-        <div style={{ display: 'flex', gap: 1, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', gap: 1, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(15,23,42,0.12)', overflow: 'hidden' }}>
           {(['all', 'online', 'offline'] as const).map(f => (
             <button
               key={f}

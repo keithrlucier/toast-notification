@@ -106,7 +106,7 @@ export default function Moderation() {
       {error && <div className="error-banner">{error}</div>}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 1, background: 'var(--bg-secondary)', borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden', width: 'fit-content', marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 1, background: 'var(--bg-secondary)', borderRadius: 4, border: '1px solid rgba(15,23,42,0.12)', overflow: 'hidden', width: 'fit-content', marginBottom: 20 }}>
         {(['pending', 'blocklist'] as const).map(t => (
           <button
             key={t}
@@ -128,7 +128,7 @@ export default function Moderation() {
           >
             {t === 'pending' ? 'Pending Review' : 'Blocklist'}
             {t === 'pending' && pending.length > 0 && (
-              <span style={{ background: 'var(--status-error)', color: '#0F1117', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: 'var(--status-error)', color: '#FFFFFF', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {pending.length}
               </span>
             )}
@@ -263,7 +263,7 @@ function BlocklistTab({ items, newTerm, onNewTermChange, onAdd, onRemove, adding
           style={{
             flex: 1,
             background: 'var(--bg-secondary)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            border: '1px solid rgba(15,23,42,0.12)',
             borderRadius: 4,
             color: 'var(--text-primary)',
             padding: '10px 12px',

@@ -20,63 +20,42 @@ const ADMIN_ITEMS = [
   { to: '/settings/tenant',   label: 'Settings',   icon: SettingsIcon },
 ];
 
+function roleLabel(role?: string, isPlatformAdmin?: boolean): string {
+  if (isPlatformAdmin) return 'Platform Admin';
+  if (role === 'SuperAdmin') return 'Tenant Owner';
+  if (role === 'Admin') return 'Tenant Admin';
+  if (role === 'Technician') return 'Technician';
+  return 'User';
+}
+
 export default function Sidebar() {
   const { user, logout } = useAuth();
-  const isAdmin = user?.role === 'Admin' || user?.role === 'SuperAdmin';
+  const isAdmin = Boolean(user?.isPlatformAdmin || user?.role === 'Admin' || user?.role === 'SuperAdmin');
 
   return (
-    <aside style={{
-      width: 224,
-      flexShrink: 0,
-      background: 'var(--bg-secondary)',
-      borderRight: '1px solid rgba(255,255,255,0.06)',
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      position: 'sticky',
-      top: 0,
-      overflow: 'hidden',
-    }}>
-      {/* Brand */}
-      <div style={{ padding: '24px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 6,
-            background: 'var(--accent)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-          }}>
+    <aside className="app-sidebar">
+      <div className="sidebar-brand">
+        <div className="sidebar-brand-row">
+          <div className="sidebar-brand-mark">
             <ToastIcon />
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-              Toast Notification
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.email ?? ''}
-            </div>
+            <div className="sidebar-product">Toast Notification</div>
+            <div className="sidebar-console">Enterprise Console</div>
           </div>
         </div>
+        <div className="sidebar-role">{roleLabel(user?.role, user?.isPlatformAdmin)}</div>
       </div>
 
-      {/* Nav */}
-      <nav style={{ flex: 1, overflowY: 'auto', padding: '12px 8px' }}>
+      <nav className="sidebar-nav">
+        <div className="sidebar-section-label">Operations</div>
         {NAV_ITEMS.map(item => (
           <NavItem key={item.to} {...item} />
         ))}
 
         {isAdmin && (
           <>
-            <div style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: 'var(--text-dim)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              padding: '16px 12px 6px',
-            }}>
-              Admin
-            </div>
+            <div className="sidebar-section-label">Administration</div>
             {ADMIN_ITEMS.map(item => (
               <NavItem key={item.to} {...item} />
             ))}
@@ -84,12 +63,10 @@ export default function Sidebar() {
         )}
       </nav>
 
-      {/* Footer */}
-      <div style={{ padding: '12px 8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="sidebar-footer">
         <button
-          className="btn btn-ghost"
+          className="sidebar-signout"
           onClick={logout}
-          style={{ width: '100%', justifyContent: 'flex-start', padding: '10px 12px' }}
         >
           <LogoutIcon />
           Sign out
@@ -110,23 +87,10 @@ function NavItem({ to, label, icon: Icon }: NavItemProps) {
     <NavLink
       to={to}
       end={to === '/'}
-      style={({ isActive }) => ({
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '10px 12px',
-        borderRadius: 6,
-        textDecoration: 'none',
-        fontSize: 14,
-        fontWeight: 500,
-        color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-        background: isActive ? 'rgba(0,201,167,0.08)' : 'transparent',
-        marginBottom: 2,
-        transition: 'background 0.15s, color 0.15s',
-      })}
+      className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
     >
       <Icon />
-      {label}
+      <span>{label}</span>
     </NavLink>
   );
 }

@@ -23,7 +23,7 @@ const AUDIO_OPTIONS = [
 
 const SCENARIO_OPTIONS = [
   { value: 'Default',     label: 'Default' },
-  { value: 'Urgent',      label: 'Urgent — breaks through Do Not Disturb' },
+  { value: 'Urgent',      label: 'Urgent - breaks through Do Not Disturb' },
   { value: 'Reminder',    label: 'Reminder' },
   { value: 'Alarm',       label: 'Alarm' },
   { value: 'IncomingCall', label: 'Incoming Call' },
@@ -38,7 +38,7 @@ export default function TenantSettings() {
 
   // Controlled form state
   const [logoUrl, setLogoUrl]               = useState('');
-  const [primaryColor, setPrimaryColor]     = useState('#00C9A7');
+  const [primaryColor, setPrimaryColor]     = useState('#1F6FBD');
   const [defaultAudio, setDefaultAudio]     = useState('');
   const [defaultScenario, setDefaultScenario] = useState('Default');
 
@@ -47,7 +47,7 @@ export default function TenantSettings() {
       .then(s => {
         setData(s);
         setLogoUrl(s.logoUrl ?? '');
-        setPrimaryColor(s.primaryColor ?? '#00C9A7');
+        setPrimaryColor(s.primaryColor ?? '#1F6FBD');
         setDefaultAudio(s.defaultAudioSetting ?? '');
         setDefaultScenario(s.defaultScenario ?? 'Default');
         setLoading(false);
@@ -137,7 +137,7 @@ export default function TenantSettings() {
                     width: 40,
                     height: 38,
                     padding: 2,
-                    border: '1px solid rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(15,23,42,0.12)',
                     borderRadius: 'var(--radius-sm)',
                     background: 'var(--bg-tertiary)',
                     cursor: 'pointer',
@@ -148,7 +148,7 @@ export default function TenantSettings() {
                   type="text"
                   value={primaryColor}
                   onChange={e => setPrimaryColor(e.target.value)}
-                  placeholder="#00C9A7"
+                  placeholder="#1F6FBD"
                   style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}
                 />
               </div>
@@ -240,7 +240,7 @@ export default function TenantSettings() {
           </div>
         </div>
         <p style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-          Per-tenant rate limit customization is available in Pro and Enterprise plans.
+          Per-tenant rate limit customization is handled by support on the standard plan.
         </p>
       </div>
 
@@ -250,7 +250,7 @@ export default function TenantSettings() {
           onClick={save}
           disabled={saving}
         >
-          {saving ? 'Saving…' : 'Save Changes'}
+          {saving ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
     </div>

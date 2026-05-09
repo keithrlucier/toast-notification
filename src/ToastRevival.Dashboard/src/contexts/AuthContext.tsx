@@ -6,6 +6,7 @@ interface AuthUser {
   tenantId: string;
   email: string;
   role: string;
+  isPlatformAdmin: boolean;
   token: string;
   mfaElevated: boolean;
 }
@@ -16,27 +17,31 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (tenantName: string, email: string, password: string) => Promise<void>;
   logout: () => void;
-  setMfaToken: (token: string, role: string) => void;
+  setMfaToken: (token: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function parseToken(token: string): { mfaElevated: boolean } {
+function parseToken(token: string): { mfaElevated: boolean; isPlatformAdmin: boolean } {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]!));
-    return { mfaElevated: payload['mfa'] === 'true' || payload['mfa'] === true };
+    return {
+      mfaElevated: payload['mfa'] === 'true' || payload['mfa'] === true,
+      isPlatformAdmin: payload['platformAdmin'] === 'true' || payload['platformAdmin'] === true,
+    };
   } catch {
-    return { mfaElevated: false };
+    return { mfaElevated: false, isPlatformAdmin: false };
   }
 }
 
 function userFromResponse(res: AuthResponse): AuthUser {
-  const { mfaElevated } = parseToken(res.token);
+  const { mfaElevated, isPlatformAdmin } = parseToken(res.token);
   return {
     userId: res.userId,
     tenantId: res.tenantId,
     email: res.email,
     role: res.role,
+    isPlatformAdmin: Boolean(res.isPlatformAdmin || isPlatformAdmin),
     token: res.token,
     mfaElevated,
   };
@@ -52,8 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (stored && storedUser) {
       try {
         const parsed = JSON.parse(storedUser) as AuthUser;
-        const { mfaElevated } = parseToken(stored);
-        setUser({ ...parsed, token: stored, mfaElevated });
+        const { mfaElevated, isPlatformAdmin } = parseToken(stored);
+        setUser({ ...parsed, token: stored, mfaElevated, isPlatformAdmin });
       } catch { /* ignore corrupt storage */ }
     }
     setLoading(false);
@@ -81,10 +86,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  const setMfaToken = (token: string, role: string) => {
+  const setMfaToken = (token: string) => {
     if (!user) return;
-    const { mfaElevated } = parseToken(token);
-    const updated = { ...user, token, role, mfaElevated };
+    const { mfaElevated, isPlatformAdmin } = parseToken(token);
+    const updated = { ...user, token, mfaElevated, isPlatformAdmin };
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(updated));
     setUser(updated);

@@ -4,6 +4,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   Queued:             { label: 'Queued',     color: '#7A7A92' },
   Sending:            { label: 'Sending',    color: '#60A5FA' },
   Sent:               { label: 'Sent',       color: '#4ADE80' },
+  PartialFailure:     { label: 'Partial',    color: '#FBBF24' },
   PartiallyDelivered: { label: 'Partial',    color: '#FBBF24' },
   Failed:             { label: 'Failed',     color: '#F87171' },
   PendingReview:      { label: 'Review',     color: '#FBBF24' },

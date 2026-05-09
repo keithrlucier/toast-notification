@@ -4,15 +4,9 @@ namespace ToastRevival.Api.Services;
 
 public interface ILicenseService
 {
-    /// <summary>Tier display label.</summary>
-    string GetTierLabel(SubscriptionTier tier);
-
-    /// <summary>Maximum devices for tier. 0 = unlimited.</summary>
-    int GetDeviceLimit(SubscriptionTier tier);
-
     /// <summary>
     /// True when the tenant can register another device.
-    /// Checks BillingStatus and device count against limit.
+    /// Per-device billing has no license ceiling; canceled billing blocks new registrations.
     /// </summary>
     Task<bool> CanRegisterDeviceAsync(Guid tenantId, CancellationToken ct = default);
 

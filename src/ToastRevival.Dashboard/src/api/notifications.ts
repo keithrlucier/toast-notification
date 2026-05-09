@@ -2,7 +2,7 @@ import { api } from './client';
 
 export type TargetType = 'All' | 'Group' | 'Device';
 export type NotificationStatus =
-  | 'Queued' | 'Sending' | 'Sent' | 'PartiallyDelivered'
+  | 'Queued' | 'Sending' | 'Sent' | 'PartialFailure' | 'PartiallyDelivered'
   | 'Failed' | 'PendingReview' | 'Rejected';
 
 export interface ActionButton {

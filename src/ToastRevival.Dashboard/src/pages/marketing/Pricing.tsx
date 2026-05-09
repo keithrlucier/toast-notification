@@ -8,7 +8,7 @@ const INCLUSIONS = [
     items: [
       'Six pre-built templates (Announcement, Alert, Action Required, Reminder, Celebration, Maintenance)',
       'Title, body, hero image, logo, action buttons, audio',
-      'Scenario routing — Default, Reminder, Alarm, IncomingCall, Urgent',
+      'Scenario routing - Default, Reminder, Alarm, IncomingCall, Urgent',
       'Tenant-uploadable asset library with image moderation',
       'Notification scheduling and recurring sends',
     ],
@@ -44,8 +44,8 @@ const INCLUSIONS = [
   {
     heading: 'Security',
     items: [
-      'TLS 1.3, HSTS, Let’s Encrypt',
-      'JWT auth — 60-min user, 365-day device tokens',
+      "TLS 1.3, HSTS, Let's Encrypt",
+      'JWT auth - 60-min user, 365-day device tokens',
       'Per-tenant HMAC-SHA256 payload signing, verified by every endpoint',
       'Azure Content Safety on every send',
       'AES-256 at rest. DPAPI on agent config. Multi-tenant query-filter isolation.',
@@ -69,12 +69,12 @@ const FAQ = [
     a: 'A device is any Windows endpoint where the Toast Notification agent has been registered and is currently active. Decommissioning a device frees the slot; re-registering a machine after a clean install reuses it. Inactive devices that have not pinged in 30 days are not billed.',
   },
   {
-    q: 'What happens if I exceed my subscribed device count mid-month?',
-    a: 'New device registrations beyond your subscribed quantity return HTTP 402 (payment required) until you increase your seat count or decommission existing devices. Already-registered devices keep receiving notifications without interruption — the gate is on registration, not delivery. You can adjust seats live in the Stripe billing portal.',
+    q: 'What happens if my active device count changes mid-month?',
+    a: 'Active device count is synced to Stripe after registration and decommissioning. Billing uses the higher of active devices or the 100-device monthly minimum. Canceled subscriptions block new registrations until billing is restored.',
   },
   {
     q: 'Is there a contract or annual commitment?',
-    a: 'No. Billing is monthly. Cancel from the Stripe billing portal at any time; service continues through the end of the current period. Annual billing with a discount can be arranged for fleets above 1,000 devices — contact procurement.',
+    a: 'No. Billing is monthly. Cancel from the Stripe billing portal at any time; service continues through the end of the current period. Annual billing with a discount can be arranged for fleets above 1,000 devices - contact procurement.',
   },
   {
     q: 'Do you offer volume pricing?',
@@ -82,11 +82,11 @@ const FAQ = [
   },
   {
     q: 'How does the 14-day trial work?',
-    a: 'New tenants receive 14 days of full-feature access with no credit-card requirement. Add up to 100 devices during the trial. At the end, add a payment method to continue; otherwise the tenant moves to read-only and devices stop registering until billing is configured.',
+    a: 'New tenants receive 14 days of full-feature access during Stripe checkout. Billing starts after the trial unless the subscription is canceled. Canceled tenants cannot register new devices until billing is restored.',
   },
   {
     q: 'What payment methods do you accept?',
-    a: 'Stripe handles billing — credit card and ACH for self-serve. NET-30 invoicing with a signed master service agreement is available for fleets above 1,000 devices.',
+    a: 'Stripe handles billing - credit card and ACH for self-serve. NET-30 invoicing with a signed master service agreement is available for fleets above 1,000 devices.',
   },
   {
     q: 'Where is data stored?',
@@ -112,7 +112,7 @@ export default function Pricing() {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
 
   useEffect(() => {
-    document.title = 'Pricing — Toast Notification';
+    document.title = 'Pricing - Toast Notification';
     const description =
       '$0.22 per managed device per month. 100-device subscription minimum. 14-day free trial. One plan, no tiers, no upsells.';
     let meta = document.querySelector('meta[name="description"]');
@@ -146,7 +146,7 @@ export default function Pricing() {
               <div className="m-plan-price-block">
                 <span className="m-plan-price">$0.22</span>
                 <span className="m-plan-price-unit">per device / month</span>
-                <span className="m-plan-price-floor">100-device subscription minimum · $22 / month entry</span>
+                <span className="m-plan-price-floor">100-device subscription minimum - $22 / month entry</span>
               </div>
             </div>
 
@@ -160,8 +160,8 @@ export default function Pricing() {
             </div>
 
             <p className="m-plan-fineprint">
-              Trial requires no credit card. Add up to 100 devices during the trial. Billing begins on payment-method
-              capture; cancel any time from the Stripe billing portal.
+              Trial starts in Stripe checkout. Billing begins after 14 days unless canceled; manage payment from the
+              Stripe billing portal.
             </p>
           </div>
         </div>
@@ -261,8 +261,7 @@ export default function Pricing() {
         <div className="m-final-cta">
           <h2 id="pricing-cta-heading">Procurement-friendly. Engineering-grade.</h2>
           <p>
-            Start a 14-day trial without a credit card, or contact us for volume pricing, NET-30 terms, or a master
-            service agreement.
+            Start a 14-day trial, or contact us for volume pricing, NET-30 terms, or a master service agreement.
           </p>
           <div className="m-final-cta-buttons">
             <Link to="/register" className="m-btn m-btn-primary">

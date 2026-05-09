@@ -38,7 +38,7 @@ function DeliveryExportMenu({
           <div style={{
             position: 'absolute', right: 0, top: '100%', marginTop: 4,
             background: 'var(--bg-tertiary)',
-            border: '1px solid rgba(255,255,255,0.10)',
+            border: '1px solid rgba(15,23,42,0.14)',
             borderRadius: 6,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
             zIndex: 20,
@@ -144,7 +144,7 @@ export default function History() {
           style={{
             width: '100%',
             background: 'var(--bg-secondary)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            border: '1px solid rgba(15,23,42,0.12)',
             borderRadius: 4,
             color: 'var(--text-primary)',
             padding: '9px 12px',
@@ -207,7 +207,7 @@ export default function History() {
                     </td>
                   </tr>
                   {expanded === n.id && (
-                    <tr style={{ background: 'rgba(255,255,255,0.01)' }}>
+                    <tr style={{ background: '#F8FBFE' }}>
                       <td colSpan={6} style={{ padding: '16px 24px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, flex: 1 }}>

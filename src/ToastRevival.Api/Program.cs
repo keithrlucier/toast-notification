@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -44,6 +46,7 @@ var jwtKey = builder.Configuration["Jwt:Key"]
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opts =>
     {
+        opts.MapInboundClaims = false;
         opts.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
@@ -68,7 +71,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(opts =>
+{
+    opts.AddPolicy("PlatformAdmin", policy =>
+        policy.RequireClaim("platformAdmin", "true"));
+});
 
 // Rate limiting (D7)
 builder.Services.AddRateLimiter(opts =>
@@ -146,6 +153,7 @@ builder.Services.AddSingleton<IPdfExportService, PdfExportService>();
 
 // M6 licensing
 builder.Services.AddScoped<ILicenseService, LicenseService>();
+builder.Services.AddScoped<IStripeBillingSyncService, StripeBillingSyncService>();
 
 // CORS — dev allows any origin; production should lock this down via config
 builder.Services.AddCors(opts =>
@@ -158,7 +166,11 @@ builder.Services.AddCors(opts =>
              .AllowAnyMethod().AllowAnyHeader().AllowCredentials();
     }));
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(opts =>
+    {
+        opts.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

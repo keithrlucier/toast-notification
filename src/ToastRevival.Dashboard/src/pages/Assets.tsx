@@ -128,7 +128,7 @@ export default function Assets() {
             background: 'var(--bg-tertiary)',
             borderRadius: 4,
             overflow: 'hidden',
-            border: '1px solid rgba(255,255,255,0.08)',
+            border: '1px solid rgba(15,23,42,0.12)',
           }}>
             {ASSET_TYPE_OPTIONS.map(opt => (
               <button
@@ -158,7 +158,7 @@ export default function Assets() {
           onDrop={onDrop}
           onClick={openFilePicker}
           style={{
-            border: `2px dashed ${dragOver ? 'var(--accent)' : 'rgba(255,255,255,0.14)'}`,
+            border: `2px dashed ${dragOver ? 'var(--accent)' : 'rgba(15,23,42,0.18)'}`,
             borderRadius: 'var(--radius-md)',
             padding: '32px 24px',
             display: 'flex',

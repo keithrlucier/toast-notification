@@ -288,7 +288,7 @@ export default function Compose() {
                       style={{
                         flex: 1,
                         background: 'var(--bg-tertiary)',
-                        border: '1px solid rgba(255,255,255,0.08)',
+                        border: '1px solid rgba(15,23,42,0.12)',
                         borderRadius: 4,
                         color: 'var(--text-primary)',
                         padding: '8px 10px',
@@ -303,7 +303,7 @@ export default function Compose() {
                       style={{
                         width: 100,
                         background: 'var(--bg-tertiary)',
-                        border: '1px solid rgba(255,255,255,0.08)',
+                        border: '1px solid rgba(15,23,42,0.12)',
                         borderRadius: 4,
                         color: 'var(--text-dim)',
                         padding: '8px 10px',
@@ -316,7 +316,7 @@ export default function Compose() {
                       onChange={e => updateButton(i, { style: e.target.value as 'Default' | 'Success' | 'Critical' })}
                       style={{
                         background: 'var(--bg-tertiary)',
-                        border: '1px solid rgba(255,255,255,0.08)',
+                        border: '1px solid rgba(15,23,42,0.12)',
                         borderRadius: 4,
                         color: 'var(--text-primary)',
                         padding: '8px 10px',
@@ -366,7 +366,7 @@ export default function Compose() {
             <h3 style={{ fontSize: 14, fontWeight: 600 }}>Target</h3>
 
             {/* Target type */}
-            <div style={{ display: 'flex', gap: 1, background: 'var(--bg-tertiary)', borderRadius: 4, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', gap: 1, background: 'var(--bg-tertiary)', borderRadius: 4, overflow: 'hidden', border: '1px solid rgba(15,23,42,0.12)' }}>
               {(['All', 'Group', 'Device'] as TargetMode[]).map(mode => (
                 <button
                   key={mode}
@@ -433,7 +433,7 @@ export default function Compose() {
             </div>
 
             {/* Send */}
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', paddingTop: 8, borderTop: '1px solid rgba(15,23,42,0.10)' }}>
               <button
                 className="btn btn-primary"
                 style={{ flex: 1, justifyContent: 'center', padding: '12px' }}
@@ -514,7 +514,7 @@ function DeviceMultiSelect({ devices, selected, onChange }: DeviceMultiSelectPro
         style={{
           width: '100%',
           background: 'var(--bg-tertiary)',
-          border: '1px solid rgba(255,255,255,0.08)',
+          border: '1px solid rgba(15,23,42,0.12)',
           borderRadius: 4,
           color: 'var(--text-primary)',
           padding: '8px 10px',

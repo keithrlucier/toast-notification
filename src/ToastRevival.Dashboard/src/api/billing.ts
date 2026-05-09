@@ -1,17 +1,18 @@
 import { api } from './client';
 
 export interface BillingPlan {
-  tier: string;
-  tierLabel: string;
-  licenseCount: number;
-  deviceLimit: number | null;
-  consumedCount: number;
+  planName: string;
+  pricePerDevice: number;
+  minimumDevices: number;
+  monthlyFloor: number;
+  deviceCount: number;
+  billableDevices: number;
+  currentBill: number;
   billingStatus: string;
   licenseStart: string | null;
   licenseEnd: string | null;
+  trialEnd: string | null;
   stripeCustomerId: string | null;
-  isNearLimit: boolean;
-  isAtLimit: boolean;
 }
 
 export interface Invoice {
@@ -30,8 +31,8 @@ export const billingApi = {
   getPlan: () =>
     api.get<BillingPlan>('/api/billing/plan'),
 
-  createCheckout: (tier: 'Pro' | 'Enterprise') =>
-    api.post<{ url: string }>('/api/billing/checkout', { tier }),
+  createCheckout: () =>
+    api.post<{ url: string }>('/api/billing/checkout'),
 
   createPortal: () =>
     api.post<{ url: string }>('/api/billing/portal'),

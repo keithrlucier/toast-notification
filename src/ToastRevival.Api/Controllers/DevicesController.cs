@@ -21,13 +21,20 @@ public class DevicesController : ControllerBase
     private readonly IAuditService _audit;
 
     private readonly ILicenseService _license;
+    private readonly IStripeBillingSyncService _billingSync;
 
-    public DevicesController(AppDbContext db, ITokenService tokens, IAuditService audit, ILicenseService license)
+    public DevicesController(
+        AppDbContext db,
+        ITokenService tokens,
+        IAuditService audit,
+        ILicenseService license,
+        IStripeBillingSyncService billingSync)
     {
         _db = db;
         _tokens = tokens;
         _audit = audit;
         _license = license;
+        _billingSync = billingSync;
     }
 
     /// <summary>
@@ -60,9 +67,7 @@ public class DevicesController : ControllerBase
         // M6 D3: license enforcement — block registration when limit reached or billing canceled
         if (!await _license.CanRegisterDeviceAsync(req.TenantId))
         {
-            return tenant.BillingStatus == BillingStatus.Canceled
-                ? StatusCode(403, "Subscription canceled. Please renew to register devices.")
-                : StatusCode(402, "Device limit reached. Upgrade your plan to register more devices.");
+            return StatusCode(403, "Subscription canceled. Please renew to register devices.");
         }
 
         var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
@@ -83,6 +88,7 @@ public class DevicesController : ControllerBase
 
         // M6 D4: maintain ConsumedCount
         await _license.IncrementConsumedAsync(tenant);
+        await _billingSync.SyncSubscriptionQuantityAsync(tenant);
 
         var jwt = _tokens.CreateDeviceToken(device);
 
@@ -129,7 +135,10 @@ public class DevicesController : ControllerBase
         var tenant = await _db.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == tenantId);
         if (tenant is not null)
+        {
             await _license.DecrementConsumedAsync(tenant);
+            await _billingSync.SyncSubscriptionQuantityAsync(tenant);
+        }
 
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         await _audit.LogAsync(tenantId, userId, "device.decommission", "Device", id.ToString());

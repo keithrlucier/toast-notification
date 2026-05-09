@@ -21,15 +21,21 @@ export interface AuthResponse {
   tenantId: string;
   email: string;
   role: string;
+  isPlatformAdmin: boolean;
 }
 
 export interface MfaEnrollResponse {
   secret: string;
-  otpauthUri: string;
+  qrUri: string;
 }
 
 export interface MfaVerifyRequest {
   code: string;
+}
+
+export interface MfaVerifyResponse {
+  mfaToken: string;
+  expiresAt: string;
 }
 
 export const authApi = {
@@ -43,5 +49,5 @@ export const authApi = {
     api.post<MfaEnrollResponse>('/api/auth/mfa/enroll'),
 
   mfaVerify: (req: MfaVerifyRequest) =>
-    api.post<AuthResponse>('/api/auth/mfa/verify', req),
+    api.post<MfaVerifyResponse>('/api/auth/mfa/verify', req),
 };

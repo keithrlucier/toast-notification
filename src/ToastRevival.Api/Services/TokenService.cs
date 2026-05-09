@@ -18,9 +18,10 @@ public class TokenService : ITokenService
 
     public string CreateUserToken(AppUser user)
     {
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email!),
             new Claim("tenantId", user.TenantId.ToString()),
             new Claim("role", user.Role.ToString()),
@@ -28,7 +29,10 @@ public class TokenService : ITokenService
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
-        return BuildToken(claims, GetExpiresAt("Jwt:ExpiresInMinutes", 60, isMinutes: true));
+        if (user.IsPlatformAdmin)
+            claims.Add(new Claim("platformAdmin", "true"));
+
+        return BuildToken(claims.ToArray(), GetExpiresAt("Jwt:ExpiresInMinutes", 60, isMinutes: true));
     }
 
     public string CreateDeviceToken(Device device)
@@ -53,9 +57,10 @@ public class TokenService : ITokenService
 
     public string CreateMfaToken(AppUser user)
     {
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email!),
             new Claim("tenantId", user.TenantId.ToString()),
             new Claim("role", user.Role.ToString()),
@@ -64,7 +69,10 @@ public class TokenService : ITokenService
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
-        return BuildToken(claims, DateTime.UtcNow.AddMinutes(15));
+        if (user.IsPlatformAdmin)
+            claims.Add(new Claim("platformAdmin", "true"));
+
+        return BuildToken(claims.ToArray(), DateTime.UtcNow.AddMinutes(15));
     }
 
     private string BuildToken(Claim[] claims, DateTime expires)

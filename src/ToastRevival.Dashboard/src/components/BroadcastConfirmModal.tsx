@@ -23,7 +23,7 @@ export default function BroadcastConfirmModal({ deviceCount, requiresMfa, onConf
     setError('');
     try {
       const res = await authApi.mfaVerify({ code: mfaCode.trim() });
-      setMfaToken(res.token, res.role);
+      setMfaToken(res.mfaToken);
       setMfaVerified(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'MFA verification failed.');

@@ -22,7 +22,7 @@ export default function ProtectedRoute({ children, requireAdmin = false }: Props
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (requireAdmin && user.role !== 'Admin' && user.role !== 'SuperAdmin') {
+  if (requireAdmin && !user.isPlatformAdmin && user.role !== 'Admin' && user.role !== 'SuperAdmin') {
     return <Navigate to="/" replace />;
   }
 

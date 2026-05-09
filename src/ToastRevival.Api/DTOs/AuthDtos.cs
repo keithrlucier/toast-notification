@@ -20,4 +20,5 @@ public record AuthResponse(
     Guid UserId,
     Guid TenantId,
     string Email,
-    string Role);
+    string Role,
+    bool IsPlatformAdmin);

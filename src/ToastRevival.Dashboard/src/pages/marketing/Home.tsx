@@ -68,7 +68,7 @@ const STEPS = [
 
 export default function Home() {
   useEffect(() => {
-    document.title = 'Toast Notification — Managed Windows notifications for MSPs';
+    document.title = 'Toast Notification - Managed Windows notifications for MSPs';
 
     const description =
       'Toast Notification is the platform MSPs use to send branded Windows toast notifications across thousands of endpoints. Multi-tenant, signed, audited.';
@@ -105,7 +105,7 @@ export default function Home() {
               </Link>
             </div>
             <p className="m-hero-fineprint">
-              No credit card to begin. 100-device subscription minimum applies after trial.
+              14-day trial starts during checkout. 100-device subscription minimum applies after trial.
             </p>
           </div>
 
@@ -325,8 +325,7 @@ WS-014: no retry`}
         <div className="m-final-cta">
           <h2 id="final-cta-heading">Start the 14-day trial.</h2>
           <p>
-            Register a tenant, deploy the signed MSI, send your first notification in under ten minutes. No credit card
-            required to begin.
+            Register a tenant, deploy the signed MSI, and send your first notification in under ten minutes.
           </p>
           <div className="m-final-cta-buttons">
             <Link to="/register" className="m-btn m-btn-primary">

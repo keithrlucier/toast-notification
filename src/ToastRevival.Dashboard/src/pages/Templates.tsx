@@ -149,7 +149,7 @@ function TemplateCard({ template, onSelect }: TemplateCardProps) {
         background: 'var(--bg-secondary)',
         borderRadius: 'var(--radius-md)',
         overflow: 'hidden',
-        border: '1px solid rgba(255,255,255,0.06)',
+        border: '1px solid rgba(15,23,42,0.10)',
         cursor: 'pointer',
         transition: 'border-color 0.15s, box-shadow 0.15s',
       }}
@@ -159,7 +159,7 @@ function TemplateCard({ template, onSelect }: TemplateCardProps) {
         (e.currentTarget as HTMLDivElement).style.boxShadow = '0 0 0 1px rgba(0,201,167,0.15)';
       }}
       onMouseLeave={e => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(255,255,255,0.06)';
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(15,23,42,0.10)';
         (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
       }}
     >
@@ -187,7 +187,7 @@ function TemplateCard({ template, onSelect }: TemplateCardProps) {
       {/* Info */}
       <div style={{
         padding: '16px 20px',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
+        borderTop: '1px solid rgba(15,23,42,0.10)',
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'space-between',

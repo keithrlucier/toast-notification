@@ -33,7 +33,7 @@ function ChartTooltip({ active, payload, label }: {
   return (
     <div style={{
       background: 'var(--bg-tertiary)',
-      border: '1px solid rgba(255,255,255,0.08)',
+      border: '1px solid rgba(15,23,42,0.12)',
       borderRadius: 6,
       padding: '8px 12px',
       fontSize: 12,
@@ -51,7 +51,7 @@ function ChartTooltip({ active, payload, label }: {
 
 const STATUS_COLORS: Record<string, string> = {
   Delivered: '#4ADE80',
-  Clicked:   '#00C9A7',
+  Clicked:   '#1F6FBD',
   Dismissed: '#7A7A92',
   Failed:    '#F87171',
   Pending:   '#FBBF24',
@@ -117,7 +117,7 @@ export default function Analytics() {
         {/* Time range selector — segmented button control per Diana's spec */}
         <div style={{
           display: 'flex',
-          border: '1px solid rgba(255,255,255,0.1)',
+          border: '1px solid rgba(15,23,42,0.14)',
           borderRadius: 'var(--radius-sm)',
           overflow: 'hidden',
         }}>
@@ -132,7 +132,7 @@ export default function Analytics() {
                 border: 'none',
                 cursor: 'pointer',
                 background: days === d ? 'var(--accent)' : 'var(--bg-tertiary)',
-                color: days === d ? '#0F1117' : 'var(--text-secondary)',
+                color: days === d ? '#FFFFFF' : 'var(--text-secondary)',
                 transition: 'background 0.15s, color 0.15s',
               }}
             >
@@ -179,7 +179,7 @@ export default function Analytics() {
           <LineChart data={volume} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="rgba(255,255,255,0.06)"
+              stroke="rgba(15,23,42,0.10)"
               vertical={false}
             />
             <XAxis
@@ -202,7 +202,7 @@ export default function Analytics() {
               type="monotone"
               dataKey="sent"
               name="Sent"
-              stroke="#00C9A7"
+              stroke="#1F6FBD"
               strokeWidth={2}
               dot={false}
               isAnimationActive={false}
@@ -230,7 +230,7 @@ export default function Analytics() {
             <BarChart data={statusData} margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="rgba(255,255,255,0.06)"
+                stroke="rgba(15,23,42,0.10)"
                 vertical={false}
               />
               <XAxis
@@ -267,7 +267,7 @@ export default function Analytics() {
             >
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="rgba(255,255,255,0.06)"
+                stroke="rgba(15,23,42,0.10)"
                 horizontal={false}
               />
               <XAxis

@@ -63,7 +63,7 @@ public class AuthController : ControllerBase
             TenantId = tenant.Id,
             Email = req.Email,
             UserName = req.Email,
-            Role = UserRole.Admin,
+            Role = UserRole.SuperAdmin,
             SecurityStamp = Guid.NewGuid().ToString(),
         };
 
@@ -94,7 +94,7 @@ public class AuthController : ControllerBase
         var refresh = _tokens.CreateRefreshToken();
         var expiresAt = DateTime.UtcNow.AddMinutes(60);
 
-        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, tenant.Id, user.Email!, user.Role.ToString()));
+        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, tenant.Id, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
     }
 
     private static string? NormalizeSubdomain(string? raw)
@@ -153,6 +153,8 @@ public class AuthController : ControllerBase
         if (user is null || !await _userManager.CheckPasswordAsync(user, req.Password))
             return Unauthorized("Invalid credentials.");
 
+        await PromoteSoleTenantOwnerAsync(user);
+
         user.LastLogin = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
@@ -160,7 +162,23 @@ public class AuthController : ControllerBase
         var refresh = _tokens.CreateRefreshToken();
         var expiresAt = DateTime.UtcNow.AddMinutes(60);
 
-        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString()));
+        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
+    }
+
+    private async Task PromoteSoleTenantOwnerAsync(AppUser user)
+    {
+        if (user.Role != UserRole.Admin) return;
+
+        var hasSuperAdmin = await _db.Users.IgnoreQueryFilters()
+            .AnyAsync(u => u.TenantId == user.TenantId && u.Role == UserRole.SuperAdmin);
+        if (hasSuperAdmin) return;
+
+        var adminCount = await _db.Users.IgnoreQueryFilters()
+            .CountAsync(u => u.TenantId == user.TenantId
+                && (u.Role == UserRole.Admin || u.Role == UserRole.SuperAdmin));
+
+        if (adminCount == 1)
+            user.Role = UserRole.SuperAdmin;
     }
 
     /// <summary>

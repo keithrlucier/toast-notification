@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 
 interface UserResponse {
   id: string;
@@ -14,8 +15,14 @@ type UserRole = 'Technician' | 'Admin' | 'SuperAdmin';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   Technician: 'Technician',
-  Admin: 'Admin',
-  SuperAdmin: 'Super Admin',
+  Admin: 'Tenant Admin',
+  SuperAdmin: 'Tenant Owner',
+};
+
+const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
+  Technician: 'Standard notification operations.',
+  Admin: 'Tenant settings, billing, moderation, and team access.',
+  SuperAdmin: 'Tenant owner authority and role assignment.',
 };
 
 function formatDate(iso: string | null): string {
@@ -28,20 +35,22 @@ function formatDate(iso: string | null): string {
 
 function RoleBadge({ role }: { role: UserRole }) {
   const colors: Record<UserRole, string> = {
-    Technician: 'var(--text-dim)',
-    Admin: 'var(--status-info)',
-    SuperAdmin: 'var(--accent)',
+    Technician: '#64748B',
+    Admin: '#1F6FBD',
+    SuperAdmin: '#0F766E',
   };
   return (
     <span style={{
       display: 'inline-block',
-      padding: '2px 8px',
+      padding: '3px 8px',
       borderRadius: 4,
-      fontSize: 12,
-      fontWeight: 600,
+      fontSize: 11,
+      fontWeight: 700,
       color: colors[role],
-      background: `${colors[role]}18`,
-      border: `1px solid ${colors[role]}40`,
+      background: `${colors[role]}12`,
+      border: `1px solid ${colors[role]}33`,
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
     }}>
       {ROLE_LABELS[role]}
     </span>
@@ -49,8 +58,8 @@ function RoleBadge({ role }: { role: UserRole }) {
 }
 
 const selectStyle: React.CSSProperties = {
-  background: 'var(--bg-tertiary)',
-  border: '1px solid rgba(255,255,255,0.08)',
+  background: '#FFFFFF',
+  border: '1px solid var(--border-subtle)',
   borderRadius: 'var(--radius-sm)',
   color: 'var(--text-primary)',
   padding: '4px 8px',
@@ -61,6 +70,7 @@ const selectStyle: React.CSSProperties = {
 };
 
 export default function Users() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -104,13 +114,14 @@ export default function Users() {
       setShowInvite(false);
       await load();
     } catch (err) {
-      setInviteError(err instanceof ApiError ? err.message : 'Failed to create user.');
+      setInviteError(err instanceof ApiError ? err.message : 'Failed to create account.');
     } finally {
       setInviting(false);
     }
   };
 
   const handleRoleChange = async (userId: string, role: UserRole) => {
+    if (userId === currentUser?.userId) return;
     setUpdatingRole(userId);
     try {
       await api.put(`/api/users/${userId}/role`, { role });
@@ -123,37 +134,56 @@ export default function Users() {
   };
 
   const handleRemove = async (userId: string) => {
+    if (userId === currentUser?.userId) return;
+    const target = users.find(u => u.id === userId);
+    if (!confirm(`Remove ${target?.email ?? 'this account'} from this tenant?`)) return;
+
     setRemovingUser(userId);
     try {
       await api.delete(`/api/users/${userId}`);
       setUsers(prev => prev.filter(u => u.id !== userId));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to remove user.');
+      setError(err instanceof ApiError ? err.message : 'Failed to remove account.');
     } finally {
       setRemovingUser(null);
     }
   };
 
+  const roleCounts = users.reduce<Record<UserRole, number>>((counts, u) => {
+    counts[u.role] += 1;
+    return counts;
+  }, { Technician: 0, Admin: 0, SuperAdmin: 0 });
+
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1>Users</h1>
-          <p className="subtitle">Manage team members and their permissions</p>
+          <h1>Access Control</h1>
+          <p className="subtitle">Provision operators and assign administrative authority</p>
         </div>
         <button
           className="btn btn-primary"
           onClick={() => setShowInvite(s => !s)}
         >
-          {showInvite ? 'Cancel' : 'Add User'}
+          {showInvite ? 'Cancel' : 'Provision Account'}
         </button>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
 
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
+        {(['SuperAdmin', 'Admin', 'Technician'] as UserRole[]).map(role => (
+          <div className="metric-card" key={role} style={{ padding: 18 }}>
+            <div className="metric-label">{ROLE_LABELS[role]}</div>
+            <div className="metric-value" style={{ fontSize: 26 }}>{roleCounts[role]}</div>
+            <div className="metric-sub">{ROLE_DESCRIPTIONS[role]}</div>
+          </div>
+        ))}
+      </div>
+
       {showInvite && (
         <div className="card" style={{ marginBottom: 24 }}>
-          <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600 }}>Add New User</h3>
+          <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700 }}>Provision Account</h3>
           <form onSubmit={handleInvite}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 16, marginBottom: 16 }}>
               <div className="field">
@@ -184,8 +214,8 @@ export default function Users() {
                   onChange={e => setInviteRole(e.target.value as UserRole)}
                 >
                   <option value="Technician">Technician</option>
-                  <option value="Admin">Admin</option>
-                  <option value="SuperAdmin">Super Admin</option>
+                  <option value="Admin">Tenant Admin</option>
+                  <option value="SuperAdmin">Tenant Owner</option>
                 </select>
               </div>
             </div>
@@ -195,18 +225,18 @@ export default function Users() {
               </div>
             )}
             <button type="submit" className="btn btn-primary" disabled={inviting}>
-              {inviting ? 'Creating…' : 'Create User'}
+              {inviting ? 'Creating...' : 'Create Account'}
             </button>
           </form>
         </div>
       )}
 
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-dim)' }}>Loading…</div>
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-dim)' }}>Loading...</div>
         ) : users.length === 0 ? (
           <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-dim)' }}>
-            No users found. Add a user above to get started.
+            No accounts found. Provision an account above to get started.
           </div>
         ) : (
           <table className="data-table">
@@ -217,49 +247,73 @@ export default function Users() {
                 <th>MFA</th>
                 <th>Last Active</th>
                 <th>Member Since</th>
-                <th style={{ width: 180 }}>Actions</th>
+                <th style={{ width: 190 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {users.map(user => (
-                <tr key={user.id}>
-                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{user.email}</td>
-                  <td><RoleBadge role={user.role} /></td>
-                  <td>
-                    <span style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: user.mfaEnabled ? 'var(--status-success)' : 'var(--text-dim)',
-                    }}>
-                      {user.mfaEnabled ? 'Enabled' : 'Not set'}
-                    </span>
-                  </td>
-                  <td>{formatDate(user.lastLogin)}</td>
-                  <td>{formatDate(user.createdAt)}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <select
-                        style={selectStyle}
-                        value={user.role}
-                        disabled={updatingRole === user.id}
-                        onChange={e => void handleRoleChange(user.id, e.target.value as UserRole)}
-                      >
-                        <option value="Technician">Technician</option>
-                        <option value="Admin">Admin</option>
-                        <option value="SuperAdmin">Super Admin</option>
-                      </select>
-                      <button
-                        className="btn btn-ghost"
-                        style={{ fontSize: 12, padding: '4px 10px', height: 30, color: 'var(--status-error)' }}
-                        disabled={removingUser === user.id}
-                        onClick={() => void handleRemove(user.id)}
-                      >
-                        {removingUser === user.id ? '…' : 'Remove'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {users.map(user => {
+                const isCurrentUser = user.id === currentUser?.userId;
+
+                return (
+                  <tr key={user.id}>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                      {user.email}
+                      {isCurrentUser && (
+                        <span style={{
+                          marginLeft: 8,
+                          padding: '2px 6px',
+                          borderRadius: 3,
+                          background: '#E8EEF5',
+                          color: 'var(--text-dim)',
+                          fontFamily: 'var(--font-sans)',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: '0.05em',
+                          textTransform: 'uppercase',
+                        }}>
+                          Current
+                        </span>
+                      )}
+                    </td>
+                    <td><RoleBadge role={user.role} /></td>
+                    <td>
+                      <span style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: user.mfaEnabled ? 'var(--status-success)' : 'var(--text-dim)',
+                      }}>
+                        {user.mfaEnabled ? 'Enabled' : 'Not set'}
+                      </span>
+                    </td>
+                    <td>{formatDate(user.lastLogin)}</td>
+                    <td>{formatDate(user.createdAt)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <select
+                          style={selectStyle}
+                          value={user.role}
+                          disabled={updatingRole === user.id || isCurrentUser}
+                          onChange={e => void handleRoleChange(user.id, e.target.value as UserRole)}
+                          title={isCurrentUser ? 'You cannot change your own role.' : undefined}
+                        >
+                          <option value="Technician">Technician</option>
+                          <option value="Admin">Tenant Admin</option>
+                          <option value="SuperAdmin">Tenant Owner</option>
+                        </select>
+                        <button
+                          className="btn btn-ghost"
+                          style={{ fontSize: 12, padding: '4px 10px', height: 30, color: 'var(--status-error)' }}
+                          disabled={removingUser === user.id || isCurrentUser}
+                          onClick={() => void handleRemove(user.id)}
+                          title={isCurrentUser ? 'You cannot remove your own account.' : undefined}
+                        >
+                          {removingUser === user.id ? '...' : 'Remove'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

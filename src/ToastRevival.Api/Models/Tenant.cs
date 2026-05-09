@@ -17,11 +17,11 @@ public class Tenant
     // RegisterDeviceRequest or registration is rejected.
     public string? EnrollmentKey { get; set; }
 
-    public int LicenseCount { get; set; } = 10;
+    public int LicenseCount { get; set; }
     public int ConsumedCount { get; set; }
     public DateTime? LicenseStart { get; set; }
     public DateTime? LicenseEnd { get; set; }
-    public SubscriptionTier SubscriptionTier { get; set; } = SubscriptionTier.Free;
+    public SubscriptionTier SubscriptionTier { get; set; } = SubscriptionTier.Standard;
     public BillingStatus BillingStatus { get; set; } = BillingStatus.Active;
     // Stripe billing (M6)
     public string? StripeCustomerId { get; set; }

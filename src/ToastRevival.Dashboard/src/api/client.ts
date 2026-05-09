@@ -24,12 +24,27 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
-      const body = await res.json() as {
-        message?: string;
-        title?: string;
-        detail?: string;
-        errors?: Record<string, string[]> | string[];
-      };
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        if (text.trim()) message = text.trim();
+        throw new Error('handled');
+      }
+
+      const body = await res.json() as
+        | string
+        | {
+            message?: string;
+            title?: string;
+            detail?: string;
+            error?: string;
+            errors?: Record<string, string[]> | string[];
+          };
+
+      if (typeof body === 'string') {
+        if (body.trim()) message = body.trim();
+        throw new Error('handled');
+      }
 
       // ASP.NET Core ProblemDetails (default for [Required]/[EmailAddress]/etc.
       // validation failures) carries field-level messages under `errors` as
@@ -42,9 +57,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       } else if (Array.isArray(body.errors) && body.errors.length > 0) {
         message = body.errors.join(' ');
       } else {
-        message = body.detail ?? body.message ?? body.title ?? message;
+        message = body.detail ?? body.message ?? body.error ?? body.title ?? message;
       }
-    } catch { /* ignore */ }
+    } catch { /* ignore parse failures; keep best message */ }
     throw new ApiError(res.status, message);
   }
 

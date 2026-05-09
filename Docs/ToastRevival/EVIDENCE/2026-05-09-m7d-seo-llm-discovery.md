@@ -140,6 +140,59 @@ M  Docs/ToastRevival/CODEX-HANDOFF.md
 
 ---
 
-## Production verification
+## Production verification (2026-05-09 PM, post-deploy)
 
-To be appended after deploy.
+**Deploy procedure:**
+```bash
+tar -cz -C src/ToastRevival.Dashboard/dist -f /tmp/toast-dashboard-m7d.tgz .
+scp -i Docs/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem \
+  /tmp/toast-dashboard-m7d.tgz ubuntu@54.82.103.160:/tmp/
+ssh -i ... ubuntu@54.82.103.160 \
+  'set -e; \
+   sudo cp -a /opt/toast/dashboard /opt/toast/dashboard.bak.m7d; \
+   sudo find /opt/toast/dashboard -mindepth 1 -delete; \
+   sudo tar -xzf /tmp/toast-dashboard-m7d.tgz -C /opt/toast/dashboard; \
+   sudo chown -R toast:toast /opt/toast/dashboard'
+```
+
+Backup retained at `/opt/toast/dashboard.bak.m7d` for rollback.
+
+**Curl verification (HTTPS):**
+
+| Path | HTTP | Bytes | Notes |
+|---|---|---|---|
+| `/` | 200 | 2,788 | SPA shell |
+| `/pricing` | 200 | 2,788 | SPA shell |
+| `/docs` | 200 | 2,788 | SPA shell |
+| `/docs/api` | 200 | 2,788 | SPA shell |
+| `/login` | 200 | 2,788 | SPA shell (FIX-PROD-001 hold confirmed) |
+| `/llms.txt` | 200 | 4,913 | Plain-text content live |
+| `/robots.txt` | 200 | 960 | Allowlist + sitemap reference live |
+| `/sitemap.xml` | 200 | 1,500 | 8 marketing URLs live |
+| `/favicon.svg` | 200 | 527 | Bell-with-checkmark mark live |
+| `/favicon-32.png` | 200 | 680 | Legacy fallback live |
+| `/favicon-512.png` | 200 | 12,861 | High-DPI fallback live |
+| `/apple-touch-icon.png` | 200 | 3,575 | iOS home-screen icon live |
+| `/og-card.png` | 200 | 266,157 | 1200×630 social card live |
+| `/static/index-BWNYomxP.js` | 200 | 727,236 | Main bundle (matches dist hash) |
+
+**Playwright runtime checks:**
+
+| Page | document.title | canonical | JSON-LD root @type |
+|---|---|---|---|
+| `/` | "Managed Windows notifications for MSPs - Toast Notification" | `https://toastnotification.com/` | `SoftwareApplication` |
+| `/pricing` | "Pricing - Toast Notification" | `https://toastnotification.com/pricing` | `[Product, BreadcrumbList]` |
+| `/docs/getting-started` | "Getting started - Toast Notification" | `https://toastnotification.com/docs/getting-started` | `[TechArticle, BreadcrumbList]` |
+
+OG image, Twitter card, llms link, favicon link, apple-touch link all serialized correctly into the live `<head>`.
+
+**INFO-M7C-005 verification:** `.m-docs-content p` computed `color: rgb(23, 32, 42)` on `/docs/getting-started` (was `rgb(75, 85, 99)` pre-fix). Docs body now lands at `--text-primary`.
+
+**Console errors:** 0 across `/`, `/pricing`, `/docs/getting-started`, `/login`.
+
+**Screenshots captured:**
+- `Docs/ToastRevival/EVIDENCE/m7d/m7d-prod-home.png` — full-page Home render at 1200×630 viewport.
+- `Docs/ToastRevival/EVIDENCE/m7d/m7d-prod-docs-getting-started.png` — Docs Getting Started viewport, contrast tightening visible.
+- `Docs/ToastRevival/EVIDENCE/m7d/m7d-prod-login-regression.png` — `/login` SPA route, FIX-PROD-001 hold confirmed.
+
+**Verdict:** SHIP. M7 fully closed.

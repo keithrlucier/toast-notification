@@ -2,6 +2,27 @@
 
 ## Open Issues
 
+### SEC-004 — **RESOLVED 2026-05-09** (CSV formula injection in audit / delivery exports)
+
+**Filed:** 2026-05-09 (post-M8.C security review). Was carrying as INFO-M5D-003 "acceptable" since M5.D.
+**Surface:** `src/ToastRevival.Api/Utilities/CsvHelper.cs::Cell`.
+**Issue:** The CSV cell encoder applied RFC 4180 quoting (commas, quotes, newlines) but did not neutralize spreadsheet formula triggers. A cell value starting with `=`, `+`, `-`, `@`, `\t`, or `\r` is interpreted as a formula by Excel / LibreOffice Calc / Google Sheets when the export is opened. Audit log `Action`, `ResourceType`, and `ResourceId` strings are server-generated today (low blast radius), but any future controlled-string field flowing into `BuildAuditCsv` or `BuildDeliveryCsv` would inherit the vector. Filed "acceptable" at M5.D — promoted to fix because B2B compliance reviewers flag CSV injection on every audit-export surface.
+**Fix applied:** `CsvHelper.Cell` now prefixes any value starting with a formula-trigger character with a single apostrophe (`'`) before applying RFC 4180 quoting. The apostrophe is the documented "treat as literal text" sentinel across Excel, LibreOffice, and Google Sheets — it strips on render and the original value displays as plain text. Stacks under quoting (apostrophe goes inside the outer double quotes when both defenses fire).
+**Verification:** `tests/ToastRevival.Api.Tests/CsvHelperTests.cs` — 9 [Theory]/[Fact] cases covering each formula trigger, safe values left unchanged, RFC 4180 quoting paths, and the stacking case where both defenses apply.
+**Blocking:** No — defensive only.
+
+### INFO-M2A-002 — **RESOLVED 2026-05-08 (M3, commit 362f9d3)** (DeviceConfig at rest plaintext)
+
+**Filed:** 2026-05-09 (M2.A Code Sweep). **Resolution noted:** 2026-05-09 (post-M8.C audit caught FIX-LIST entry was stale).
+**Surface:** `src/ToastRevival.Agent/DeviceConfig.cs::ConfigStore`.
+**Resolution:** `Save` and `TryLoad` wrap the JSON payload via `ProtectedData.Protect`/`ProtectedData.Unprotect` at `DataProtectionScope.CurrentUser` (lines 95-101). Ciphertext written via temp-then-Move so a half-written file can't survive a crash mid-write. `bootstrap.json` next to the exe stays plaintext intentionally — it's the install-time non-secret values (TenantId, ServerUrl, optional pre-shared EnrollmentKey) that the SYSTEM-context MSI custom action writes and the user-context agent reads on first run; CurrentUser-scope DPAPI wouldn't work across that boundary. After registration, all session credentials (device JWT, tenant signing key) live in the DPAPI-wrapped `config.json`.
+
+### INFO-M2D-005 — **RESOLVED 2026-05-08 (M3)** (TrySelfRedirect launches binary from user-writable path)
+
+**Filed:** 2026-05-08 (M2.D Code Sweep). **Resolution noted:** 2026-05-09 (post-M8.C audit caught FIX-LIST entry was stale).
+**Surface:** `src/ToastRevival.Agent/UpdateService.cs::TrySelfRedirect`.
+**Resolution:** Authenticode signature verification before launch (lines 112-119, 215-288). Two-step gate: (1) `X509Certificate2.CreateFromSignedFile` reads the embedded cert and confirms the subject contains `Toast2IT, LLC` (fast, no network); (2) full chain + signature validation via `WinVerifyTrust` P/Invoke with `WTD_UI_NONE`/`WTD_REVOKE_NONE` flags. Returns false on any failure so the redirect aborts and the bootstrap binary continues running from `%ProgramFiles%`. A local-user attacker can no longer plant a higher-versioned malicious binary at the Velopack managed path and have the bootstrap binary execute it on next launch.
+
 ### SEC-001 — **RESOLVED 2026-05-09** (API response missing defensive security headers)
 
 **Filed:** 2026-05-09 (post-M8.C security review).
@@ -326,13 +347,7 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Surface:** `src/ToastRevival.Agent/Program.cs`, `src/ToastRevival.Api/Controllers/NotificationsController.cs`
 **Resolution:** `AgentEntryPoint.TryFindActivationArg` detects the framework sentinel `----AppNotificationActivated:` in argv before mutex acquisition or hub spin-up. When matched, `ActivationMode.RunAsync` takes over: (1) loads `DeviceConfig` from disk; (2) subscribes to `AppNotificationManager.Default.NotificationInvoked`; (3) calls `Register()` (the framework fires `NotificationInvoked` synchronously during this call with the original toast's argument string); (4) parses click args; (5) if `source==hub`, posts to new device-JWT-authenticated `POST /api/notifications/{notificationId}/interactions` REST endpoint via `InteractionFallback.PostAsync`; (6) calls `Unregister()` and exits clean. 5-second timeout on the NotificationInvoked wait (exit 7) and 15-second timeout on the REST POST. Activation mode never spins up SignalR or contests the primary mutex.
 
-### INFO-M2A-002 (M3 — security hardening) — DeviceConfig at rest is plaintext
-
-**Filed:** 2026-05-09 (M2.A Code Sweep)
-**Surface:** `src/ToastRevival.Agent/DeviceConfig.cs::ConfigStore`
-**Issue:** Per-device JWT and per-tenant HMAC signing key are stored as plaintext JSON at `%LOCALAPPDATA%\Toast2IT\Toast Notification\config.json` (or the package's `LocalState` equivalent). Per-user LocalAppData ACLs gate ordinary access; admin-credential exfiltration is not gated. An attacker with admin on the endpoint can impersonate the device to the backend and forge HMAC-signed payloads.
-**Fix:** Wrap `Save`/`TryLoad` with `ProtectedData.Protect`/`Unprotect` at `DataProtectionScope.CurrentUser`. Acceptable additional surface for the security-hardening milestone.
-**Blocking:** No. M3 work.
+### INFO-M2A-002 — RESOLVED 2026-05-08 (M3, commit 362f9d3) — see entry above for resolution detail.
 
 ### INFO-M2A-003 — **RESOLVED 2026-05-09 (M2.B)**
 
@@ -418,13 +433,7 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Acceptable. The ContextMenuStrip.Dispose() disposes child items but may not release the custom font. Before M9 GA: store reference in a field and Dispose() it explicitly.
 **Blocking:** No.
 
-### INFO-M2D-005 (M3 — security hardening) — TrySelfRedirect launches binary from user-writable path
-
-**Filed:** 2026-05-08 (M2.D Code Sweep)
-**Surface:** `src/ToastRevival.Agent/UpdateService.cs::TrySelfRedirect`
-**Issue:** The redirect launches `%LocalAppData%\ToastNotification.Agent\current\ToastNotification.Agent.exe` based only on a version comparison. A local-user attacker could plant a higher-versioned binary at that path. This is the inherent Squirrel/Velopack per-user update model limitation.
-**Fix:** M3 — verify Authenticode signature of `managedExe` via `AuthenticodeTools` or `Get-AuthenticodeSignature` P/Invoke before launching. Signer must be `CN="Toast2IT, LLC"`. This closes the gap alongside INFO-M2A-002 (DPAPI config protection).
-**Blocking:** No. Threat model: local user compromise required, same as existing config.json exposure.
+### INFO-M2D-005 — RESOLVED 2026-05-08 (M3) — see entry above for resolution detail.
 
 ### INFO-M2D-006 (acceptable) — FastCallback hooks fire before DiagLog.Init()
 
@@ -613,13 +622,7 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Add `e.HasIndex(l => l.Timestamp)` in `OnModelCreating` + generate migration at M6+.
 **Blocking:** No.
 
-### INFO-M5D-003 (acceptable) — CSV injection risk in audit export
-
-**Filed:** 2026-05-09 (M5.D Code Sweep — Abish)
-**Surface:** `Controllers/AuditController.cs::BuildAuditCsv`
-**Issue:** Audit log action strings (e.g. `notification.send`) are server-generated and safe. However, if an attacker can control an `AuditLog.Action` value, they could inject formula characters (`=CMD()`). The export is admin-only, limiting blast radius.
-**Fix:** Acceptable for current scope. If user-supplied content ever reaches `Action` fields, prefix each cell with a tab character to neutralize formula injection. M9 review item.
-**Blocking:** No.
+### INFO-M5D-003 — RESOLVED 2026-05-09 (SEC-004) — see entry above for resolution detail.
 
 ### INFO-M5D-004 (M9 scale) — PdfExportService.GeneratePdf() is synchronous
 

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using OtpNet;
+using ToastRevival.Api.Models;
 
 namespace ToastRevival.Api.Services;
 
@@ -24,23 +25,54 @@ public class MfaService
     }
 
     /// <summary>
-    /// Verifies a 6-digit TOTP code against the stored base32 secret.
-    /// Allows ±1 time step (30 s window each side) to tolerate clock skew.
-    /// Returns false if the secret is null/empty.
+    /// Verifies a 6-digit TOTP code against the user's stored base32 secret
+    /// and rejects replay within or before the same 30-second time-step.
+    ///
+    /// On success: mutates <paramref name="user"/>.<see cref="AppUser.LastTotpStep"/>
+    /// to the matched step. The caller is responsible for persisting the
+    /// change via <c>SaveChangesAsync</c> — without persistence, replay
+    /// rejection only holds for the lifetime of the in-memory entity, not
+    /// across requests. AuthController.MfaVerify saves explicitly.
+    ///
+    /// Returns <c>false</c> when:
+    ///   - the user's TOTP secret is null/empty (MFA not enrolled),
+    ///   - the code is empty / malformed,
+    ///   - OtpNet's <see cref="Totp.VerifyTotp"/> rejects the code (wrong
+    ///     digits, outside the ±1 step window),
+    ///   - the matched step is &lt;= LastTotpStep (replay — SEC-005).
+    ///
+    /// Window: ±1 step (30 s each side) to tolerate clock skew. The replay
+    /// guard intentionally rejects equality (matched &lt;= last) so a code
+    /// accepted in the previous request is unusable in this one even if
+    /// it's still in its valid window.
     /// </summary>
-    public bool Verify(string? storedSecret, string code)
+    public bool Verify(AppUser user, string code)
     {
-        if (string.IsNullOrWhiteSpace(storedSecret)) return false;
+        if (string.IsNullOrWhiteSpace(user.MfaSecret)) return false;
         if (string.IsNullOrWhiteSpace(code)) return false;
 
         try
         {
-            var secretBytes = Base32Encoding.ToBytes(storedSecret);
+            var secretBytes = Base32Encoding.ToBytes(user.MfaSecret);
             var totp = new Totp(secretBytes);
-            return totp.VerifyTotp(
-                code.Trim(),
-                out _,
-                new VerificationWindow(previous: 1, future: 1));
+            if (!totp.VerifyTotp(
+                    code.Trim(),
+                    out var matchedStep,
+                    new VerificationWindow(previous: 1, future: 1)))
+            {
+                return false;
+            }
+
+            // SEC-005 / INFO-M3-001: replay rejection. matchedStep is
+            // floor(unixSeconds / 30) of the step OtpNet picked. If we have
+            // already accepted that step (or an earlier one) for this user,
+            // this is a replay or a stale code — reject without mutating
+            // LastTotpStep.
+            if (user.LastTotpStep.HasValue && matchedStep <= user.LastTotpStep.Value)
+                return false;
+
+            user.LastTotpStep = matchedStep;
+            return true;
         }
         catch
         {

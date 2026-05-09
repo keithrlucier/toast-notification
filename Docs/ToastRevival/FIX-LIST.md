@@ -2,6 +2,18 @@
 
 ## Open Issues
 
+### SEC-005 — **RESOLVED 2026-05-09** (TOTP code replay within ±1 step)
+
+**Filed:** 2026-05-09 (post-M8.C security review). Was carrying as INFO-M3-001 since M3.
+**Surface:** `src/ToastRevival.Api/Services/MfaService.cs::Verify`, `src/ToastRevival.Api/Models/AppUser.cs`, `src/ToastRevival.Api/Controllers/AuthController.cs::MfaVerify`.
+**Issue:** `MfaService.Verify` called `Totp.VerifyTotp(code, out _, new VerificationWindow(1, 1))` and discarded the matched time-step. With ±1 step skew, a TOTP code stays valid for up to ~90 seconds. An attacker who intercepted a single submission could replay it any number of times within that window before the legitimate user noticed. Standard TOTP weakness; required the standard mitigation (track last-accepted step per user, reject any code whose matched step is `<=` recorded value).
+**Fix applied:**
+  - New `AppUser.LastTotpStep` (long?, nullable) column. Migration `20260509190000_M3MfaTotpReplay` adds it with a null default so existing users transparently start tracking on their next successful verify.
+  - `MfaService.Verify` now takes `(AppUser user, string code)` instead of `(string? secret, string code)`. Captures the matched step via `out var matchedStep`, rejects when `user.LastTotpStep.HasValue && matchedStep <= user.LastTotpStep.Value`, and writes `user.LastTotpStep = matchedStep` on success.
+  - `AuthController.MfaVerify` now calls `_mfa.Verify(user, req.Code)` and follows a successful verify with `await _db.SaveChangesAsync()` so the floor persists across requests. Without persistence, replay rejection only held for the lifetime of the in-memory entity.
+**Verification:** `tests/ToastRevival.Api.Tests/MfaServiceTests.cs` — 6 [Fact] cases covering fresh-code accept, replay reject within step, older-step reject (skew/rewind), missing-secret reject, invalid-code reject, empty-code reject. The replay-reject test mints one TOTP code via OtpNet, asserts the first verify succeeds and records a step, then asserts the second verify of the same code returns false without bumping the floor.
+**Blocking:** No — defensive only.
+
 ### SEC-004 — **RESOLVED 2026-05-09** (CSV formula injection in audit / delivery exports)
 
 **Filed:** 2026-05-09 (post-M8.C security review). Was carrying as INFO-M5D-003 "acceptable" since M5.D.
@@ -452,13 +464,7 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Changed to `VersionNT64 >= 1000` (catches pre-Windows-10 installs; precise build-19041 floor is enforced at runtime by `Program.cs` line 54).
 **Blocking:** WAS BLOCKING — patched before commit.
 
-### INFO-M3-001 (M8) — TOTP replay within the same 30s step is accepted
-
-**Filed:** 2026-05-08 (M3 Code Sweep)
-**Surface:** `src/ToastRevival.Api/Services/MfaService.cs::Verify`
-**Issue:** `VerifyTotp` with `VerificationWindow(1, 1)` accepts a code for 90s total. Within the same 30s step a replayed TOTP code from an intercepted request would be accepted. Standard TOTP limitation; no nonce/replay-cache.
-**Fix:** M8 — add a used-code cache (e.g. per-user last-verified `long timeStep` stored in DB) to reject replay within the same step.
-**Blocking:** No.
+### INFO-M3-001 — RESOLVED 2026-05-09 (SEC-005) — see entry above for resolution detail.
 
 ### INFO-M3-002 (M4) — BlocklistService is concrete injection in NotificationsController
 

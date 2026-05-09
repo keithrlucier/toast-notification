@@ -225,8 +225,13 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(user.MfaSecret))
             return BadRequest("MFA is not enrolled. Call POST /api/auth/mfa/enroll first.");
 
-        if (!_mfa.Verify(user.MfaSecret, req.Code))
+        // MfaService.Verify mutates user.LastTotpStep on success (SEC-005 /
+        // INFO-M3-001 replay guard). Persist the change so the next call
+        // sees the new floor and rejects a replayed code.
+        if (!_mfa.Verify(user, req.Code))
             return Unauthorized("Invalid or expired TOTP code.");
+
+        await _db.SaveChangesAsync();
 
         var expiresAt = DateTime.UtcNow.AddMinutes(15);
         var mfaToken  = _tokens.CreateMfaToken(user);

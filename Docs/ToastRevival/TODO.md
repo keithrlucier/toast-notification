@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMPLETE. M3 COMPLETE. M4 COMPLETE 2026-05-08. M5.A COMPLETE 2026-05-09 (commit pending).** M5.A delivered: DeviceGroupsController, notification pagination, TemplatesController + tenant seeding, User Management (D2), API Key Management (D5), Diana analytics chart spec in DESIGN-SPEC.md. Next: **M5.B — Analytics (D1) + Tenant Settings (D3)**.
+Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMPLETE. M3 COMPLETE. M4 COMPLETE 2026-05-08. M5.A COMPLETE 2026-05-09 (commit 437dce4). M5.B COMPLETE 2026-05-09 (commit aabe739).** M5.B delivered: AnalyticsController (3 endpoints), Analytics.tsx (Recharts charts per Diana spec), TenantController (GET/PUT /api/tenant/settings), TenantSettings.tsx (branding + defaults), migration M5TenantSettings. Next: **M5.C — Asset Library (D4) + Notification Scheduling (D6)**.
 
 ## Keith
 

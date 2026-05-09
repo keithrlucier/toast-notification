@@ -1,5 +1,44 @@
 # ToastRevival - Test Log
 
+## 2026-05-09 (M5.B — Analytics + Tenant Settings)
+
+### Build Checks
+
+- `dotnet build ToastRevival.sln`: **0 warnings, 0 errors** (post M5.B, all backend + agent).
+- `npx tsc -p tsconfig.app.json --noEmit` (strict): **0 errors, 0 warnings**.
+- `npm run build` (Vite 6 production): built in 2.88s ✓. Chunk size warning for recharts bundle (expected — INFO-only).
+- New backend files: AnalyticsController.cs, TenantController.cs, TenantDtos.cs, migration M5TenantSettings.
+- New frontend files: Analytics.tsx, TenantSettings.tsx. Modified: App.tsx, Sidebar.tsx, package.json.
+
+### EF Migration Verification (M5TenantSettings)
+
+- `dotnet ef migrations add M5TenantSettings`: generated cleanly.
+- Migration adds 4 columns to `Tenants`: `DefaultAudioSetting` (text, nullable), `DefaultScenario` (integer, defaultValue=0), `LogoUrl` (text, nullable), `PrimaryColor` (text, nullable).
+- `DefaultScenario = 0` = `ToastScenario.Default` — correct enum default.
+- Up/Down methods: purely additive AddColumn / reversible DropColumn. No existing column changes.
+
+### Code Sweep Results (M5.B — Abish, SHIP WITH NOTES)
+
+**Pre-commit verifications:**
+- CSS audit: `--accent` ✓, `.field` wrapper on all form inputs ✓, no `btn-danger-ghost` ✓, no `form-label`/`form-input`/`form-select` standalone ✓.
+- Recharts compliance: `isAnimationActive={false}` on ALL 3 Line + Bar instances ✓, `ResponsiveContainer width="100%"` on all charts ✓, custom `ChartTooltip` on all charts ✓, default Recharts tooltip absent ✓, `<Legend>` only on LineChart (2-series) ✓, `<Cell>` for per-bar status colors ✓.
+- Tenant isolation: global query filters on Notifications/NotificationDeliveries/Devices enforce per-tenant scope on all analytics queries — no TenantId filtering needed explicitly ✓.
+- Admin gate: TenantController.UpdateSettings uses `IsAdmin()` pattern identical to UsersController:114 ✓.
+- Diana sign-off: tooltip dark styling verified (`var(--bg-tertiary)`, 1px rgba border, border-radius 6px). Cell status colors match spec values exactly. TenantSettings color picker + hex input synchronized via shared `primaryColor` state ✓. APPROVED.
+
+**INFO items filed:**
+- INFO-M5B-001: AnalyticsController.Summary materializes delivery statuses in memory (acceptable at MVP scale).
+- INFO-M5B-002: UpdateSettings silently ignores invalid DefaultScenario enum values.
+- INFO-M5B-003: PrimaryColor stored without hex-format validation.
+
+### Boundaries
+
+- Analytics endpoints NOT end-to-end verified against live DB — requires running backend + populated notification/delivery data. Structural correctness confirmed by code review.
+- TenantSettings PUT NOT tested with a live backend (requires admin token + running API). GET/PUT contract verified via code review.
+- Chart rendering NOT browser-verified (requires running dev server with backend + data). Recharts spec compliance verified by code audit.
+
+---
+
 ## 2026-05-09 (M5.A — Pre-work + User Management + API Keys)
 
 ### Build Checks

@@ -224,9 +224,29 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 - Abish: Code Sweep (significant scope) ✓
 - Diana: Analytics chart spec for DESIGN-SPEC.md ✓
 
-### M5.B: Analytics + Tenant Settings (NEXT)
-- **D1**: Delivery analytics dashboard — Recharts (see DESIGN-SPEC.md chart spec). Backend: 3 aggregate endpoints. Frontend: metric row + line chart + two bar charts.
-- **D3**: Tenant settings — branding (logo, colors), notification defaults, rate limit config.
+### M5.B: Analytics + Tenant Settings  **[COMPLETE 2026-05-09 (commit aabe739)]**
+
+#### Deliverables (all closed)
+- **D1** [x]: Delivery analytics — AnalyticsController (3 aggregate endpoints: /api/analytics/summary|volume|breakdown). Analytics.tsx: 4 metric cards (Sent/DeliveryRate/InteractionRate/ActiveDevices), full-width LineChart 240px (Sent #00C9A7 + Delivered #60A5FA dashed), BarChart delivery status (per-bar Cell colors per spec), horizontal BarChart template usage (#60A5FA). Time range selector 7/30/90d. Custom dark tooltip throughout. Recharts 2.x, isAnimationActive=false on all charts.
+- **D3** [x]: Tenant settings — 4 new fields on Tenant model (LogoUrl, PrimaryColor, DefaultAudioSetting, DefaultScenario). Migration M5TenantSettings. TenantController: GET /api/tenant/settings (all-auth) + PUT (admin-only). TenantSettings.tsx: branding section (logo URL + synchronized color picker/hex input + logo preview), notification defaults (audio/scenario selects), rate limits as read-only metric cards.
+
+#### INFO Items Filed
+- INFO-M5B-001 (performance, future): AnalyticsController.Summary materializes delivery statuses in memory. Replace with server-side COUNT for high-volume tenants.
+- INFO-M5B-002 (acceptable): UpdateSettings silently ignores invalid DefaultScenario enum values instead of 400.
+- INFO-M5B-003 (acceptable): PrimaryColor stored without hex-format validation.
+
+#### Code Sweep
+- Commit aabe739: SHIP WITH NOTES — INFO-M5B-001/002/003 logged.
+- Diana sign-off: chart tooltip + Cell status colors verified, TenantSettings color picker sync verified. APPROVED.
+
+#### Build
+- TypeScript strict, 0 errors. Vite build ✓. dotnet build: 0 warnings, 0 errors.
+
+#### Agent Deployment (M5.B)
+- Anthony: D1 backend + D1 frontend ✓
+- Abish-1: D3 backend + D3 frontend ✓
+- Abish: Code Sweep ✓
+- Diana: Chart spec sign-off + D3 branding UI review ✓
 
 ### M5.C (Future)
 - **D4**: Asset library — upload/manage hero images + logos, moderation status

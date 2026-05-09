@@ -337,6 +337,30 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Acceptable for MSP context (admins are trusted operators). If compliance requires it, add: `if (req.Role > callerRole) return Forbid()` at M6.
 **Blocking:** No.
 
+### INFO-M5B-001 (performance, future) — AnalyticsController.Summary materializes statuses in memory
+
+**Filed:** 2026-05-09 (M5.B Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Api/Controllers/AnalyticsController.cs::Summary`
+**Issue:** `_db.NotificationDeliveries.Where(d => d.CreatedAt >= since).Select(d => d.Status).ToListAsync()` brings all status values into memory for the period, then counts in C#. For MVP scale (thousands of records per MSP tenant), this is acceptable. For high-volume tenants (millions of deliveries), a server-side `GROUP BY Status COUNT(*)` would be significantly faster.
+**Fix:** Replace with `GroupBy(d => d.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync()` then materialize to dict. EF Core 8 translates this to a server-side GROUP BY.
+**Blocking:** No.
+
+### INFO-M5B-002 (acceptable) — UpdateSettings silently ignores invalid DefaultScenario
+
+**Filed:** 2026-05-09 (M5.B Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Api/Controllers/TenantController.cs::UpdateSettings`
+**Issue:** If the client sends `{"defaultScenario": "INVALID"}`, `Enum.TryParse` returns false, the field is not updated, and a 204 is returned with no indication that the value was rejected.
+**Fix:** Return `BadRequest("Invalid defaultScenario value.")` when `req.DefaultScenario != null && Enum.TryParse fails`. M6+.
+**Blocking:** No. Frontend dropdown is constrained to valid values.
+
+### INFO-M5B-003 (acceptable) — PrimaryColor stored without hex-format validation
+
+**Filed:** 2026-05-09 (M5.B Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Api/Controllers/TenantController.cs::UpdateSettings`
+**Issue:** `PrimaryColor` is stored as-is. A malicious admin could store arbitrary text. Downstream rendering uses the value only in a color picker input (not injected as CSS), so no XSS vector. But the data is untrusted.
+**Fix:** Add regex validation (`^#[0-9A-Fa-f]{6}$`) at M6+.
+**Blocking:** No.
+
 ### INFO-M5-003 (low) — TemplatesController.BuildDefaultTemplates couples Auth and Templates
 
 **Filed:** 2026-05-09 (M5.A Code Sweep — Abish)

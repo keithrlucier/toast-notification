@@ -239,3 +239,31 @@ The docs reference your shipped pricing model end-to-end — `$0.22/device/month
 Task 1 source-of-truth alignment is complete: commit `0d875ca` (`Pricing v2 + PlatformAdmin + admin UI redesign (deployed 2026-05-09)`) is pushed to `origin/main`. This commit matches the Pricing v2, PlatformAdmin, and authenticated admin UI redesign code already deployed to production before this session.
 
 For Task 2, Codex is taking **Track A — Stripe webhook + price config UX**. Scope is limited to backend/admin billing configuration hardening: add a PlatformAdmin-only billing config endpoint, surface the per-device Stripe price ID in an authenticated admin settings area, and keep checkout failure clear when the price ID is absent. Codex will not touch `pages/marketing/*`, `components/marketing/*`, `index.html`, or `public/*`; DocPro M7.D can continue owning SEO, metadata, favicons, sitemap, robots, and docs contrast.
+
+---
+
+## Codex — outgoing notes (2026-05-09 PM, close)
+
+Task 1 commit landed and is pushed: `0d875ca` (`Pricing v2 + PlatformAdmin + admin UI redesign (deployed 2026-05-09)`). The previously deployed Pricing v2, PlatformAdmin, and authenticated admin UI redesign state is now represented in git history.
+
+Task 2 selected **Track A — Stripe webhook + price config UX** and shipped in `581a4ee` (`Add PlatformAdmin Stripe billing config`). Scope shipped:
+
+- API now loads ignored runtime overrides from `appsettings.Local.json`.
+- New PlatformAdmin-only `GET/POST /api/system/billing/config` reads and updates `Stripe:PerDevicePriceId`.
+- Billing checkout now returns a structured 503 message when the Stripe secret or per-device price ID is missing.
+- `/settings/tenant` shows a PlatformAdmin-only Billing Configuration panel with the current Stripe price ID status and save control.
+- `appsettings.Local.json` is gitignored so production can persist Keith's price ID outside source control.
+
+Deploy boundary: Codex deployed from a clean detached worktree at `581a4ee` to avoid packaging any uncommitted DocPro M7.D files. Before deploy, `/llms.txt`, `/sitemap.xml`, and `/favicon.svg` were still serving the 782-byte SPA fallback, so M7.D was not live yet. Codex did not stage or commit `index.html`, `public/*`, `pages/marketing/*`, `components/marketing/*`, or `src/lib/*`. DocPro M7.D can continue from the dirty local marketing/public files; make sure your dashboard deploy starts from `origin/main` at or after `581a4ee` so Track A stays included.
+
+Production verification after Track A deploy:
+
+- `toast-api.service` active.
+- `/opt/toast/api` and `/opt/toast/dashboard` ownership is `toast:toast`.
+- `https://toastnotification.com/login` returned 200.
+- Emitted dashboard script `/static/index-grHUeDl_.js` returned 200 with 727,144 bytes.
+- Anonymous `GET /api/system/billing/config` returned 401.
+- Temporary smoke PlatformAdmin `GET /api/system/billing/config` returned placeholder `price_REPLACE_WITH_PER_DEVICE_PRICE_ID` with `isConfigured=false`.
+- Temporary smoke PlatformAdmin invalid `POST /api/system/billing/config` returned 400 with `Stripe price IDs start with price_.`; no production price value was changed.
+- Playwright screenshots captured: `tracka-login-prod.png`, `tracka-settings-prod.png`, `tracka-settings-mobile-prod.png`, `tracka-settings-mobile-billing-prod.png`; console warnings/errors were 0.
+- Temporary smoke tenant `dee4fd8d-bee2-4d23-a14e-048c64b7d8dd` and user `codex-tracka-20260509095551@toastnotification.test` were deleted; post-cleanup counts for tenant, user, templates, and audit rows were all 0.

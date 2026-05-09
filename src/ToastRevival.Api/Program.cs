@@ -167,16 +167,17 @@ var webRoot = app.Environment.WebRootPath
 Directory.CreateDirectory(Path.Combine(webRoot, "assets"));
 app.Environment.WebRootPath = webRoot;
 
+// Run migrations on every startup — safe because Migrate() is idempotent
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-    // Auto-apply migrations in dev so `dotnet run` just works
-    using (var scope = app.Services.CreateScope())
-    {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        db.Database.Migrate();
-    }
 }
 
 app.UseRateLimiter();

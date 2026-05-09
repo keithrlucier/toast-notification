@@ -2,7 +2,7 @@
 
 > Repo / project codename: **ToastRevival** (internal). Product / user-facing brand: **Toast Notification** (toastnotification.com).
 
-Last updated: 2026-05-08
+Last updated: 2026-05-08 (M2.D)
 
 ## Project State
 
@@ -24,7 +24,7 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **M2.A: COMPLETE 2026-05-09.** Agent ↔ Backend pipeline + HMAC. Carl sliced M2 at orientation. M2.A delivered D1 SignalR client + auto-reconnect `[0,2,5,10,30]`s, D2 toast rendering from backend payload (`ToastTemplateBuilder.BuildFromPayload` extends the M0A argv builder — no fork), D3 first-run device registration + atomic-write `DeviceConfig` storage + 30-min REST heartbeat ping, D4 HMAC-SHA256 payload verification (`Tenant.SigningKey` + `CryptographicOperations.FixedTimeEquals` constant-time compare), D5 `ReportDelivery` + `ReportInteraction` over the hub, plus INFO-D5-001 (session-local named mutex `Local\Toast2IT.ToastNotification.PrimaryWorker`) and INFO-MSIX-004-D (activation-handler short-circuit before SignalR + REST `/api/notifications/{id}/interactions` fallback endpoint). Agent grew 3 new files (`AgentClient.cs`, `DeviceConfig.cs`, `ToastPayload.cs`) and refactored `Program.cs` to a 3-mode entry (Activation / Diagnostic / Primary). Backend gained `Tenant.SigningKey` column + `AddTenantSigningKey` migration with backfill, payload signing in `NotificationQueueService.BuildSignedPayload`, and the new REST interaction endpoint. **Code Sweep returned SHIP WITH NOTES; FIX-M2A-001 patched pre-commit** (mutex prefix `Global\` → `Local\` to prevent multi-user-session collision regressing M0 D4 verification). 4 INFO items deferred (INFO-M2A-002 → M3, INFO-M2A-003/004 → M2.B, INFO-M2A-005 → M9). Build clean: 0 warnings + 0 errors solution-wide; MSIX smoke check intact (all M0 D5 manifest standing checks pass). See `EVIDENCE/2026-05-09-m2-a-agent-backend-pipeline.md`.
 
-**Next: M2.B — Missed catch-up + recovery.** New `GET /api/notifications/pending?since=<timestamp>` endpoint, agent fetches on reconnect, agent-side `notificationId` de-dup window, server-side orphan-`Sending` startup recovery. Then M2.C (Diana-engaged tray icon + MSI property wiring), M2.D (Velopack auto-update).
+**M2.B: COMPLETE 2026-05-09.** Missed catch-up + orphan recovery + agent dedup. **M2.C: COMPLETE 2026-05-08.** System tray icon (WinForms STA thread, 5 states, Diana spec colors) + MSI CLIENTID/SERVERURL properties → bootstrap.json via SetupMode. **M2.D: COMPLETE 2026-05-08.** Velopack 0.0.1298 auto-update integration — TrySelfRedirect pattern, 24h background check loop, registry enterprise toggle, tray Update Available menu item, build-release.ps1 pipeline. **All of M2 is complete.** Next: **M3 Security Hardening.**
 
 Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
 

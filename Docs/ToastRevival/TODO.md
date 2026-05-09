@@ -105,8 +105,8 @@ All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 
 - [x] D9: WiX MSI properties CLIENTID + SERVERURL → bootstrap.json via SetupMode; WriteBootstrapJson/DeleteBootstrapJson CAs; version 0.4.0.0.
 - [ ] D9: Silent install/uninstall verification + MSIX→MSI upgrade-path smoke check — **Keith to verify with lab machine on next MSI build**.
 
-### M2.D — Auto-update (Velopack)
-- [ ] D8: Velopack integration for MSI channel — feed-server config, delta package layout, signing flow, Velopack-vs-MSI uninstall semantics.
+### M2.D — Auto-update (Velopack) — COMPLETE 2026-05-08
+- [x] D8: Velopack 0.0.1298 integrated. UpdateService (registry toggle, TrySelfRedirect, 24h loop). Tray "Update Available" menu item. scripts/build-release.ps1. Feed URL placeholder (production setup at M9).
 
 ## Engineering - M2 follow-up (logged during M0 D2 — INFO-MSIX-004-A/B/C only remain)
 

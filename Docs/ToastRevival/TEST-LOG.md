@@ -294,6 +294,37 @@ The `-p:TargetPlatformVersion=10.0.22621.0` flag is required. Without it the .NE
 - This confirms the MSI builds, the XML parses, the WiX table layout matches the design, and the XML payload survives the cab → admin-install extract round-trip byte-identical.
 - This does NOT confirm signed install on a Win11 lab, that the scheduled task is actually created on the endpoint, that the task fires at logon, that the toast renders, or that uninstall removes the task. Those checks are Keith's hand-off step (signed install + `Get-ScheduledTask` + log-out/in verification + uninstall verification + idempotency check). Hand-off detail in `EVIDENCE/2026-05-08-m0-d3-msi-build-with-scheduled-task.md` § Hand-off.
 
+## 2026-05-08 (M2.D — Velopack Auto-Update)
+
+### Scope
+
+M2.D delivers D8 (auto-update for MSI channel). Velopack 0.0.1298 integrated. New `UpdateService` class, `VelopackApp.Build().Run()` startup hook, `TrySelfRedirect` for scheduled-task-pointer problem, tray "Update Available" menu item, `scripts/build-release.ps1` pipeline script.
+
+### Build Checks
+
+- `dotnet build src/ToastRevival.Agent/ToastRevival.Agent.csproj -c Release`: **0 warnings, 0 errors** after Velopack API correction (0.0.1298 uses `OnAfterInstallFastCallback` / `OnAfterUpdateFastCallback`, not `With*` style used in older documentation; `ApplyUpdatesAndRestart(VelopackAsset)` not `ApplyUpdatesAndRestart(UpdateInfo)`).
+- `dotnet build ToastRevival.sln -c Release`: **0 warnings, 0 errors** solution-wide.
+- MSIX smoke check (`dotnet build ... -p:WindowsPackageType=MSIX ... -p:TargetPlatformVersion=10.0.22621.0`): passed. 1 warning (pre-existing FIX-MSIX-003 mspdbcmf.exe, cosmetic). MSIX produces cleanly; Velopack 0.0.1298 NuGet reference does not affect MSIX packaging path.
+
+### Code Sweep — INFO findings (non-blocking)
+
+- **INFO-M2D-003**: `updateTask` not awaited on shutdown — fire-and-forget, all exceptions caught in loop. Acceptable.
+- **INFO-M2D-004**: `_updateItem` Font object not explicitly disposed — process-lifetime, negligible. Acceptable.
+- **INFO-M2D-005**: `TrySelfRedirect` launches unsigned binary from user-writable path — inherent Velopack per-user model limitation. Authenticode verification deferred to M3.
+- **INFO-M2D-006**: Velopack FastCallback hooks fire before `DiagLog.Init()` — messages silently dropped. Acceptable (lifecycle events only, Velopack has its own log).
+
+### Architecture Verification
+
+- **Registry toggle path**: `HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate = 1` → `IsAutoUpdateEnabled()` returns false → `RunUpdateLoopAsync` returns immediately. Not runtime-verified (requires a lab machine with the key set) but code path is simple and audited.
+- **TrySelfRedirect path**: When running from `%ProgramFiles%` with no `%LocalAppData%\ToastNotification.Agent\current\ToastNotification.Agent.exe` → returns false. Not runtime-verified (requires a full Velopack-channel install) but the path has three independent guards: system-install check, File.Exists, version comparison.
+- **Update check path**: `IsInstalled=false` on MSI-deployed binary → `CheckAndDownloadAsync` returns early. Correct behavior — MSI-deployed agents are not Velopack-managed. End-to-end update cycle (Velopack-channel install → check → download → apply) requires a live feed server and is a M9 production setup item.
+
+### Boundaries
+
+- Velopack update cycle (check → download → apply → restart) NOT end-to-end verified — requires live feed server at `https://releases.toastnotification.com/agent/win-x64`. Production feed setup deferred to M9.
+- `vpk` CLI tool not installed in this session — `scripts/build-release.ps1` documents the prerequisite (`dotnet tool install -g vpk`). First use is M9.
+- Signing of Velopack packages (`.nupkg` + release zip) follows the same Thales/Sectigo OV flow as MSI/MSIX. Not validated this session.
+
 ## 2026-05-09 (M2.A — Agent ↔ Backend Pipeline + HMAC)
 
 ### Scope

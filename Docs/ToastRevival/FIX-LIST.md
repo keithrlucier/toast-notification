@@ -213,6 +213,38 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Acceptable. The graceful degradation path (ApplyState null-checks _notifyIcon) is verified.
 **Blocking:** No.
 
+### INFO-M2D-003 (acceptable) — updateTask not awaited on shutdown
+
+**Filed:** 2026-05-08 (M2.D Code Sweep)
+**Surface:** `src/ToastRevival.Agent/Program.cs::PrimaryMode.RunAsync`
+**Issue:** `updateTask` (background Velopack check loop) is started via `Task.Run` but never awaited in the cleanup path. On shutdown, `PeriodicTimer.WaitForNextTickAsync` returns false when the CancellationToken is cancelled; the task completes shortly after. All exceptions inside `RunUpdateLoopAsync` are caught within the loop body, so the task never faults. Fire-and-forget posture.
+**Fix:** Acceptable. Same pattern as the conceptual model of `_pingLoop` in AgentHubClient. If an awaited-cleanup pattern is adopted at M9, add `updateTask` to the shutdown sequence.
+**Blocking:** No.
+
+### INFO-M2D-004 (acceptable) — _updateItem Font object not explicitly disposed
+
+**Filed:** 2026-05-08 (M2.D Code Sweep)
+**Surface:** `src/ToastRevival.Agent/TrayIconService.cs::RunMessageLoop`
+**Issue:** `new System.Drawing.Font(SystemFonts.MenuFont!, FontStyle.Bold)` creates a GDI font object stored in the `_updateItem` ToolStripMenuItem's Font property. Not explicitly disposed in TrayIconService.Dispose(). Single process-lifetime object; negligible resource.
+**Fix:** Acceptable. The ContextMenuStrip.Dispose() disposes child items but may not release the custom font. Before M9 GA: store reference in a field and Dispose() it explicitly.
+**Blocking:** No.
+
+### INFO-M2D-005 (M3 — security hardening) — TrySelfRedirect launches binary from user-writable path
+
+**Filed:** 2026-05-08 (M2.D Code Sweep)
+**Surface:** `src/ToastRevival.Agent/UpdateService.cs::TrySelfRedirect`
+**Issue:** The redirect launches `%LocalAppData%\ToastNotification.Agent\current\ToastNotification.Agent.exe` based only on a version comparison. A local-user attacker could plant a higher-versioned binary at that path. This is the inherent Squirrel/Velopack per-user update model limitation.
+**Fix:** M3 — verify Authenticode signature of `managedExe` via `AuthenticodeTools` or `Get-AuthenticodeSignature` P/Invoke before launching. Signer must be `CN="Toast2IT, LLC"`. This closes the gap alongside INFO-M2A-002 (DPAPI config protection).
+**Blocking:** No. Threat model: local user compromise required, same as existing config.json exposure.
+
+### INFO-M2D-006 (acceptable) — FastCallback hooks fire before DiagLog.Init()
+
+**Filed:** 2026-05-08 (M2.D Code Sweep)
+**Surface:** `src/ToastRevival.Agent/Program.cs` top-level statements
+**Issue:** `VelopackApp.Build().OnAfterInstallFastCallback().OnAfterUpdateFastCallback().Run()` is called before `AgentEntryPoint.RunAsync` which calls `DiagLog.Init()`. The two FastCallback handlers call `DiagLog.Write()`. Because `DiagLog.LogFilePath` is `""` until `Init()` is called, `Write()` returns early and the messages are silently dropped.
+**Fix:** Acceptable — FastCallbacks only fire during install/update lifecycle events, not normal startup. The lifecycle events are self-reporting (Velopack has its own log) and the dropped DiagLog messages carry no information that isn't already in Velopack's output. If verbose lifecycle logging becomes a requirement, call `DiagLog.Init()` before `VelopackApp.Build().Run()`.
+**Blocking:** No.
+
 ### INFO-M2B-005 (M3) — Catch-up rate limit during reconnect storms
 
 **Filed:** 2026-05-09 (M2.B Code Sweep)

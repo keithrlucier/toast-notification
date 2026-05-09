@@ -28,6 +28,7 @@ internal sealed class TrayIconService : IDisposable
     public event Action? QuitRequested;
     public event Action? ReconnectRequested;
     public event Action? SendTestRequested;
+    public event Action? ApplyUpdateRequested;
 
     private readonly string _serverUrl;
     private AgentConnectionState _currentState = AgentConnectionState.Connecting;
@@ -50,6 +51,7 @@ internal sealed class TrayIconService : IDisposable
     private bool _animPhase;
 
     private ToolStripMenuItem? _reconnectItem;
+    private ToolStripMenuItem? _updateItem;
 
     public TrayIconService(string serverUrl)
     {
@@ -65,6 +67,19 @@ internal sealed class TrayIconService : IDisposable
         _currentState = state;
         _stateDetail = detail;
         _uiContext?.Post(_ => ApplyState(), null);
+    }
+
+    /// <summary>
+    /// Shows the "Update Available (vX.X.X)" menu item. Thread-safe — posts to STA thread.
+    /// </summary>
+    public void ShowUpdateAvailable(string version)
+    {
+        _uiContext?.Post(_ =>
+        {
+            if (_updateItem is null) return;
+            _updateItem.Text    = $"Update Available (v{version})";
+            _updateItem.Visible = true;
+        }, null);
     }
 
     private void RunMessageLoop()
@@ -88,6 +103,12 @@ internal sealed class TrayIconService : IDisposable
         menu.Items.Add(new ToolStripMenuItem("View Log",                null, (_, _) => ViewLog()));
         _reconnectItem = new ToolStripMenuItem("Reconnect Now",         null, (_, _) => ReconnectRequested?.Invoke());
         menu.Items.Add(_reconnectItem);
+        _updateItem = new ToolStripMenuItem("Update Available",         null, (_, _) => ApplyUpdateRequested?.Invoke())
+        {
+            Visible  = false,
+            Font     = new System.Drawing.Font(SystemFonts.MenuFont!, System.Drawing.FontStyle.Bold),
+        };
+        menu.Items.Add(_updateItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Quit",                    null, (_, _) => QuitRequested?.Invoke()));
 

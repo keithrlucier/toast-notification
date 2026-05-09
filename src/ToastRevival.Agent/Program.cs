@@ -2,6 +2,16 @@ using System.Security.Principal;
 using System.Text.Json;
 using Microsoft.Windows.AppNotifications;
 using ToastRevival.Agent;
+using Velopack;
+
+// Velopack startup hook — MUST be first, before any other app init.
+// Handles --velopack-install / --velopack-updated / --velopack-uninstall lifecycle args.
+// When none of those args are present (normal launch) this is a no-op.
+// Safe to call in --setup-bootstrap (SYSTEM) context: no --velopack-* args → immediate return.
+VelopackApp.Build()
+    .OnAfterInstallFastCallback(v => DiagLog.Write($"Velopack: installed v{v}"))
+    .OnAfterUpdateFastCallback(v  => DiagLog.Write($"Velopack: updated to v{v}"))
+    .Run();
 
 return await AgentEntryPoint.RunAsync(args);
 
@@ -46,6 +56,15 @@ namespace ToastRevival.Agent
                 Console.Error.WriteLine("Toast Notification agent requires Windows 10 2004 / build 19041 or later.");
                 DiagLog.Write("EXIT 2: runtime gate IsWindowsVersionAtLeast(10,0,19041) failed.");
                 return 2;
+            }
+
+            // Self-redirect: if running from %ProgramFiles% and a newer Velopack-managed
+            // copy exists in %LocalAppData%, launch it and exit. This handles logons after
+            // the first Velopack update where the scheduled task still points at ProgramFiles.
+            if (UpdateService.TrySelfRedirect(args))
+            {
+                DiagLog.Write("EXIT 0: redirected to Velopack-managed copy.");
+                return 0;
             }
 
             // Setup mode: invoked by the MSI installer (as SYSTEM) to write bootstrap.json.
@@ -407,6 +426,18 @@ namespace ToastRevival.Agent
                         DiagLog.Write($"PrimaryMode: test notification failed: {ex.GetType().Name}: {ex.Message}");
                     }
                 };
+
+                // Wire auto-update: download completes → show tray "Update Available" item.
+                UpdateService.UpdateReady += version => tray.ShowUpdateAvailable(version);
+                tray.ApplyUpdateRequested += () =>
+                {
+                    try { UpdateService.ApplyUpdateAndRestart(); }
+                    catch (Exception ex) { DiagLog.Write($"PrimaryMode: ApplyUpdate failed: {ex.GetType().Name}: {ex.Message}"); }
+                };
+
+                // Background update check loop — non-blocking fire-and-forget.
+                // Cancels cleanly when shutdown is triggered.
+                var updateTask = Task.Run(() => UpdateService.RunUpdateLoopAsync(shutdown.Token));
 
                 await client.StartAsync(shutdown.Token);
                 Console.WriteLine($"Toast Notification agent online (deviceId={config.DeviceId}). Ctrl+C to exit.");

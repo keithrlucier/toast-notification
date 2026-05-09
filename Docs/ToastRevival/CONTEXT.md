@@ -151,6 +151,60 @@ Generated 2026-05-08 via `[guid]::NewGuid()`. Declared identically in both exten
 3. Code Sweep Step 4 for any change to `<Extensions>`: confirm both CLSIDs match, confirm `xmlns:com` and `xmlns:desktop` are declared on `<Package>`, confirm `IgnorableNamespaces` includes `com desktop`, confirm `Arguments="----AppNotificationActivated:"` is on `<com:ExeServer>`, extract `AppxManifest.xml` from the produced .msix and re-verify post-build.
 4. Reference: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/notifications/app-notifications/app-notifications-quickstart (Packaged section).
 
+## Auto-Update Architecture (Velopack, M2.D)
+
+Velopack 0.0.1298 provides the auto-update mechanism for non-Store deployment channels.
+
+### Startup Hook
+
+`VelopackApp.Build().OnAfterInstallFastCallback(...).OnAfterUpdateFastCallback(...).Run()` is the **first statement** in Program.cs top-level code, before `AgentEntryPoint.RunAsync`. It intercepts `--velopack-install`, `--velopack-updated`, and `--velopack-uninstall` lifecycle args if present; otherwise it is a no-op. Safe to call in `--setup-bootstrap` (SYSTEM) context: no lifecycle args present → immediate return.
+
+### MSI vs Velopack-Managed Install
+
+The agent has two install paths with different update behaviors:
+
+| Path | `IsInstalled` | Auto-update |
+|---|---|---|
+| MSI → `%ProgramFiles%\Toast Notification\` | false | No — skips update check. RMM manages updates. |
+| Velopack-channel → `%LocalAppData%\ToastNotification.Agent\current\` | true | Yes — 24h check loop active. |
+
+**Standing rule (M2.D):** Do NOT bypass `mgr.IsInstalled` in `UpdateService.CheckAndDownloadAsync`. The MSI-bootstrap binary at `%ProgramFiles%` is not Velopack-managed. Auto-update from that path requires elevation to modify `%ProgramFiles%`. MSP environments control the update lifecycle via RMM.
+
+### TrySelfRedirect — Scheduled Task Pointer Problem
+
+The Scheduled Task (created by the MSI CA) always points to `%ProgramFiles%\Toast Notification\ToastNotification.Agent.exe`. After a Velopack-channel update places a newer binary at `%LocalAppData%\ToastNotification.Agent\current\`, subsequent logons would start the old version.
+
+`UpdateService.TrySelfRedirect(args)` is called in `AgentEntryPoint.RunAsync` **after the OS version check, before setup-bootstrap**, and handles this:
+
+1. Is `AppContext.BaseDirectory` under `%ProgramFiles%`? If not, return false.
+2. Does `%LocalAppData%\ToastNotification.Agent\current\ToastNotification.Agent.exe` exist?
+3. Is its `FileVersionInfo.FileVersion` strictly greater than the current assembly version?
+4. If all three: launch the managed binary with the same args and return true (caller exits 0).
+
+After first Velopack update:
+- Logon N+1: ProgramFiles binary → `TrySelfRedirect` fires → launches managed v1.1 → ProgramFiles binary exits → managed v1.1 starts.
+- Logon N+2+: same pattern (≤50ms overhead per logon; two process starts). Acceptable.
+
+In SYSTEM context (`--setup-bootstrap`): `%LOCALAPPDATA%` resolves to the system profile, not a user path. The managed exe does not exist there. `TrySelfRedirect` returns false. Standing rule M2.C (SetupMode before elevation guard) is unaffected.
+
+### Enterprise Toggle (DisableAutoUpdate)
+
+MSPs can set `HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate = DWORD:1` to suppress all auto-update activity. `UpdateService.IsAutoUpdateEnabled()` checks this on every loop iteration. If disabled, `RunUpdateLoopAsync` returns immediately and nothing further happens.
+
+MSPs can also set `UpdateFeedUrl = REG_SZ:<url>` in the same key to redirect agents to an internal update mirror.
+
+### Build Pipeline
+
+`scripts/build-release.ps1` wraps `dotnet publish` + `vpk pack`. Prerequisite: `dotnet tool install -g vpk`.
+
+Production feed URL: `https://releases.toastnotification.com/agent/win-x64` — **M9 setup item**. Until the feed server is live, `UpdateManager.CheckForUpdatesAsync()` will throw a network error, caught silently in `RunUpdateLoopAsync`.
+
+### Standing Rules (M2.D)
+
+12. **Velopack startup hook first**: `VelopackApp.Build().Run()` must remain the first statement in Program.cs. Any future refactoring that calls code before it (logging init, arg pre-processing) is a regression.
+13. **IsInstalled gate in update check**: `UpdateService.CheckAndDownloadAsync` must gate on `mgr.IsInstalled`. Never remove this check — bypassing it on the ProgramFiles binary attempts to apply an update to a system path and would fail or throw.
+14. **TrySelfRedirect before setup-bootstrap**: `UpdateService.TrySelfRedirect` is safe to call before the setup-bootstrap check because it always returns false in SYSTEM context. Any future mode that MUST run from the ProgramFiles binary without redirect should check for its trigger BEFORE the `TrySelfRedirect` call, the same way setup-bootstrap is placed after it.
+
 ## Security Architecture
 
 ### Authentication & Authorization

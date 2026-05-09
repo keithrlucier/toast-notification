@@ -132,23 +132,38 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 
 ---
 
-## M3: Content Moderation & Security Hardening
+## M3: Content Moderation & Security Hardening  **[COMPLETE 2026-05-08]**
 **Goal**: Production security posture — content moderation, broadcast controls, payload signing.
 
-### Deliverables
-- **D1**: Azure Content Safety integration — text moderation on all notification content
-- **D2**: Azure Content Safety integration — image moderation on ad-hoc uploads (skip approved library assets)
-- **D3**: Moderation decision engine — PASS/REVIEW/BLOCK based on severity thresholds
-- **D4**: Admin approval queue — UI for reviewing flagged notifications (REVIEW status)
-- **D5**: Broadcast gate — notifications targeting > N devices require elevated permission + confirmation dialog
-- **D6**: MFA enforcement for Super Admin actions (broadcast, user management, tenant settings)
-- **D7**: Tenant-configurable blocklists — custom banned terms per tenant
-- **D8**: HMAC payload signing — server signs, agent verifies
-- **D9**: Security audit of all API endpoints — authentication, authorization, input validation, tenant isolation
+### Deliverables (all closed)
+- **D1** [x]: Azure Content Safety text scan integrated into `POST /api/notifications`. `IContentModerationService` + `ContentSafetyService`. Graceful no-key degradation (staging-safe).
+- **D2** [x]: Image moderation on ad-hoc `HeroImageUrl` URLs. Library asset skip deferred to M5 (no asset-library lookup pipeline yet).
+- **D3** [x]: Moderation decision engine — 0-1 = Pass, 2-4 = Review (PendingReview status, held for admin), 5-6 = Block (422 rejected). `AggregateModerationResults` takes worst-of-text+image.
+- **D4** [x]: Admin approval queue — `GET /api/moderation/pending`, `POST /approve`, `POST /reject`. Backend-only; UI in M4 dashboard.
+- **D5** [x]: Broadcast gate — `TargetType.All` requires `mfa=true` JWT claim; >100 devices requires `UserRole.Admin+`.
+- **D6** [x]: MFA enforcement — OtpNet 1.4.0 TOTP, `POST /api/auth/mfa/enroll`, `POST /api/auth/mfa/verify` → 15-min elevated token with `mfa=true` claim.
+- **D7** [x]: Tenant blocklists — `TenantBlocklistEntry` model, `GET/POST/DELETE /api/blocklist`, `BlocklistService` integrated as pipeline first-step (hit = Block, bypasses Azure scan).
+- **D8** [x **PRE-CLOSED M2.A**]: HMAC payload signing shipped in M2.A D4.
+- **D9** [x]: Security audit — Abish Code Sweep with 5-perspective review across all new surfaces + existing endpoints.
+
+### INFO Items Closed
+- INFO-M2A-002 ✓: DPAPI CurrentUser wrap on `ConfigStore.Save/TryLoad` (agent).
+- INFO-M2D-005 ✓: WinVerifyTrust P/Invoke + cert subject check in `UpdateService.TrySelfRedirect`.
+- INFO-M1-003 ✓: `EnrollmentKey` on `Tenant` + `FixedTimeEquals` gating in `DevicesController.Register`.
+- INFO-M2B-003 ✓: Composite index `(DeviceId, Status, CreatedAt)` on `NotificationDeliveries`.
+- INFO-M2B-004 ✓: `MemoryCache.SizeLimit = 50_000` + `Size = 1` per entry in `AgentHubClient`.
+- INFO-M2B-005 ✓: `device-catchup-per-hour` (60/hr) rate limit; catch-up endpoint migrated off shared `device-per-hour`.
+- INFO-M2C-002 ✓: WiX `LaunchCondition VersionNT64 >= 1000` (Win10+); runtime Program.cs holds precise build-19041 floor.
+
+### Code Sweep
+- Commit `362f9d3`: SHIP WITH NOTES — FIX-M3-001 patched pre-commit (WiX LaunchCondition value incorrect). INFO-M3-001/002/003 in FIX-LIST.
+
+### Migration
+- `M3SecurityHardening` (20260509024211): `TenantBlocklistEntries` table, `Tenants.EnrollmentKey` column, composite `NotificationDeliveries` index.
 
 ### Agent Deployment
-- Anthony: D1-D3, D5, D8-D9 (moderation pipeline, security audit — requires system-level judgment)
-- Abish: D4, D6-D7 (approval queue UI, MFA integration, blocklist CRUD — bounded tasks)
+- Anthony: D1-D7 (system-level + security-critical seams — single author for security milestone)
+- Abish: Code Sweep / D9 security audit ✓
 
 ---
 

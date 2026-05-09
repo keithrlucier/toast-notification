@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE 2026-05-08. M2.A COMPLETE 2026-05-09. M2.B COMPLETE 2026-05-09.** Backend pending endpoint + queue startup recovery + agent reconnect catch-up + 1-hour dedup all shipped. FIX-M2B-001 caught + patched pre-commit by Abish (catch-up since-window bug). 4 INFO items deferred to M3/M5. Next: **M2.C** — Diana-engaged tray icon spec (D7) + WiX MSI property wiring (D9) so the agent picks up CLIENTID/SERVERURL from the installer.
+Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE 2026-05-08. M2 (A/B/C/D) ALL COMPLETE. M3 COMPLETE 2026-05-08 (commit 362f9d3).** Content moderation pipeline, MFA TOTP, tenant blocklists, admin approval queue, broadcast gate, DPAPI agent encryption, Authenticode verify, all M2 INFO items closed. Next: **M4 — Admin Dashboard Core UI** (React + TypeScript, Diana active).
 
 ## Keith
 

@@ -359,6 +359,44 @@ M2 sliced. M2.A delivers D1 SignalR client + auto-reconnect, D2 toast rendering 
 - This does NOT confirm end-to-end runtime: a real Postgres instance + running API + agent install on a signed Win11 lab + button-click → ReportInteraction round-trip. That hand-off is Keith's lab work, gated on MSI/MSIX rebuild + signing.
 - Test coverage gap (INFO-M1-004) inherited from M1 — first tests at M8.
 
+## 2026-05-08 (M3 — Content Moderation + MFA + Security Hardening)
+
+### Scope
+
+M3 delivers D1-D7, D9 (D8 was pre-closed in M2.A). New backend surfaces: Azure Content Safety moderation pipeline, TOTP MFA enrollment/verification, tenant blocklists, admin approval queue, broadcast gate. Agent security: DPAPI ConfigStore encryption, Authenticode verify in TrySelfRedirect. INFO backlog items closed: M2A-002, M2D-005, M1-003, M2B-003, M2B-004, M2B-005, M2C-002.
+
+### Build Checks
+
+- `dotnet restore ToastRevival.sln`: passed. New packages: `Azure.AI.ContentSafety 1.0.0` (API), `Otp.NET 1.4.0` (API), `System.Security.Cryptography.ProtectedData 8.0.0` (Agent).
+- `dotnet build ToastRevival.sln -c Release`: **0 warnings, 0 errors** solution-wide post-FIX-M3-001 patch.
+- `dotnet ef migrations add M3SecurityHardening`: migration generated correctly on second attempt (first run against stale DLL produced empty migration; deleted and regenerated). Migration contains `TenantBlocklistEntries` table, `Tenants.EnrollmentKey` column, composite `NotificationDeliveries (DeviceId, Status, CreatedAt)` index. ✓
+- MSIX smoke check: 1 pre-existing FIX-MSIX-003 `mspdbcmf.exe` warning only. 0 errors. ✓
+
+### Code Sweep — Pre-Commit FIX
+
+- **FIX-M3-001** (BLOCKING → resolved before commit): WiX `<Launch Condition="VersionNT64 >= 1904">`. `VersionNT64` is `major*100+minor` — Windows 10/11 = 1000. `1000 >= 1904` evaluates false, which WiX interprets as the condition NOT being met → install blocked. Changed to `VersionNT64 >= 1000` (catches pre-Win10); runtime Program.cs provides the precise build-19041 floor.
+
+### Code Sweep — INFO findings (non-blocking, filed)
+
+- **INFO-M3-001**: TOTP replay within the 30s step accepted (no nonce cache). M8 hardening.
+- **INFO-M3-002**: `BlocklistService` is concrete injection in `NotificationsController` — extract interface at M4.
+- **INFO-M3-003**: `ContentSafetyService` logs to `Console.Error` — wire `ILogger` at M4.
+
+### Architecture Verification
+
+- **Moderation pipeline**: blocklist-first short-circuit → Azure text scan → Azure image scan → aggregate worst decision → Pass (enqueue) / Review (PendingReview status, not enqueued) / Block (422 Unprocessable Entity, not persisted). Code path audited; `AggregateModerationResults` correctly uses `>=` on `ModerationDecision` enum (Pass=0, Review=1, Block=2).
+- **DPAPI ConfigStore**: `ProtectedData.Protect/Unprotect` at `DataProtectionScope.CurrentUser`. Existing plaintext `config.json` on upgrade: `Unprotect` throws `CryptographicException`, caught in `TryLoad`, returns null → re-registration triggered. No crash, correct migration path.
+- **TrySelfRedirect Authenticode verify**: `X509Certificate2.CreateFromSignedFile` → subject contains "Toast2IT, LLC" → `WinVerifyTrust` → full chain validation. Any failure → `false` → no redirect. Correct safe default.
+- **MFA JWT**: `CreateMfaToken` adds `mfa=true` claim, 15-min lifetime. Standard JWT signed with same key. Broadcast gate checks `User.FindFirstValue("mfa") == "true"` — simple string comparison, correct.
+- **EnrollmentKey**: `FixedTimeEquals` on UTF-8 bytes — timing-safe comparison. Length mismatch → false without leakage.
+
+### Boundaries
+
+- Azure Content Safety integration NOT end-to-end verified — requires `ContentSafety:Endpoint` and `ContentSafety:Key` in environment. Graceful degradation (Pass-through) confirmed by code path review; unit test deferred to M8.
+- TOTP enrollment/verification NOT runtime-verified — requires a running backend + authenticator app. Code path correctness confirmed by OtpNet documentation alignment. M8 integration test.
+- DPAPI wrap NOT verified on a real agent install — requires signed MSI on a lab machine. Upgrade path (plaintext → encrypted on re-registration) is code-correct; lab verification is Keith's next MSI sign+test cycle.
+- WiX LaunchCondition NOT verified on a real install (lab machine test is a Keith handoff for next MSI build).
+
 ## 2026-05-09 (M2.B — Missed catch-up + Orphan recovery + Agent dedup)
 
 ### Scope

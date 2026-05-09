@@ -173,13 +173,11 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Add `e.HasIndex(d => new { d.DeviceId, d.Status, d.CreatedAt })` in `OnModelCreating` and generate a migration.
 **Blocking:** No.
 
-### INFO-M2B-004 (M3) — Agent dedup MemoryCache is unbounded
+### INFO-M2B-004 — **RESOLVED 2026-05-08 (M3, commit `362f9d3`)**
 
 **Filed:** 2026-05-09 (M2.B Code Sweep)
 **Surface:** `src/ToastRevival.Agent/AgentClient.cs::AgentHubClient._renderedCache`
-**Issue:** No `SizeLimit` on `MemoryCacheOptions`. ~100 bytes per entry × notification volume × agent uptime — a long-running agent on a high-volume tenant could grow the cache unboundedly. At 10K entries (~1MB) it's still fine; at 1M entries (~100MB) it isn't.
-**Fix:** Set `SizeLimit = 50_000` on `MemoryCacheOptions` and `Size = 1` on each entry's `MemoryCacheEntryOptions`.
-**Blocking:** No.
+**Resolution:** `MemoryCacheOptions { SizeLimit = 50_000 }` + `Size = 1` on each entry. 50K × ~100 bytes ≈ 5MB ceiling.
 
 ### INFO-M2C-001 (M9 — pre-launch) — Tray icon HICON handles not freed
 
@@ -245,13 +243,45 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Acceptable — FastCallbacks only fire during install/update lifecycle events, not normal startup. The lifecycle events are self-reporting (Velopack has its own log) and the dropped DiagLog messages carry no information that isn't already in Velopack's output. If verbose lifecycle logging becomes a requirement, call `DiagLog.Init()` before `VelopackApp.Build().Run()`.
 **Blocking:** No.
 
-### INFO-M2B-005 (M3) — Catch-up rate limit during reconnect storms
+### FIX-M3-001 — **PATCHED PRE-COMMIT 2026-05-08 (M3 Code Sweep — Abish caught)**
+
+**Filed:** 2026-05-08 (M3 Code Sweep)
+**Resolved:** 2026-05-08 (same session, before commit)
+**Surface:** `installer/ToastRevival.Agent.Setup.wxs` `<Launch Condition>`
+**Issue:** Condition written as `VersionNT64 >= 1904` — WiX `VersionNT64` is `major*100+minor` (Windows 10/11 = 1000), not the OS build number. `1000 >= 1904` evaluates false → MSI would have blocked installation on every Windows 10/11 machine with the message "requires Windows 10 version 2004".
+**Fix:** Changed to `VersionNT64 >= 1000` (catches pre-Windows-10 installs; precise build-19041 floor is enforced at runtime by `Program.cs` line 54).
+**Blocking:** WAS BLOCKING — patched before commit.
+
+### INFO-M3-001 (M8) — TOTP replay within the same 30s step is accepted
+
+**Filed:** 2026-05-08 (M3 Code Sweep)
+**Surface:** `src/ToastRevival.Api/Services/MfaService.cs::Verify`
+**Issue:** `VerifyTotp` with `VerificationWindow(1, 1)` accepts a code for 90s total. Within the same 30s step a replayed TOTP code from an intercepted request would be accepted. Standard TOTP limitation; no nonce/replay-cache.
+**Fix:** M8 — add a used-code cache (e.g. per-user last-verified `long timeStep` stored in DB) to reject replay within the same step.
+**Blocking:** No.
+
+### INFO-M3-002 (M4) — BlocklistService is concrete injection in NotificationsController
+
+**Filed:** 2026-05-08 (M3 Code Sweep)
+**Surface:** `src/ToastRevival.Api/Controllers/NotificationsController.cs`
+**Issue:** `BlocklistService` is a concrete class injected directly; no `IBlocklistService` interface. Makes the controller hard to unit test without the DB.
+**Fix:** Extract `IBlocklistService` interface at M4 when unit tests are introduced.
+**Blocking:** No.
+
+### INFO-M3-003 (M4) — ContentSafetyService logs to Console.Error
+
+**Filed:** 2026-05-08 (M3 Code Sweep)
+**Surface:** `src/ToastRevival.Api/Services/ContentSafetyService.cs`
+**Issue:** Azure scan failures are written to `Console.Error` — not structured logging. Will disappear in production without log capture.
+**Fix:** Inject `ILogger<ContentSafetyService>` at M4 when the DI logging infrastructure is wired.
+**Blocking:** No.
+
+### INFO-M2B-005 — **RESOLVED 2026-05-08 (M3)**
 
 **Filed:** 2026-05-09 (M2.B Code Sweep)
-**Surface:** `src/ToastRevival.Api/Controllers/NotificationsController.cs::GetPending` `[EnableRateLimiting("device-per-hour")]`
-**Issue:** Catch-up endpoint shares the `device-per-hour` (10 req/hr fixed window) policy with `ReportInteraction`. A flaky network with frequent reconnects could exhaust the budget. Fire-and-forget semantics mean a 429 just delays delivery to the next successful reconnect — not catastrophic — but a separate higher-budget policy for catch-up could improve real-world behavior on bad networks.
-**Fix:** Add `device-catchup-per-hour` policy at e.g. 60/hr. Or accept current limit (10/hr is plenty for normal connectivity).
-**Blocking:** No.
+**Resolved:** 2026-05-08 (M3, commit `362f9d3`)
+**Surface:** `src/ToastRevival.Api/Program.cs`, `NotificationsController.cs`
+**Resolution:** Added `device-catchup-per-hour` fixed-window policy (60 req/hr). Catch-up endpoint (`GET /api/notifications/pending`) switched from `device-per-hour` to `device-catchup-per-hour`. Existing `device-per-hour` (10/hr) retained for `ReportInteraction` and heartbeat ping.
 
 ### FIX-M2B-001 — **PATCHED PRE-COMMIT 2026-05-09 (M2.B Code Sweep)**
 

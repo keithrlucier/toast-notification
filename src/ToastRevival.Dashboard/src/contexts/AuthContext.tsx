@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const register = async (tenantName: string, email: string, password: string) => {
-    const res = await authApi.register({ tenantName, adminEmail: email, adminPassword: password });
+    const res = await authApi.register({ tenantName, email, password });
     const u = userFromResponse(res);
     localStorage.setItem('token', res.token);
     localStorage.setItem('user', JSON.stringify(u));

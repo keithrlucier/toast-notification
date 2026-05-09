@@ -31,8 +31,20 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest req)
     {
-        if (await _db.Tenants.AnyAsync(t => t.Subdomain == req.Subdomain))
-            return Conflict("Subdomain already taken.");
+        var subdomain = NormalizeSubdomain(req.Subdomain) ?? SlugifyTenantName(req.TenantName);
+        if (string.IsNullOrEmpty(subdomain))
+            return BadRequest("Tenant name must contain at least one alphanumeric character.");
+
+        // Tenant Subdomain is unique. If derived from TenantName collides with an
+        // existing tenant, append a short random suffix and retry up to a few times.
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            if (!await _db.Tenants.AnyAsync(t => t.Subdomain == subdomain)) break;
+            if (req.Subdomain is not null) return Conflict("Subdomain already taken.");
+            subdomain = SlugifyTenantName(req.TenantName) + "-" + RandomSuffix();
+        }
+        if (await _db.Tenants.AnyAsync(t => t.Subdomain == subdomain))
+            return Conflict("Could not allocate a unique subdomain. Provide one explicitly.");
 
         // Wrap in transaction — orphaned Tenant row if user creation fails otherwise
         using var tx = await _db.Database.BeginTransactionAsync();
@@ -40,7 +52,7 @@ public class AuthController : ControllerBase
         var tenant = new Tenant
         {
             Name = req.TenantName,
-            Subdomain = req.Subdomain,
+            Subdomain = subdomain,
             SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
         };
         _db.Tenants.Add(tenant);
@@ -59,7 +71,7 @@ public class AuthController : ControllerBase
         if (!result.Succeeded)
         {
             await tx.RollbackAsync();
-            return BadRequest(result.Errors.Select(e => e.Description));
+            return BadRequest(new { errors = result.Errors.Select(e => e.Description).ToArray() });
         }
 
         // Seed 6 default notification templates for this tenant.
@@ -82,7 +94,53 @@ public class AuthController : ControllerBase
         var refresh = _tokens.CreateRefreshToken();
         var expiresAt = DateTime.UtcNow.AddMinutes(60);
 
-        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, tenant.Id, user.Role.ToString()));
+        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, tenant.Id, user.Email!, user.Role.ToString()));
+    }
+
+    private static string? NormalizeSubdomain(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var s = raw.Trim().ToLowerInvariant();
+        // Conservative subdomain charset: a-z, 0-9, hyphen. Must start/end alphanumeric.
+        var chars = new System.Text.StringBuilder(s.Length);
+        foreach (var ch in s)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '-') chars.Append(ch);
+        }
+        var result = chars.ToString().Trim('-');
+        return result.Length == 0 ? null : result;
+    }
+
+    private static string SlugifyTenantName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+        var lower = name.Trim().ToLowerInvariant();
+        var chars = new System.Text.StringBuilder(lower.Length);
+        var prevHyphen = false;
+        foreach (var ch in lower)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                chars.Append(ch);
+                prevHyphen = false;
+            }
+            else if (!prevHyphen && chars.Length > 0)
+            {
+                chars.Append('-');
+                prevHyphen = true;
+            }
+        }
+        return chars.ToString().Trim('-');
+    }
+
+    private static string RandomSuffix()
+    {
+        const string alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+        Span<byte> bytes = stackalloc byte[4];
+        RandomNumberGenerator.Fill(bytes);
+        var sb = new System.Text.StringBuilder(4);
+        foreach (var b in bytes) sb.Append(alphabet[b % alphabet.Length]);
+        return sb.ToString();
     }
 
     [HttpPost("login")]
@@ -102,7 +160,7 @@ public class AuthController : ControllerBase
         var refresh = _tokens.CreateRefreshToken();
         var expiresAt = DateTime.UtcNow.AddMinutes(60);
 
-        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Role.ToString()));
+        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString()));
     }
 
     /// <summary>

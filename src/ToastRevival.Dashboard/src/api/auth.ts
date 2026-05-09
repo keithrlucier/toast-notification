@@ -7,12 +7,16 @@ export interface LoginRequest {
 
 export interface RegisterRequest {
   tenantName: string;
-  adminEmail: string;
-  adminPassword: string;
+  email: string;
+  password: string;
+  /** Optional explicit subdomain. If omitted, the API derives one from tenantName. */
+  subdomain?: string;
 }
 
 export interface AuthResponse {
   token: string;
+  refreshToken: string;
+  expiresAt: string;
   userId: string;
   tenantId: string;
   email: string;

@@ -4,9 +4,9 @@ namespace ToastRevival.Api.DTOs;
 
 public record RegisterRequest(
     [Required] string TenantName,
-    [Required] string Subdomain,
     [Required, EmailAddress] string Email,
     [Required, MinLength(8)] string Password,
+    string? Subdomain = null,
     string? DisplayName = null);
 
 public record LoginRequest(
@@ -19,4 +19,5 @@ public record AuthResponse(
     DateTime ExpiresAt,
     Guid UserId,
     Guid TenantId,
+    string Email,
     string Role);

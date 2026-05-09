@@ -2,6 +2,17 @@
 
 ## Open Issues
 
+### FIX-PROD-002 — **RESOLVED 2026-05-09** (Register flow had never worked end-to-end)
+
+**Filed:** 2026-05-09 (Keith hit "Create account" on production with valid inputs and saw "One or more validation errors occurred." with no detail).
+**Surface:** `src/ToastRevival.Dashboard/src/api/auth.ts`, `src/ToastRevival.Dashboard/src/api/client.ts`, `src/ToastRevival.Dashboard/src/contexts/AuthContext.tsx`, `src/ToastRevival.Api/DTOs/AuthDtos.cs`, `src/ToastRevival.Api/Controllers/AuthController.cs`.
+**Symptom:** API returned 400 with three `[Required]` validation errors (`Email`, `Password`, `Subdomain`) but the UI surfaced only the boilerplate ProblemDetails title.
+**Root cause:** Four independent bugs stacked — (1) frontend sent `adminEmail/adminPassword`, backend expected `Email/Password`; (2) backend required a `Subdomain` field the UI never collected; (3) backend `AuthResponse` didn't include `Email` even though frontend reads it; (4) frontend client.ts ignored the field-level `errors` map in ProblemDetails responses, so users saw no actionable error message. None caught by Code Sweep — bugs only surface when frontend payload meets live backend. Latent since M1 shipped 2026-05-08.
+**Fix applied:** Backend `RegisterRequest.Subdomain` made optional; auto-derived from `TenantName` via slugify with random suffix on collision. `AuthResponse` adds `Email` field, returned in both Register and Login. Frontend `RegisterRequest` interface uses `{ tenantName, email, password, subdomain? }`. `AuthResponse` interface adds `refreshToken`, `expiresAt`, `email`. `client.ts` extracts ProblemDetails `errors` (Record<string, string[]> or string[]) before falling back to `detail`/`message`/`title`.
+**Verification:** Curl with full payload returned a clean AuthResponse (token + email + refreshToken + role=Admin). Curl with missing fields returned the per-field errors ready for the UI. Playwright UI walkthrough on production: register form → dashboard, zero console errors, sidebar populated with email. HTML5 `minLength=8` on the password input blocks submission of obviously-bad passwords before the API is hit. Two smoke-test tenants created during verification were transactionally deleted from prod (`Tenants`, `AspNetUsers`, `NotificationTemplates` counts all back to 0). See `EVIDENCE/2026-05-09-fix-prod-002-register-flow.md`.
+**Standing rule:** Every milestone that ships a frontend → backend interaction MUST include a curl-with-real-payload + Playwright UI smoke against the deployed environment before close. Code Sweep does not catch payload-shape mismatches; only end-to-end smoke does.
+**Blocking:** YES — register endpoint was broken from the day it shipped (2026-05-08) until 2026-05-09. Now resolved.
+
 ### FIX-PROD-001 — **RESOLVED 2026-05-09** (Production blank-page blocker)
 
 **Filed:** 2026-05-09 (Keith reported `/register` shows a blank white page on production).

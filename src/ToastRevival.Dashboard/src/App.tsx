@@ -12,6 +12,8 @@ import History from './pages/History';
 import Moderation from './pages/Moderation';
 import ApiKeys from './pages/ApiKeys';
 import Users from './pages/Users';
+import Analytics from './pages/Analytics';
+import TenantSettings from './pages/TenantSettings';
 
 const router = createBrowserRouter([
   { path: '/login',    element: <Login /> },
@@ -23,11 +25,12 @@ const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true,         element: <Dashboard /> },
-      { path: '/devices',    element: <Devices /> },
-      { path: '/templates',  element: <Templates /> },
-      { path: '/compose',    element: <Compose /> },
-      { path: '/history',    element: <History /> },
+      { index: true,          element: <Dashboard /> },
+      { path: '/analytics',   element: <Analytics /> },
+      { path: '/devices',     element: <Devices /> },
+      { path: '/templates',   element: <Templates /> },
+      { path: '/compose',     element: <Compose /> },
+      { path: '/history',     element: <History /> },
       {
         path: '/moderation',
         element: (
@@ -41,6 +44,14 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute requireAdmin>
             <ApiKeys />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/settings/tenant',
+        element: (
+          <ProtectedRoute requireAdmin>
+            <TenantSettings />
           </ProtectedRoute>
         ),
       },

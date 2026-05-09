@@ -2,17 +2,19 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const NAV_ITEMS = [
-  { to: '/',            label: 'Dashboard',     icon: HomeIcon },
-  { to: '/compose',     label: 'Compose',       icon: ComposeIcon },
-  { to: '/templates',   label: 'Templates',     icon: TemplatesIcon },
-  { to: '/history',     label: 'History',       icon: HistoryIcon },
-  { to: '/devices',     label: 'Devices',       icon: DevicesIcon },
+  { to: '/',            label: 'Dashboard', icon: HomeIcon },
+  { to: '/analytics',   label: 'Analytics', icon: AnalyticsIcon },
+  { to: '/compose',     label: 'Compose',   icon: ComposeIcon },
+  { to: '/templates',   label: 'Templates', icon: TemplatesIcon },
+  { to: '/history',     label: 'History',   icon: HistoryIcon },
+  { to: '/devices',     label: 'Devices',   icon: DevicesIcon },
 ];
 
 const ADMIN_ITEMS = [
   { to: '/moderation',        label: 'Moderation', icon: ModerationIcon },
   { to: '/users',             label: 'Users',      icon: UsersIcon },
   { to: '/settings/api-keys', label: 'API Keys',   icon: ApiKeysIcon },
+  { to: '/settings/tenant',   label: 'Settings',   icon: SettingsIcon },
 ];
 
 export default function Sidebar() {
@@ -222,6 +224,25 @@ function ApiKeysIcon() {
       <circle cx="6" cy="9" r="3.5" stroke="currentColor" strokeWidth="1.5" />
       <path d="M8.5 7.5L14 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M12 4l1.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function AnalyticsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 12l3.5-4.5L8.5 10l3-4L14 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M2 14h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.42 1.42M11.53 11.53l1.42 1.42M3.05 12.95l1.42-1.42M11.53 4.47l1.42-1.42"
+        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

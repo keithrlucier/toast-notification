@@ -23,6 +23,12 @@ public class Tenant
     public DateTime? LicenseEnd { get; set; }
     public SubscriptionTier SubscriptionTier { get; set; } = SubscriptionTier.Free;
     public BillingStatus BillingStatus { get; set; } = BillingStatus.Active;
+    // Branding & notification defaults (M5.B D3)
+    public string? LogoUrl { get; set; }
+    public string? PrimaryColor { get; set; }
+    public string? DefaultAudioSetting { get; set; }
+    public ToastScenario DefaultScenario { get; set; } = ToastScenario.Default;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

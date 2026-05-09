@@ -23,6 +23,13 @@ export function MarketingFooter() {
           </div>
 
           <div className="m-footer-col">
+            <h4>Resources</h4>
+            <Link to="/docs">Docs</Link>
+            <Link to="/docs/getting-started">Getting started</Link>
+            <Link to="/docs/api">API reference</Link>
+          </div>
+
+          <div className="m-footer-col">
             <h4>Legal</h4>
             <Link to="/legal/privacy">Privacy</Link>
             <Link to="/legal/terms">Terms</Link>

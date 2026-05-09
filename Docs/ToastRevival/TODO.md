@@ -2,14 +2,15 @@
 
 ## Current Reality
 
-Project status: **M0A through M6 ALL COMPLETE. M7.A COMPLETE 2026-05-09. M7.B Corporate Edition COMPLETE 2026-05-09 — marketing site rebuilt against a tighter corporate brief (Bloomberg/Datadog register, real product screenshot, single-plan pricing) and shipped to https://toastnotification.com/.** Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt. **FIX-PROD-001 RESOLVED 2026-05-09** — Vite `assetsDir: 'static'` fixed the blank-page blocker. **FIX-PROD-002 RESOLVED 2026-05-09** — register flow end-to-end. **First-time admin signup at https://toastnotification.com/register.**
+Project status: **M0A through M6 ALL COMPLETE. M7.A COMPLETE 2026-05-09. M7.B Corporate Edition COMPLETE 2026-05-09 — marketing site rebuilt against a tighter corporate brief (Bloomberg/Datadog register, real product screenshot, single-plan pricing) and shipped to https://toastnotification.com/. M7.C COMPLETE 2026-05-09 — public docs hub with six routes (`/docs`, `/docs/getting-started`, `/docs/deploy/{store,intune,rmm}`, `/docs/api`) shipped behind `MarketingLayout`.** Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt. **FIX-PROD-001 RESOLVED 2026-05-09** — Vite `assetsDir: 'static'` fixed the blank-page blocker. **FIX-PROD-002 RESOLVED 2026-05-09** — register flow end-to-end. **First-time admin signup at https://toastnotification.com/register.**
 
-**Active backend rewrite tracks owned by Codex (per `Docs/ToastRevival/CODEX-HANDOFF.md`):**
-- Pricing v2 — collapse `SubscriptionTier` enum, `LicenseService` rewrite (no tier limits, single rate, $22/mo floor), Stripe per-unit metered model with 14-day trial, `BillingController` shape change. Frontend `Billing.tsx` and `Onboarding.tsx` plan-picker step are stale and need rewrite.
-- PlatformAdmin role — `AppUser.IsPlatformAdmin: bool`, `PlatformAdmin` auth policy, `/api/system/*` cross-tenant endpoints, idempotent seed for keithrlucier@gmail.com, `AuthController.Register` correction so the public register endpoint NEVER mints platform admins.
-- Admin dashboard UI redesign — every authenticated route. The corporate light-mode chrome ("Enterprise Console" + "System Admin" + Operations/Administration sidebar) is currently deployed live but the source state is uncommitted in the working tree as 25 modified tracked files.
+**Codex handoff tracks closed 2026-05-09:**
+- Pricing v2 shipped: single Standard plan, $0.22/device/month, 100-device monthly floor ($22), 14-day Stripe trial, no Free/Pro/Enterprise plan picker.
+- PlatformAdmin shipped: `AppUser.IsPlatformAdmin`, JWT `platformAdmin` claim, `PlatformAdmin` policy, `/api/system/*` cross-tenant endpoints, and production promotion for `keith@colosolutions.com` to `Role=SuperAdmin` + `IsPlatformAdmin=true`.
+- Admin dashboard UI redesign shipped: authenticated routes now use a VMware/Horizon-style dark enterprise rail with restrained light workspace, blue accent, no purple theme, and corrected Platform Admin/Tenant Owner labels.
+- Production verified: https://toastnotification.com/login 200, emitted script `/static/index-DTLiw4aQ.js` 200, `toast-api` active, bad login returns 401, smoke tenants cleaned up.
 
-Next decision: when Codex returns (≥14 hours from 2026-05-09 03:39 ET), point Codex at `CODEX-HANDOFF.md` and let it pick up the backend rewrite + admin UI redesign + commit the WIP files.
+Next decision: configure the real Stripe per-device price in production as `Stripe__PerDevicePriceId` after the Stripe dashboard price is created. Until then checkout degrades to a 503 instead of creating an invalid subscription.
 
 ## Keith
 
@@ -140,11 +141,14 @@ All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 
 - [x] Real product screenshot captured from live composer (smoke-test tenant) at `public/screenshots/composer-hero.png`.
 - [x] Build clean, deploy clean, post-deploy curl + Playwright verified.
 
-### M7.C — Build Mode (after M7.B)
-- [ ] Docs hub (`/docs`) with two-column layout (sticky sidebar nav + content).
-- [ ] Getting Started doc.
-- [ ] Deploy guides (Store, Intune, RMM).
-- [ ] API reference (auth, devices, notifications, webhooks).
+### M7.C — COMPLETE 2026-05-09
+- [x] Docs hub (`/docs`) with two-column layout (240px sticky sidebar at top:80px, mobile collapsible nav).
+- [x] Getting Started doc (`/docs/getting-started`) — 4 steps register tenant → first notification.
+- [x] Deploy guides — `/docs/deploy/store`, `/docs/deploy/intune`, `/docs/deploy/rmm`.
+- [x] API reference (`/docs/api`) — auth, devices, notifications, webhooks, rate limits.
+- [x] `DocsLayout` + `CodeBlock` + `Callout` components shipped under `components/marketing/`.
+- [x] MarketingHeader Docs link + MarketingFooter Resources column. Slim grid widened 3→4 cols.
+- [x] Live at https://toastnotification.com/docs. Code Sweep SHIP WITH NOTES (INFO-M7C-001/002/003/005, FIX-M7C-001 patched). Diana sign-off APPROVED. See `EVIDENCE/2026-05-09-m7c-docs-hub.md`.
 
 ### M7.D — SEO + Deploy (after M7.C)
 - [ ] `llms.txt` at `https://toastnotification.com/llms.txt` (use M7.A draft as starting point; fill in real numbers).

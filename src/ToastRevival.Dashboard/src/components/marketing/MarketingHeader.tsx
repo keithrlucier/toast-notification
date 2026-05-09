@@ -5,6 +5,7 @@ import { BrandMark } from './BrandMark';
 
 const NAV_LINKS = [
   { to: '/pricing', label: 'Pricing' },
+  { to: '/docs', label: 'Docs' },
 ];
 
 export function MarketingHeader() {

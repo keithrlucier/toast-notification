@@ -25,6 +25,13 @@ import Onboarding from './pages/Onboarding';
 const MarketingLayout = lazy(() => import('./components/marketing/MarketingLayout'));
 const Home = lazy(() => import('./pages/marketing/Home'));
 const Pricing = lazy(() => import('./pages/marketing/Pricing'));
+const DocsLayout = lazy(() => import('./components/marketing/DocsLayout'));
+const DocsIndex = lazy(() => import('./pages/marketing/docs/DocsIndex'));
+const DocsGettingStarted = lazy(() => import('./pages/marketing/docs/DocsGettingStarted'));
+const DocsStore = lazy(() => import('./pages/marketing/docs/DocsStore'));
+const DocsIntune = lazy(() => import('./pages/marketing/docs/DocsIntune'));
+const DocsRmm = lazy(() => import('./pages/marketing/docs/DocsRmm'));
+const DocsApi = lazy(() => import('./pages/marketing/docs/DocsApi'));
 
 function MarketingFallback() {
   return (
@@ -74,6 +81,21 @@ const router = createBrowserRouter([
     children: [
       { path: '/',         element: <RootIndex /> },
       { path: '/pricing',  element: <Suspense fallback={<MarketingFallback />}><Pricing /></Suspense> },
+      {
+        element: (
+          <Suspense fallback={<MarketingFallback />}>
+            <DocsLayout />
+          </Suspense>
+        ),
+        children: [
+          { path: '/docs',                  element: <Suspense fallback={<MarketingFallback />}><DocsIndex /></Suspense> },
+          { path: '/docs/getting-started',  element: <Suspense fallback={<MarketingFallback />}><DocsGettingStarted /></Suspense> },
+          { path: '/docs/deploy/store',     element: <Suspense fallback={<MarketingFallback />}><DocsStore /></Suspense> },
+          { path: '/docs/deploy/intune',    element: <Suspense fallback={<MarketingFallback />}><DocsIntune /></Suspense> },
+          { path: '/docs/deploy/rmm',       element: <Suspense fallback={<MarketingFallback />}><DocsRmm /></Suspense> },
+          { path: '/docs/api',              element: <Suspense fallback={<MarketingFallback />}><DocsApi /></Suspense> },
+        ],
+      },
     ],
   },
 

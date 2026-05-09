@@ -332,6 +332,14 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 - `dotnet build ToastRevival.sln`: 0 warnings, 0 errors.
 - `npx tsc -p tsconfig.app.json --noEmit`: 0 errors. Vite build: clean.
 
+### Codex Pricing v2 / PlatformAdmin update - 2026-05-09
+- Replaced tier UX and enforcement with the single Standard plan: $0.22/device/month, 100-device billable floor ($22), 14-day Stripe trial.
+- `LicenseService.CanRegisterDeviceAsync` now blocks only canceled billing; Stripe subscription quantity sync updates the first subscription item to `max(100, activeDeviceCount)` on register/decommission.
+- `BillingController.Plan` now returns `pricePerDevice`, `minimumDevices`, `monthlyFloor`, `deviceCount`, `billableDevices`, `currentBill`, `billingStatus`, and `trialEnd`.
+- `Billing.tsx` and `Onboarding.tsx` were rewritten for the single-plan contract.
+- Platform admin support added: `AppUser.IsPlatformAdmin`, JWT `platformAdmin` claim, `PlatformAdmin` policy, and `/api/system/*` cross-tenant endpoints.
+- Production row `keith@colosolutions.com` promoted to `Role=SuperAdmin` and `IsPlatformAdmin=true`; smoke users cleaned up after verification.
+
 ### Agent Deployment
 - Anthony: D2-D3 backend (Stripe integration, license enforcement, migration, CsvHelper, AuthController fix) ✓
 - Abish-1: D1 service + D4 metering + D5 onboarding + D6 billing frontend ✓
@@ -368,7 +376,7 @@ Carl sliced M7 at orientation (2026-05-09). M7.A delivers the design spec and th
 - **D1** [x **COMPLETE 2026-05-09 (M7.A)**]: Diana DESIGN-SPEC for marketing site (shared design system with dashboard); onboarding emoji→SVG swap closes INFO-M6-004.
 - **D2** [x **COMPLETE 2026-05-09 (M7.B Corporate Edition)**]: Marketing Home rebuilt corporate-grade — hero with real product screenshot, problem/solution comparison, capability matrix, security architecture, how-it-works, single-plan pricing summary, formal CTA. Live at https://toastnotification.com/.
 - **D3** [x **COMPLETE 2026-05-09 (M7.B Corporate Edition)**]: Pricing page rebuilt as single-plan layout — $0.22/device + 100-device floor + 14-day trial, indicative-cost table, 6-card inclusion grid, 8-question FAQ. Live at https://toastnotification.com/pricing.
-- **D4**: Documentation pages (`/docs/*`) — getting started, deploy guides (Store/Intune/RMM), API reference. **Deferred**; not on critical path for tonight.
+- **D4** [x **COMPLETE 2026-05-09 (M7.C)**]: Documentation pages (`/docs/*`) — hub, getting started, deploy guides (Store/Intune/RMM), API reference. Six lazy-loaded chunks (4.75–10.96 kB) under `MarketingLayout > DocsLayout` (240px sticky sidebar at top:80px, mobile collapsible nav). `CodeBlock` component with copy-to-clipboard + content-type label; `Callout` (note/warning) with `--status-success` / `--status-warning` borders. Banned-terms grep clean (no `persona`, `audio drama`, `jailbreak`, `M[0-9]+` codes, third-party tracking). Live at https://toastnotification.com/docs. See `EVIDENCE/2026-05-09-m7c-docs-hub.md`.
 - **D5**: SEO + JSON-LD + sitemap + `llms.txt` (M7.D). The /how-we-built-it page is REMOVED from the spec per Keith's directive — the DocPro/AI-built story stays in `llms.txt` + internal docs only, never on public surfaces.
 - **D6** [x **COMPLETE 2026-05-09**]: Deployed to https://toastnotification.com — same Lightsail box (TOASTWEB1), same nginx, no DNS change. Curl + Playwright verified.
 

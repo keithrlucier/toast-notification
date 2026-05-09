@@ -2,6 +2,27 @@
 
 ## Open Issues
 
+### FIX-M7C-001 — **RESOLVED 2026-05-09 (pre-commit)** (Mobile docs nav links below 44px tap target)
+
+**Filed:** 2026-05-09 during Abish's M7.C Code Sweep (Step 5 — architectural / Diana standing rule).
+**Surface:** `src/ToastRevival.Dashboard/src/components/marketing/marketing.css` (`.m-docs-nav-link` mobile breakpoint).
+**Symptom:** Desktop `.m-docs-nav-link` was `padding: 8px 12px` font-size 14, line-height ~20px → tap target ~36px on mobile. Diana's standing rule (Mobile touch targets must be explicitly spec'd at 44px minimum, 2026-04-12) was violated.
+**Fix applied:** Added mobile-breakpoint override (`@media max-width: 1023px`) bumping `.m-docs-nav-link` to `min-height: 44px`, `padding: 12px 12px`, `font-size: 15px`, removing the desktop 2px left-border treatment for the larger touch surface.
+**Verification:** Rebuilt 729 modules clean. Playwright at 480×900 confirms the open mobile nav links exceed 44px.
+**Blocking:** No — caught and patched before any commit shipped.
+
+### INFO-M7C-005 (open, M7.D candidate)
+Diana, post-deploy review: `--text-secondary` (#4B5563) reads slightly soft on `--bg-primary` (#F3F5F8) for docs body. WCAG AA compliant but Keith's standing comment ("my old eyes hurt, it's too faint") may flag. M7.D candidate: bump body to `--text-primary` and reserve `--text-secondary` for fine print / nav inactive.
+
+### INFO-M7C-003 (open, M8 candidate)
+Docs (`/docs/getting-started`, `/docs/deploy/store`, `/docs/deploy/rmm`) reference an "Install agent" admin tab path on the dashboard's Devices page. The Devices page may not yet expose the install download UI on prod (Codex's admin UI redesign in flight may add it; need to confirm). Copy is forward-leaning. Verify or rewrite for M8.
+
+### INFO-M7C-002 (open, no action)
+`m-footer-grid--slim` widened from 3-col to 4-col to host the new `Resources` column. Codex did NOT modify `MarketingFooter.tsx` (verified via `git diff --cached`), so no merge conflict expected. Mobile breakpoint preserves single-column.
+
+### INFO-M7C-001 (open, M9 candidate)
+`CodeBlock` clipboard API (`navigator.clipboard.writeText`) has no fallback for sandboxed/insecure contexts. Fails silently — button stays default. Acceptable v1 (HTTPS site, modern browsers). Add `document.execCommand('copy')` fallback at M9 polish.
+
 ### FIX-PROD-002 — **RESOLVED 2026-05-09** (Register flow had never worked end-to-end)
 
 **Filed:** 2026-05-09 (Keith hit "Create account" on production with valid inputs and saw "One or more validation errors occurred." with no detail).
@@ -523,7 +544,7 @@ preventative for a platform below the product's stated floor, and the lab machin
 
 **Filed:** 2026-05-09 (M6 Code Sweep — Abish)
 **Surface:** `src/ToastRevival.Api/appsettings.json`
-**Issue:** `Stripe:SecretKey`, `Stripe:WebhookSecret`, `Stripe:ProPriceId`, `Stripe:EnterprisePriceId` are placeholder strings. Production must override via environment variables: `Stripe__SecretKey`, `Stripe__WebhookSecret`, `Stripe__ProPriceId`, `Stripe__EnterprisePriceId`. BillingController checks for placeholder prefix and returns 503 — safe degradation.
+**Issue:** `Stripe:SecretKey`, `Stripe:WebhookSecret`, `Stripe:PerDevicePriceId` are placeholder strings. Production must override via environment variables: `Stripe__SecretKey`, `Stripe__WebhookSecret`, `Stripe__PerDevicePriceId`. BillingController checks for placeholder prefixes and returns 503 instead of creating a bad checkout session.
 **Fix:** Document in M9 DEPLOY.md alongside existing JWT key guidance.
 **Blocking:** No. Test and production configs handled via env vars.
 
@@ -543,13 +564,13 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Cache with 5-minute TTL per tenantId at M9.
 **Blocking:** No.
 
-### INFO-M6-004 (M7 design) — Onboarding.tsx welcome step uses emoji placeholder icons
+### INFO-M6-004 (closed 2026-05-09) — Onboarding.tsx welcome step uses emoji placeholder icons
 
 **Filed:** 2026-05-09 (M6 Code Sweep — Abish)
 **Surface:** `src/ToastRevival.Dashboard/src/pages/Onboarding.tsx`
 **Issue:** Welcome step uses emoji (🔔, 📋, 📦, 🚀). Diana's standing preference: no emojis in UI. These are placeholder scaffolding — Diana will provide SVG replacements with the M7 onboarding design spec.
-**Fix:** Replace with SVGs at M7.
-**Blocking:** No. Functional for internal testing.
+**Fix:** CLOSED 2026-05-09 by Codex. Onboarding uses SVG icon components and the single Standard billing step.
+**Blocking:** No.
 
 ---
 

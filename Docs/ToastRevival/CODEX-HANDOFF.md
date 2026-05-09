@@ -168,3 +168,66 @@ There is no live channel between us. This doc is the comms surface. If you need 
 
 — Carl, Anthony, Diana, Abish (DocPro team)
 2026-05-09
+
+---
+
+## Codex closeout - 2026-05-09
+
+Codex closed the inherited tracks and deployed them to production.
+
+- Admin UI: authenticated shell now uses a dark enterprise rail, light operations workspace, blue accent, dense cards/tables, and corrected role labels. Platform admins render as `Platform Admin`; tenant `SuperAdmin` renders as `Tenant Owner`.
+- Navigation errors: fixed API contract mismatches for MFA, enum JSON, device DTOs, notification status, and JWT claim remapping (`MapInboundClaims=false`) so admin routes stop returning false 403s when the token contains `role=SuperAdmin`.
+- Tenant owner self-heal: public register creates `Role=SuperAdmin`; login promotes a sole legacy tenant `Admin` to `SuperAdmin` when no tenant owner exists.
+- PlatformAdmin: added `AppUser.IsPlatformAdmin`, platform JWT claim, `PlatformAdmin` policy, and `/api/system/tenants`, `/api/system/tenants/{id}`, `/api/system/billing-overview`, `/api/system/devices`.
+- Keith production access: production row `keith@colosolutions.com` is now `Role=SuperAdmin` and `IsPlatformAdmin=true`. The migration also idempotently handles `keithrlucier@gmail.com` and `keith@colosolutions.com` on fresh environments.
+- Pricing v2: backend and frontend now use a single Standard plan at $0.22/device/month, 100-device billable floor ($22), and 14-day Stripe trial. Device registration is no longer blocked by old tier limits; canceled billing still blocks new registrations.
+- Stripe remaining action: create the real per-device recurring Stripe price and set production `Stripe__PerDevicePriceId`. Checkout intentionally returns 503 until that value is configured.
+- Production verification: `toast-api` active; `https://toastnotification.com/login` 200; emitted script `/static/index-DTLiw4aQ.js` 200 with 723817 bytes; bad login returns 401; smoke public register returned `Role=SuperAdmin` and `IsPlatformAdmin=false`; temporary promoted smoke platform admin reached `/api/system/billing-overview`; browser smoke loaded dashboard and billing with no console errors; all `codex-%@toastnotification.test` smoke users were removed.
+
+---
+
+## DocPro Team — incoming notes (2026-05-09 PM)
+
+Carl, Anthony, Diana, Abish — back for one more pass before sleep.
+
+**M7.C Docs Hub shipped 2026-05-09 (current session).** Six new public unauth marketing routes, all live at https://toastnotification.com/docs:
+
+- `/docs` — overview hub with 5 quick-link cards.
+- `/docs/getting-started` — 4-step onboarding (register → tenant ID → install agent → first notification).
+- `/docs/deploy/store` — Microsoft Store install + env-var/bootstrap.json tenant binding + WDAC/AppLocker note.
+- `/docs/deploy/intune` — LOB upload, OMA-URI/Win32-wrapper/self-service tenant-ID delivery, detection rule.
+- `/docs/deploy/rmm` — NinjaOne / Datto / ConnectWise Automate / Atera / generic msiexec patterns.
+- `/docs/api` — auth, devices, notifications, webhooks, rate-limits reference with endpoint table + code examples.
+
+**Files we touched (committed in this session's selective-commit pass)**:
+
+- New: `src/ToastRevival.Dashboard/src/components/marketing/DocsLayout.tsx`, `CodeBlock.tsx`.
+- New: `src/ToastRevival.Dashboard/src/pages/marketing/docs/{DocsIndex,DocsGettingStarted,DocsStore,DocsIntune,DocsRmm,DocsApi}.tsx`.
+- Modified (ours): `src/ToastRevival.Dashboard/src/App.tsx` (six new lazy chunks under `MarketingLayout > DocsLayout`), `MarketingHeader.tsx` (`Docs` nav link), `MarketingFooter.tsx` (`Resources` column; slim grid widened 3→4 cols), `marketing.css` (`m-docs-*` namespace, ~470 lines appended, mobile breakpoint with 44px touch targets).
+- Doc updates: `MILESTONES.md`, `TODO.md`, `STATUS.md`, `FIX-LIST.md`, `EVIDENCE/2026-05-09-m7c-docs-hub.md`.
+
+**Files we explicitly did NOT touch (your in-flight WIP at orientation time)**:
+
+39 modified tracked + 5 new untracked covering the Pricing v2 + PlatformAdmin + admin-UI redesign tracks. Includes `index.css` (+405 lines of light-mode tokens), all 13 dashboard pages, `Sidebar.tsx`, `Layout.tsx`, `ProtectedRoute.tsx`, `AuthContext.tsx`, the API controllers/services/migrations for PlatformAdmin and pricing v2, and `pages/marketing/Home.tsx` / `Pricing.tsx` (your copy alignment for the new trial flow). Per the M7.B handoff pattern, we used `git stash --keep-index` to validate our work in isolation, popped, rebuilt with your WIP included, and deployed the WIP-included bundle so prod parity stayed intact through the M7.C deploy. The deployed `MarketingLayout-*.css` chunk is now 28.88 kB (was 20.85 kB at M7.B) — the 8 kB delta is solely the `m-docs-*` namespace; no `m-*` rule overrides on the existing M7.B classes.
+
+**Production state after M7.C deploy (verified):**
+
+- `https://toastnotification.com/static/index-C-HXF1Mu.js` → 200, 723 817 bytes (your WIP-included bundle, unchanged hash from your last deploy because you committed nothing new and we layered on top).
+- `https://toastnotification.com/docs` → SPA fallback 200 (782 bytes), DocsIndex chunk loads (4 753 bytes).
+- `https://toastnotification.com/docs/api` → SPA fallback 200, DocsApi chunk loads (10 957 bytes).
+- `https://toastnotification.com/login` → SPA fallback 200 (FIX-PROD-001 hold confirmed; no marketing-page-clobber).
+
+**Docs alignment with your Pricing v2:**
+
+The docs reference your shipped pricing model end-to-end — `$0.22/device/month`, `100-device subscription minimum`, `14-day trial via Stripe checkout`, `canceled subscriptions block new registrations`. So when Keith creates the Stripe `Stripe__PerDevicePriceId` price and the 503 lifts, the customer-facing docs already speak the right language.
+
+**Open INFO items from the M7.C sweep that may matter to you:**
+
+- `INFO-M7C-003`: Docs reference `Devices → Install agent` admin tab. Your admin UI redesign may surface this UI; confirm or coordinate via `Devices.tsx`.
+- `INFO-M7C-005` (Diana, post-deploy): docs body color `--text-secondary` (#4B5563) reads slightly soft on `--bg-primary` (#F3F5F8) — WCAG-compliant but Keith may flag. M7.D candidate.
+
+**Your WIP is still uncommitted in the local working tree.** When you (Codex) come back, run `git status`; you'll see the same 39 + 5 you handed off, untouched by us. Selective-commit them whenever you're ready — they're already deployed live on prod, so the commit is a source-of-truth alignment, not a deploy.
+
+**Next up for the DocPro team:** M7.D — `llms.txt`, JSON-LD per page, `/sitemap.xml`, `/robots.txt`, OG/Twitter card image (1200×630), favicon set, Lighthouse 100 SEO. Same Lightsail box, same nginx, no DNS change.
+
+— Carl, Anthony, Diana, Abish (DocPro team), 2026-05-09 PM

@@ -9,13 +9,12 @@
 **Root cause discovered (M0 D5):** Setting `<TargetPlatformVersion>` in a csproj conditional PropertyGroup does NOT work. The .NET SDK TFM (`net8.0-windows10.0.19041.0`) sets `TargetPlatformVersion=10.0.19041.0` in a late `.targets` import that runs AFTER PropertyGroup evaluation, silently overriding any csproj value.
 **Fix applied:** Added `-p:TargetPlatformVersion=10.0.22621.0` to the `dotnet build` invocation in `scripts/build-msix.ps1`. Command-line flags have higher MSBuild precedence than imported `.targets`. Produced manifest verified: `MaxVersionTested="10.0.22621.0"` ✓. See CONTEXT.md standing rule #4.
 
-### INFO-D5-001 (M2) - No "already running" guard in Program.cs
+### INFO-D5-001 — **RESOLVED 2026-05-09 (M2.A)**
 
 **Filed:** 2026-05-08 (M0 D5 Code Sweep)
+**Resolved:** 2026-05-09 (M2.A, FIX-M2A-001 patch + named mutex implementation)
 **Surface:** `src/ToastRevival.Agent/Program.cs`
-**Issue:** The agent unconditionally fires a toast on every launch. If multiple startup triggers fire (e.g., startupTask + manual launch + second session on same machine), multiple agent instances fire multiple toasts per logon. Not introduced by D5 — pre-existing — but surfaced by the addition of `windows.startupTask` which creates a second automatic launch path.
-**Fix:** Add a named mutex guard at process startup — exit cleanly if another instance is already running. M2 work.
-**Blocking:** No.
+**Resolution:** `AgentEntryPoint.RunAsync` now takes a session-local named mutex (`Local\Toast2IT.ToastNotification.PrimaryWorker`) before entering primary worker mode. Activation mode + diagnostic mode both short-circuit BEFORE the mutex acquisition (their flows are short-lived and must not block the long-running primary). `WaitOne(TimeSpan.Zero)` non-blocking try; if held, exit code 5 with a clear stderr message. `AbandonedMutexException` catch path takes ownership when the previous holder crashed without releasing. `Local\` prefix (NOT `Global\`) — verified during Code Sweep that `Global\` would regress M0 D4 multi-user verification by colliding across Windows sessions; FIX-M2A-001 patched the prefix pre-commit.
 
 ### INFO-D5-002 (low) - MSI + MSIX simultaneous install fires two toasts per logon
 
@@ -129,6 +128,49 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Add a startup check: `if (jwtKey.Length < 32 && !app.Environment.IsDevelopment()) throw`. Use environment variable `Jwt__Key` for production overrides.
 **Blocking:** No. Covered by deployment documentation (M7/M9).
 
+### INFO-MSIX-004-D — **RESOLVED 2026-05-09 (M2.A)**
+
+**Filed:** 2026-05-08 (M0 D2)
+**Resolved:** 2026-05-09 (M2.A activation handler implementation)
+**Surface:** `src/ToastRevival.Agent/Program.cs`, `src/ToastRevival.Api/Controllers/NotificationsController.cs`
+**Resolution:** `AgentEntryPoint.TryFindActivationArg` detects the framework sentinel `----AppNotificationActivated:` in argv before mutex acquisition or hub spin-up. When matched, `ActivationMode.RunAsync` takes over: (1) loads `DeviceConfig` from disk; (2) subscribes to `AppNotificationManager.Default.NotificationInvoked`; (3) calls `Register()` (the framework fires `NotificationInvoked` synchronously during this call with the original toast's argument string); (4) parses click args; (5) if `source==hub`, posts to new device-JWT-authenticated `POST /api/notifications/{notificationId}/interactions` REST endpoint via `InteractionFallback.PostAsync`; (6) calls `Unregister()` and exits clean. 5-second timeout on the NotificationInvoked wait (exit 7) and 15-second timeout on the REST POST. Activation mode never spins up SignalR or contests the primary mutex.
+
+### INFO-M2A-002 (M3 — security hardening) — DeviceConfig at rest is plaintext
+
+**Filed:** 2026-05-09 (M2.A Code Sweep)
+**Surface:** `src/ToastRevival.Agent/DeviceConfig.cs::ConfigStore`
+**Issue:** Per-device JWT and per-tenant HMAC signing key are stored as plaintext JSON at `%LOCALAPPDATA%\Toast2IT\Toast Notification\config.json` (or the package's `LocalState` equivalent). Per-user LocalAppData ACLs gate ordinary access; admin-credential exfiltration is not gated. An attacker with admin on the endpoint can impersonate the device to the backend and forge HMAC-signed payloads.
+**Fix:** Wrap `Save`/`TryLoad` with `ProtectedData.Protect`/`Unprotect` at `DataProtectionScope.CurrentUser`. Acceptable additional surface for the security-hardening milestone.
+**Blocking:** No. M3 work.
+
+### INFO-M2A-003 (M2.B) — Orphan Sending notifications on service crash
+
+**Filed:** 2026-05-09 (M2.A Code Sweep)
+**Surface:** `src/ToastRevival.Api/Services/NotificationQueueService.cs::ProcessAsync`
+**Issue:** Two `SaveChangesAsync` calls per notification (`Status=Sending`; later `Status=Sent/Failed`). A service crash between the two leaves the row stuck in `Sending` indefinitely and its deliveries stuck in `Pending`. Background-service semantic, not a controller-action transaction concern — but a recovery concern.
+**Fix:** On `ExecuteAsync` startup, sweep all `Notifications WHERE Status=Sending AND SentAt < now() - INTERVAL '5 minutes'` to `Failed`, with deliveries to `Failed` accordingly. M2.B catch-up work.
+**Blocking:** No.
+
+### INFO-M2A-004 (M2.B) — Agent has no de-dup window for hub redelivery
+
+**Filed:** 2026-05-09 (M2.A Code Sweep)
+**Surface:** `src/ToastRevival.Agent/AgentClient.cs::OnReceiveNotificationAsync`
+**Issue:** SignalR can redeliver a buffered `ReceiveNotification` message after a reconnect. The agent has no `notificationId` de-dup, so it could double-render the same toast.
+**Fix:** Track recently-rendered `notificationId` in a `MemoryCache` with a 1-hour sliding window. Skip render + skip `ReportDelivery` on cache hit. M2.B catch-up work — pairs naturally with the missed-catch-up endpoint.
+**Blocking:** No.
+
+### INFO-M2A-005 (M9 — deploy doc) — Migration backfill requires Postgres 13+
+
+**Filed:** 2026-05-09 (M2.A Code Sweep)
+**Surface:** `src/ToastRevival.Api/Migrations/20260509002218_AddTenantSigningKey.cs`
+**Issue:** The backfill SQL uses `gen_random_uuid()` which is built-in to Postgres 13+ (previously required `pgcrypto` extension). Acceptable for any modern Postgres deployment but the floor should be documented.
+**Fix:** Document Postgres minimum-version (13+) in M9 deployment infra.
+**Blocking:** No.
+
 ## Resolved
 
 - **FIX-MSIX-004** (medium) - 2026-05-08, commit `6e3495c`. Packaged MSIX install did not fire toasts because `<com:ExeServer>` was missing `Arguments="----AppNotificationActivated:"`. Patched, signed, installed; visible toast verified on Win11 lab with button-click routing through `NotificationInvoked`. See entry above for full root-cause detail.
+
+- **INFO-D5-001** (low) - 2026-05-09 (M2.A). Named mutex (`Local\Toast2IT.ToastNotification.PrimaryWorker`) gates primary worker mode. Activation + diagnostic modes short-circuit before mutex acquisition. See entry above.
+
+- **INFO-MSIX-004-D** (low) - 2026-05-09 (M2.A). Activation-handler short-circuits before SignalR; routes button-click events to new REST `POST /api/notifications/{id}/interactions` endpoint. See entry above.

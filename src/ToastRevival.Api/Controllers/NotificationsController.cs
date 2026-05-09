@@ -3,9 +3,11 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Hubs;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
 
@@ -20,12 +22,18 @@ public class NotificationsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly INotificationQueueService _queue;
     private readonly IAuditService _audit;
+    private readonly IHubContext<NotificationHub> _hub;
 
-    public NotificationsController(AppDbContext db, INotificationQueueService queue, IAuditService audit)
+    public NotificationsController(
+        AppDbContext db,
+        INotificationQueueService queue,
+        IAuditService audit,
+        IHubContext<NotificationHub> hub)
     {
         _db = db;
         _queue = queue;
         _audit = audit;
+        _hub = hub;
     }
 
     [HttpPost]
@@ -116,6 +124,49 @@ public class NotificationsController : ControllerBase
             n.Id, n.Title, n.BodyLine1, n.BodyLine2,
             n.Status.ToString(), n.TargetType, n.TargetDeviceCount,
             n.ScheduledAt, n.SentAt, n.CreatedAt));
+    }
+
+    /// <summary>
+    /// Device-authenticated REST fallback for reporting an interaction. The hub
+    /// path is preferred (NotificationHub.ReportInteraction) — this endpoint exists
+    /// for the MSIX activation handler exit path, where the framework launches a
+    /// short-lived agent process to deliver a button-click event when no primary
+    /// agent instance is running and standing up a SignalR connection just to
+    /// post one event would be wasteful.
+    /// </summary>
+    [HttpPost("{id:guid}/interactions")]
+    [EnableRateLimiting("device-per-hour")]
+    public async Task<IActionResult> ReportInteraction(Guid id, [FromBody] InteractionRequest req)
+    {
+        var typeClaim = User.FindFirstValue("type");
+        var deviceIdClaim = User.FindFirstValue("deviceId");
+        var tenantIdClaim = User.FindFirstValue("tenantId");
+
+        if (typeClaim != "device"
+            || !Guid.TryParse(deviceIdClaim, out var deviceId)
+            || !Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            return Unauthorized();
+        }
+
+        var delivery = await _db.NotificationDeliveries.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(d => d.NotificationId == id && d.DeviceId == deviceId);
+
+        if (delivery is null || delivery.TenantId != tenantId) return NotFound();
+
+        delivery.Status = req.Action.StartsWith("dismiss")
+            ? DeliveryStatus.Dismissed
+            : DeliveryStatus.Clicked;
+        delivery.InteractedAt = DateTime.UtcNow;
+        delivery.Action = req.Action;
+        await _db.SaveChangesAsync();
+
+        // Push the same DeliveryUpdate that ReportInteraction() does so dashboard
+        // users see a consistent stream regardless of which path delivered the event.
+        await _hub.Clients.Group($"tenant-{tenantId}")
+            .SendAsync("DeliveryUpdate", id, deviceId, req.Action);
+
+        return NoContent();
     }
 
     private async Task<List<Guid>> ResolveTargetDeviceIds(SendNotificationRequest req, Guid tenantId)

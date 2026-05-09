@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -32,7 +33,12 @@ public class AuthController : ControllerBase
         // Wrap in transaction — orphaned Tenant row if user creation fails otherwise
         using var tx = await _db.Database.BeginTransactionAsync();
 
-        var tenant = new Tenant { Name = req.TenantName, Subdomain = req.Subdomain };
+        var tenant = new Tenant
+        {
+            Name = req.TenantName,
+            Subdomain = req.Subdomain,
+            SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+        };
         _db.Tenants.Add(tenant);
         await _db.SaveChangesAsync();
 

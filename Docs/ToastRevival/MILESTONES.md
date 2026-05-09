@@ -77,20 +77,34 @@
 ## M2: Windows Agent — Full Implementation
 **Goal**: Production-ready Windows agent that connects to backend and renders notifications.
 
-### Deliverables
-- **D1**: SignalR client integration — connect to backend hub, auto-reconnect, exponential backoff
-- **D2**: Toast notification rendering — receive payload from SignalR, render via WinRT APIs, all template types
-- **D3**: Device registration flow — first-run registration with backend, token storage, heartbeat/ping
-- **D4**: Payload verification — HMAC signature check before rendering
-- **D5**: Notification interaction tracking — clicks, dismissals, button actions → report back to backend
-- **D6**: Missed notification catch-up — on reconnect, fetch and display any notifications sent while offline
-- **D7**: System tray icon with status indicator (connected/disconnected/error)
-- **D8**: Auto-update mechanism — Velopack integration for MSI-deployed instances, Store-deployed use Store updates
-- **D9**: Installer refinement — MSI properties (CLIENTID, SERVERURL), silent install/uninstall, upgrade path
+Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pipeline + HMAC + the two pre-existing INFO items that are foundational. D6/D7/D8/D9 sliced to subsequent sessions because each carries enough scope (catch-up endpoint, Diana-engaged tray UI, Velopack integration, WiX property wiring) to be its own milestone-shaped chunk.
 
-### Agent Deployment
-- Anthony: D1-D4, D6 (SignalR + security + reconnection — system-level complexity)
-- Abish: D5, D7-D9 (interaction tracking is bounded, tray icon is UI, installer is configuration)
+### Deliverables
+- **D1** [x **COMPLETE 2026-05-09 (M2.A)**]: SignalR client integration — connect to backend hub, auto-reconnect with exponential backoff `[0, 2, 5, 10, 30]` seconds via `WithAutomaticReconnect`. `Microsoft.AspNetCore.SignalR.Client 8.0.15`. Hub URL derived from device config; JWT supplied via `AccessTokenProvider`. Reconnecting/Reconnected/Closed lifecycle events all logged to DiagLog.
+- **D2** [x **COMPLETE 2026-05-09 (M2.A)**]: Toast notification rendering from backend payload — `ToastTemplateBuilder.BuildFromPayload(ToastPayload)` extends the existing argv-driven builder (Carl's standing check #1 — extend, don't fork). Supports `title`, `bodyLine1`, `bodyLine2`, `heroImageUrl`, `logoUrl`, `actionButtons[]`, `audioSetting` (URI or named event), `scenario` (lowercase string → enum). Click args encoded with `source=hub`, `notificationId=<guid>`, `action=<string>` for routing back through NotificationInvoked.
+- **D3** [x **COMPLETE 2026-05-09 (M2.A)**]: Device registration flow — `RegistrationService.RegisterAsync` posts to `/api/devices/register` with machine name + username + OS + agent version. `ConfigStore` persists `DeviceConfig{tenantId, serverUrl, deviceId, deviceToken, signingKey}` to `%LOCALAPPDATA%\Toast2IT\Toast Notification\config.json` (or the package's LocalState equivalent when packaged) via atomic temp+Move. Bootstrap config sourced from env vars (`TOAST_TENANT_ID`, `TOAST_SERVER_URL`) or `bootstrap.json` next to the exe (D9 will write this from MSI properties). 30-minute REST `/api/devices/ping` heartbeat in addition to the hub's `OnConnectedAsync` LastPing touch.
+- **D4** [x **COMPLETE 2026-05-09 (M2.A)**]: Payload verification — `Tenant.SigningKey` (32-byte random base64, generated at tenant create, returned to agent at registration). Server-side: `NotificationQueueService.BuildSignedPayload` HMAC-SHA256s the pre-serialized JSON bytes; sends `(payloadJson, signature)` as separate SignalR args to eliminate transport-serializer drift. Agent-side: `HmacVerifier.Verify` uses `CryptographicOperations.FixedTimeEquals` for constant-time compare; reject-and-drop on mismatch.
+- **D5** [x **COMPLETE 2026-05-09 (M2.A)**]: Notification interaction tracking — `AgentHubClient.OnReceiveNotificationAsync` calls `ReportDelivery(notificationId)` after a successful render; `OnNotificationInvoked` parses click args and calls `ReportInteraction(notificationId, action)`. Plus REST `POST /api/notifications/{id}/interactions` for the activation-handler exit path (device-JWT-authenticated, same DeliveryStatus update + DeliveryUpdate hub broadcast as the hub method).
+- **D6**: Missed notification catch-up — on reconnect, fetch and display any notifications sent while offline. **Deferred to M2.B** (paired with INFO-M2A-003 startup recovery for orphan `Sending` rows + INFO-M2A-004 agent-side de-dup window).
+- **D7**: System tray icon with status indicator (connected/disconnected/error). **Deferred to M2.C** (Diana-engaged session — needs design spec for status iconography per her 2026-05-08 sign-off boundary).
+- **D8**: Auto-update mechanism — Velopack integration for MSI-deployed instances, Store-deployed use Store updates. **Deferred to M2.D** (significant standalone integration with feed-server + delta package surface).
+- **D9**: Installer refinement — MSI properties (CLIENTID, SERVERURL), silent install/uninstall, upgrade path. **Deferred to M2.C** (paired with D7 tray so the tray comes pre-configured from MSI properties).
+
+### M2.A Closure (2026-05-09)
+- 7 deliverables shipped (D1, D2, D3, D4, D5 + INFO-D5-001 mutex + INFO-MSIX-004-D activation handler).
+- Plus: new device-JWT-authenticated REST `POST /api/notifications/{id}/interactions` endpoint for activation-handler fallback when hub unavailable.
+- Code Sweep returned SHIP WITH NOTES. **FIX-M2A-001 patched pre-commit** (mutex prefix `Global\` → `Local\` to prevent multi-user-session collision). 4 INFO items deferred (INFO-M2A-002 → M3, INFO-M2A-003 + INFO-M2A-004 → M2.B, INFO-M2A-005 → M9).
+- Build clean: 0 warnings + 0 errors solution-wide. MSIX smoke check clean (modulo pre-existing FIX-MSIX-003 cosmetic).
+
+### Agent Deployment (M2.A)
+- Anthony: D1-D5 + INFO-D5-001 + INFO-MSIX-004-D + REST interaction endpoint (system-level wiring; no agent track parallelizable on this slice).
+- Abish: Code Sweep (significant scope, multi-file, new wire protocol with security implications).
+- Diana: On bench — backend wiring. Active at M2.C (tray icon design).
+
+### Agent Deployment (Future M2 Slices)
+- Anthony: D6 (catch-up endpoint + agent de-dup); D8 (Velopack); D9 (WiX MSI property wiring)
+- Abish: Code Sweep all slices
+- Diana: D7 (tray icon iconography spec)
 
 ---
 

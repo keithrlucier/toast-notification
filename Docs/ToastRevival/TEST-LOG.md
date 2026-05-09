@@ -293,3 +293,37 @@ The `-p:TargetPlatformVersion=10.0.22621.0` flag is required. Without it the .NE
 
 - This confirms the MSI builds, the XML parses, the WiX table layout matches the design, and the XML payload survives the cab → admin-install extract round-trip byte-identical.
 - This does NOT confirm signed install on a Win11 lab, that the scheduled task is actually created on the endpoint, that the task fires at logon, that the toast renders, or that uninstall removes the task. Those checks are Keith's hand-off step (signed install + `Get-ScheduledTask` + log-out/in verification + uninstall verification + idempotency check). Hand-off detail in `EVIDENCE/2026-05-08-m0-d3-msi-build-with-scheduled-task.md` § Hand-off.
+
+## 2026-05-09 (M2.A — Agent ↔ Backend Pipeline + HMAC)
+
+### Scope
+
+M2 sliced. M2.A delivers D1 SignalR client + auto-reconnect, D2 toast rendering from backend payload, D3 first-run device registration + 30-min heartbeat ping, D4 HMAC payload verification, D5 ReportDelivery + ReportInteraction over the hub, INFO-D5-001 single-instance mutex guard, INFO-MSIX-004-D activation handler, plus a new device-JWT-authenticated REST `POST /api/notifications/{id}/interactions` endpoint for the activation-handler exit path. M2.B (D6 missed catch-up + recovery for orphan Sending), M2.C (D7 system tray + D9 MSI properties — Diana session), M2.D (D8 Velopack auto-update) deferred.
+
+### Build Checks
+
+- `dotnet build ToastRevival.sln`: passed with **0 warnings, 0 errors** after Code Sweep FIX-M2A-001 patch.
+- MSIX smoke check (`dotnet build src\ToastRevival.Agent\ToastRevival.Agent.csproj -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false -p:TargetPlatformVersion=10.0.22621.0`): passed with 1 warning (pre-existing FIX-MSIX-003 `mspdbcmf.exe` cosmetic). Produced `bin\Debug\net8.0-windows10.0.19041.0\win-x64\AppPackages\ToastRevival.Agent_0.2.1.0_x64_Debug_Test\ToastRevival.Agent_0.2.1.0_x64_Debug.msix`. All M0 D5 manifest standing checks intact (`windows.comServer` + `windows.toastNotificationActivation` + `windows.startupTask`, four-dash sentinel on `<com:ExeServer>`, CLSID byte-identical, MaxVersionTested=10.0.22621.0).
+- `dotnet ef migrations add AddTenantSigningKey --project src/ToastRevival.Api --no-build`: passed (modulo pre-existing INFO-M1-001 DeviceGroupMember warning).
+
+### Runtime Smoke Checks
+
+- **DiagnosticMode regression** (`dotnet run --project src/ToastRevival.Agent --no-build -- --template plain --no-wait`): exit code 0, console output `Toast Notification sent. Template: Plain`. M0A argv-driven path preserved verbatim.
+- **PrimaryMode unconfigured-exit** (`dotnet run --project src/ToastRevival.Agent --no-build` with no `TOAST_TENANT_ID`/`TOAST_SERVER_URL` env vars and no `bootstrap.json`): exit code 9, stderr `Toast Notification agent is not configured. Set TOAST_TENANT_ID and TOAST_SERVER_URL, or have the installer drop bootstrap.json next to the exe.` Clean failure mode.
+
+### Code Sweep — Pre-Commit FIX
+
+- **FIX-M2A-001** (BLOCKING → resolved before commit): `Program.cs:14` mutex name was `Global\Toast2IT.ToastNotification.PrimaryWorker`. The `Global\` prefix uses the kernel system-wide BaseNamedObjects namespace — meaning two interactive users on the same Win11 box (Fast User Switching, RDP, Terminal Services) would have user 2's agent collide with user 1's mutex and exit with code 5. **Regression of M0 D4 multi-user verification** (the matrix run on 2026-05-08 confirmed a second local user receives toasts via the BUILTIN\Users-group Scheduled Task). Patched to `Local\` prefix (per-session BaseNamedObjects) so each Windows session gets its own primary. Build re-verified clean post-patch.
+
+### Code Sweep — INFO findings (non-blocking, deferred)
+
+- **INFO-M2A-002** (security, defer to M3): DeviceConfig persisted as plaintext JSON at `%LOCALAPPDATA%\Toast2IT\Toast Notification\config.json` containing the device JWT and per-tenant HMAC signing key. Per-user LocalAppData ACLs gate ordinary access; admin-credential exfiltration is not gated. M3 hardening should wrap with DPAPI CurrentUser scope (`ProtectedData.Protect`).
+- **INFO-M2A-003** (M2.B): `NotificationQueueService.ProcessAsync` writes `Status=Sending` then later `Status=Sent/Failed`. A crash between the two writes leaves the row stuck in `Sending`. Not a corruption bug (deliveries remain `Pending`), but a recovery concern. M2.B catch-up should add a startup recovery for orphan `Sending` rows (`UPDATE Notifications SET Status=Failed WHERE Status=Sending AND SentAt < now() - INTERVAL '5 minutes'`).
+- **INFO-M2A-004** (M2.B): No agent-side de-dup on `notificationId`. SignalR redelivery on reconnect could double-render. M2.B catch-up should track recently-rendered IDs in a 1-hour rolling window.
+- **INFO-M2A-005** (deploy doc, M9): Migration backfill SQL uses `gen_random_uuid()`, which is built-in to Postgres 13+. Document Postgres minimum-version in M9 deployment.
+
+### Boundaries
+
+- This confirms the wire-protocol + HMAC contract is structurally correct (server signs, agent verifies via constant-time compare, both sides agree on the JSON byte sequence to sign over because the server pre-serializes and ships the string + signature as separate SignalR args).
+- This does NOT confirm end-to-end runtime: a real Postgres instance + running API + agent install on a signed Win11 lab + button-click → ReportInteraction round-trip. That hand-off is Keith's lab work, gated on MSI/MSIX rebuild + signing.
+- Test coverage gap (INFO-M1-004) inherited from M1 — first tests at M8.

@@ -80,21 +80,34 @@ Deployment documentation deferred. Everything worth capturing is in CONTEXT.md a
 
 All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 8 / Npgsql / ASP.NET Identity / SignalR. Clean build, migration generated. INFO-M1-001 to INFO-M1-006 in FIX-LIST.md.
 
-## Next: M2 — Windows Agent Full Implementation (START HERE)
-- [ ] D1: SignalR client — connect to `/hubs/notifications`, auto-reconnect, exponential backoff
-- [ ] D2: Toast rendering from backend payload — receive `ReceiveNotification`, render all template types
-- [ ] D3: Device registration flow — first-run POST /api/devices/register, store JWT, heartbeat ping
-- [ ] D4: Payload HMAC verification — server signs, agent verifies before rendering
-- [ ] D5: Interaction tracking — `ReportDelivery` and `ReportInteraction` hub calls
-- [ ] D6: Missed notification catch-up — on reconnect, fetch pending deliveries
-- [ ] D7: System tray icon with connection status
-- [ ] D8: Auto-update — Velopack (MSI channel); Store handles MSIX
-- [ ] D9: Installer properties — CLIENTID + SERVERURL MSI properties; INFO-D5-001 mutex guard; INFO-MSIX-004-D activation handler
+## M2 — Windows Agent Full Implementation (sliced 2026-05-09)
 
-## Engineering - M2 follow-up (logged during M0 D2)
+### M2.A — COMPLETE 2026-05-09
+- [x] D1: SignalR client — connect to `/hubs/notifications`, auto-reconnect with `WithAutomaticReconnect` `[0,2,5,10,30]`s. `Microsoft.AspNetCore.SignalR.Client 8.0.15`.
+- [x] D2: Toast rendering from backend payload — `ToastTemplateBuilder.BuildFromPayload` (extends, doesn't fork). Title, body, hero, logo, scenario, audio, action buttons all wired; click args carry `source=hub;notificationId=<guid>;action=<string>`.
+- [x] D3: Device registration flow — `RegistrationService` posts to `/api/devices/register`, `ConfigStore` persists to `%LOCALAPPDATA%\Toast2IT\Toast Notification\config.json` via atomic temp+Move; bootstrap from env vars or `bootstrap.json` next to the exe. 30-min REST `/api/devices/ping` heartbeat.
+- [x] D4: Payload HMAC verification — `Tenant.SigningKey` (32-byte random base64), server signs JSON byte sequence in `NotificationQueueService.BuildSignedPayload`, sends `(payloadJson, signature)` as separate SignalR args; agent verifies via `HmacVerifier.Verify` with `CryptographicOperations.FixedTimeEquals` constant-time compare.
+- [x] D5: Interaction tracking — `ReportDelivery` after render via hub, `ReportInteraction` on `NotificationInvoked` via hub, plus REST `POST /api/notifications/{id}/interactions` for activation-handler exit path.
+- [x] INFO-D5-001 (session-local mutex `Local\Toast2IT.ToastNotification.PrimaryWorker` — FIX-M2A-001 patched `Global\` → `Local\` pre-commit).
+- [x] INFO-MSIX-004-D (activation-handler short-circuit before mutex/SignalR; `ActivationMode` runs Register() → wait for `NotificationInvoked` → POST REST → exit clean).
 
-- [ ] **INFO-MSIX-004-D**: Agent's `AgentOptions.Parse` silently ignores unknown args. When the user clicks a toast button on a deployed notification while no agent instance is running, the framework launches the exe with `----AppNotificationActivated:...` prepended; the agent currently falls through to default Plain template re-send instead of routing to a one-shot activation handler that exits cleanly. Detect the activation arg early in `Program.cs` and short-circuit before `Show()`.
-- [ ] **INFO-MSIX-004-A/B/C** (DiagLog hygiene): Before any production launch, gate DiagLog behind a `--diag` flag or add log rotation. Currently writes append-only with no size cap and silently swallows all I/O exceptions (intentional for diagnostics phase, not for steady state).
+### M2.B — Missed catch-up + recovery (next session)
+- [ ] Backend: `GET /api/notifications/pending?since=<timestamp>` (device-JWT-authenticated) — return all `Pending` deliveries for the device with their notification payloads, signed.
+- [ ] Backend: `NotificationQueueService.ExecuteAsync` startup recovery — sweep `Notifications WHERE Status=Sending AND SentAt < now() - INTERVAL '5 minutes'` to `Failed` (INFO-M2A-003).
+- [ ] Agent: on `Reconnected` event, GET pending, render each (HMAC verify), `ReportDelivery`.
+- [ ] Agent: `notificationId` de-dup window via `MemoryCache` 1-hour sliding (INFO-M2A-004).
+
+### M2.C — Tray icon + MSI properties (Diana session)
+- [ ] D7: System tray icon — connected/disconnected/error iconography (Diana DESIGN-SPEC contribution before code).
+- [ ] D9: WiX MSI properties — `CLIENTID` + `SERVERURL` → `bootstrap.json` next to the exe at install.
+- [ ] D9: Silent install/uninstall verification, MSIX→MSI upgrade-path smoke check.
+
+### M2.D — Auto-update (Velopack)
+- [ ] D8: Velopack integration for MSI channel — feed-server config, delta package layout, signing flow, Velopack-vs-MSI uninstall semantics.
+
+## Engineering - M2 follow-up (logged during M0 D2 — INFO-MSIX-004-A/B/C only remain)
+
+- [ ] **INFO-MSIX-004-A/B/C** (DiagLog hygiene): Before any production launch, gate DiagLog behind a `--diag` flag or add log rotation. Currently writes append-only with no size cap and silently swallows all I/O exceptions (intentional for diagnostics phase, not for steady state). M2.D or M3 candidate.
 
 ## Deferred (later milestones)
 

@@ -200,6 +200,103 @@ internal static class ToastTemplateBuilder
 
         return builder.BuildNotification();
     }
+
+    /// <summary>
+    /// Build an AppNotification from a server-pushed payload (M2 SignalR path).
+    /// Shares no template assumptions with the argv-driven Build above; both paths
+    /// drive the same AppNotificationBuilder API. The notificationId is encoded in
+    /// every argument set so NotificationInvoked can route the click back to the
+    /// correct delivery row.
+    /// </summary>
+    public static AppNotification BuildFromPayload(ToastPayload p)
+    {
+        var notificationId = p.NotificationId.ToString();
+
+        var builder = new AppNotificationBuilder()
+            .AddArgument("source", "hub")
+            .AddArgument("notificationId", notificationId);
+
+        builder.AddText(p.Title);
+        if (p.BodyLine1 is { Length: > 0 } b1) builder.AddText(b1);
+        if (p.BodyLine2 is { Length: > 0 } b2) builder.AddText(b2);
+
+        if (TryUri(p.LogoUrl, out var logoUri))
+        {
+            builder.SetAppLogoOverride(logoUri, AppNotificationImageCrop.Default);
+        }
+
+        if (TryUri(p.HeroImageUrl, out var heroUri))
+        {
+            builder.SetHeroImage(heroUri);
+        }
+
+        if (TryParseScenario(p.Scenario, out var scenario) && scenario != AppNotificationScenario.Default)
+        {
+            builder.SetScenario(scenario);
+        }
+
+        ApplyAudio(builder, p.AudioSetting);
+
+        if (p.ActionButtons is not null)
+        {
+            foreach (var b in p.ActionButtons)
+            {
+                if (string.IsNullOrWhiteSpace(b.Label)) continue;
+
+                var button = new AppNotificationButton(b.Label)
+                    .AddArgument("source", "hub")
+                    .AddArgument("notificationId", notificationId)
+                    .AddArgument("action", b.Action ?? "");
+
+                if (b.IsPrimary)
+                {
+                    button.SetButtonStyle(AppNotificationButtonStyle.Success);
+                }
+
+                builder.AddButton(button);
+            }
+        }
+
+        return builder.BuildNotification();
+    }
+
+    private static bool TryUri(string? value, out Uri uri)
+    {
+        if (!string.IsNullOrWhiteSpace(value)
+            && Uri.TryCreate(value, UriKind.Absolute, out var parsed))
+        {
+            uri = parsed;
+            return true;
+        }
+        uri = null!;
+        return false;
+    }
+
+    private static bool TryParseScenario(string? value, out AppNotificationScenario scenario)
+    {
+        scenario = AppNotificationScenario.Default;
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        return Enum.TryParse(value, ignoreCase: true, out scenario);
+    }
+
+    private static void ApplyAudio(AppNotificationBuilder builder, string? audioSetting)
+    {
+        if (string.IsNullOrWhiteSpace(audioSetting)) return;
+
+        // Treat `ms-winsoundevent:Notification.X` and `http(s)://...` URIs as audio URIs.
+        // Anything else, try to parse as a known AppNotificationSoundEvent enum value.
+        if (Uri.TryCreate(audioSetting, UriKind.Absolute, out var uri)
+            && (uri.Scheme is "http" or "https" or "ms-winsoundevent" or "ms-appx" or "file"))
+        {
+            builder.SetAudioUri(uri);
+            return;
+        }
+
+        if (Enum.TryParse<AppNotificationSoundEvent>(audioSetting, ignoreCase: true, out var evt))
+        {
+            builder.SetAudioEvent(evt);
+        }
+    }
 }
 
 internal interface IToastAssets

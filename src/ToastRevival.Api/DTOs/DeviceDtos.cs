@@ -22,4 +22,8 @@ public record DeviceResponse(
 public record DeviceTokenResponse(
     string Token,
     Guid DeviceId,
-    Guid TenantId);
+    Guid TenantId,
+    string SigningKey);
+
+public record InteractionRequest(
+    [Required, MaxLength(64)] string Action);

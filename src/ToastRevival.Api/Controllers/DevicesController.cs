@@ -36,8 +36,9 @@ public class DevicesController : ControllerBase
     [EnableRateLimiting("device-per-hour")]
     public async Task<ActionResult<DeviceTokenResponse>> Register([FromBody] RegisterDeviceRequest req)
     {
-        if (!await _db.Tenants.IgnoreQueryFilters().AnyAsync(t => t.Id == req.TenantId))
-            return NotFound("Tenant not found.");
+        var tenant = await _db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == req.TenantId);
+        if (tenant is null) return NotFound("Tenant not found.");
 
         var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
         var tokenHash = HashToken(rawToken);
@@ -61,7 +62,7 @@ public class DevicesController : ControllerBase
             device.Id.ToString(), new { device.DeviceName, device.Username },
             HttpContext.Connection.RemoteIpAddress?.ToString());
 
-        return Ok(new DeviceTokenResponse(jwt, device.Id, req.TenantId));
+        return Ok(new DeviceTokenResponse(jwt, device.Id, req.TenantId, tenant.SigningKey));
     }
 
     [Authorize]

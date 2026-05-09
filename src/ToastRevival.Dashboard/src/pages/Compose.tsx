@@ -101,7 +101,7 @@ export default function Compose() {
     targetType: targetMode,
     targetIds: targetMode === 'Device' ? selectedDevices : targetMode === 'Group' ? selectedGroups : undefined,
     templateId: appliedTemplateSlug ? (templateDbIds[appliedTemplateSlug] ?? undefined) : undefined,
-    scheduledAt: scheduledAt || undefined,
+    scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
   });
 
   const handleSend = () => {
@@ -427,6 +427,9 @@ export default function Compose() {
                 onChange={e => setScheduledAt(e.target.value)}
                 style={{ colorScheme: 'dark' }}
               />
+              <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
+                Times are in your local timezone. Converted to UTC on save.
+              </p>
             </div>
 
             {/* Send */}

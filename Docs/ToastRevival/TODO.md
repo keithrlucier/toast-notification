@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMPLETE. M3 COMPLETE. M4 COMPLETE 2026-05-08. M5.A COMPLETE 2026-05-09 (commit 437dce4). M5.B COMPLETE 2026-05-09 (commit aabe739).** M5.B delivered: AnalyticsController (3 endpoints), Analytics.tsx (Recharts charts per Diana spec), TenantController (GET/PUT /api/tenant/settings), TenantSettings.tsx (branding + defaults), migration M5TenantSettings. Next: **M5.C — Asset Library (D4) + Notification Scheduling (D6)**.
+Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMPLETE. M3 COMPLETE. M4 COMPLETE 2026-05-08. M5.A COMPLETE 2026-05-09 (commit 437dce4). M5.B COMPLETE 2026-05-09 (commit aabe739). M5.C COMPLETE 2026-05-09.** M5.C delivered: AssetsController (upload/list/delete), ModerateImageBytesAsync on IContentModerationService, UseStaticFiles() for asset serving, NotificationQueueService scheduler loop (startup backfill + PeriodicTimer 60s), Assets.tsx page, api/assets.ts, Compose.tsx UTC fix. Next: **M5.D — Export (D7): audit logs + delivery reports (CSV/PDF)**.
 
 ## Keith
 
@@ -12,7 +12,7 @@ Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMP
 - [ ] Re-sign the rebranded MSI when needed (`artifacts/installer/ToastNotification.Agent-0.2.0.0.msi`).
 - [x] Sign the M0 D2 MSIX (`artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix`) - DONE 2026-05-07 via `signtool.exe`.
 - [x] Validate install of signed M0 D2 MSIX on Win11 lab. 0.2.0.1 installed but did not fire toasts (FIX-MSIX-004); 0.2.0.3 patched + signed + installed 2026-05-08, visible toast fires, NotificationInvoked routes cleanly.
-- [x] Confirm Microsoft Partner Center access (Keith signed in 2026-05-07). Verifying app ID `9P5L0MRMFRRF` is reachable from this account is M0 D5 work.
+- [x] Confirm Microsoft Partner Center access (Keith signed in 2026-05-07). Verifying app ID `9PFD6004DVTN` is reachable from this account is M0 D5 work.
 - [ ] Accept the updated App Developer Agreement in Partner Center if prompted (only when M0 D5 actually flights a build).
 - [ ] Confirm domain/DNS control for `toastnotification.com` (gates M7).
 - [ ] Confirm Stripe account status later, after deployment spike is proven (gates M6).
@@ -68,7 +68,7 @@ Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMP
 - [x] Build MSIX 0.2.1.0: `.\scripts\build-msix.ps1 -Version 0.2.1.0 -SkipAssetGeneration`. Verified: MinVersion=10.0.19041.0, MaxVersionTested=10.0.22621.0, all 3 extensions present. 63.82 MB unsigned artifact at `artifacts/installer/msix/ToastNotification.Agent-0.2.1.0.msix`.
 - [ ] **Keith**: Sign `ToastNotification.Agent-0.2.1.0.msix` via `.\scripts\sign-msix.ps1 -Path artifacts\installer\msix\ToastNotification.Agent-0.2.1.0.msix`
 - [ ] **Keith**: Accept updated App Developer Agreement in Partner Center if prompted.
-- [ ] **Keith**: Flight signed MSIX to Partner Center listing 9P5L0MRMFRRF (private/hidden). Verify package passes certification.
+- [ ] **Keith**: Flight signed MSIX to Partner Center listing 9PFD6004DVTN (private/hidden). Verify package passes certification.
 - [ ] **Diana**: Deliver curated tile assets (Square44x44, Square150x150, Wide310x150, StoreLogo) before any expansion beyond private/hidden flight.
 
 ### M0 D6 — DEFERRED

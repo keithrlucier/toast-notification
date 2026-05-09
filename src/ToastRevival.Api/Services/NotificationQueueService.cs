@@ -41,10 +41,6 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
     {
         // M2.B: recover orphan Sending rows from a previous process that crashed
         // mid-fanout (INFO-M2A-003). Run once before entering the channel loop.
-        // Notification → Failed; deliveries STAY Pending so the catch-up endpoint
-        // can still deliver them to agents on reconnect (Carl's M2.B overrule on
-        // the original "deliveries to Failed accordingly" plan, which would have
-        // defeated catch-up).
         try
         {
             await RecoverOrphansAsync(ct);
@@ -52,9 +48,18 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
         catch (Exception ex)
         {
             _logger.LogError(ex, "Orphan recovery sweep failed at startup");
-            // Non-fatal — the queue can still serve new traffic without recovery.
         }
 
+        // INFO-M1-005: re-enqueue scheduled notifications that became due while
+        // the service was offline (startup backfill).
+        await EnqueueDueScheduledAsync(ct);
+
+        // Run the scheduler loop and the queue consumer concurrently until cancellation.
+        await Task.WhenAll(RunSchedulerLoopAsync(ct), ProcessQueueAsync(ct));
+    }
+
+    private async Task ProcessQueueAsync(CancellationToken ct)
+    {
         await foreach (var notificationId in _channel.Reader.ReadAllAsync(ct))
         {
             try
@@ -65,6 +70,52 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
             {
                 _logger.LogError(ex, "Failed to process notification {NotificationId}", notificationId);
             }
+        }
+    }
+
+    /// <summary>
+    /// Polls every 60 seconds for Queued notifications whose ScheduledAt has
+    /// arrived and enqueues them. Runs alongside the channel consumer.
+    /// </summary>
+    private async Task RunSchedulerLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(60));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+                await EnqueueDueScheduledAsync(ct);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    /// <summary>
+    /// Finds all Queued notifications with a past ScheduledAt and enqueues them.
+    /// Called at startup (backfill) and every 60 seconds thereafter.
+    /// </summary>
+    private async Task EnqueueDueScheduledAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var due = await db.Notifications
+                .IgnoreQueryFilters()
+                .Where(n => n.Status == NotificationStatus.Queued
+                         && n.ScheduledAt != null
+                         && n.ScheduledAt <= DateTime.UtcNow)
+                .Select(n => n.Id)
+                .ToListAsync(ct);
+
+            foreach (var id in due)
+                Enqueue(id);
+
+            if (due.Count > 0)
+                _logger.LogInformation("Enqueued {Count} due scheduled notification(s)", due.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Scheduled notification sweep failed");
         }
     }
 
@@ -114,6 +165,14 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
         if (notification is null)
         {
             _logger.LogWarning("Notification {NotificationId} not found", notificationId);
+            return;
+        }
+
+        // Guard against duplicate-enqueue from startup backfill + timer tick overlap.
+        if (notification.Status != NotificationStatus.Queued)
+        {
+            _logger.LogDebug("Skipping notification {NotificationId} — already in {Status} state",
+                notificationId, notification.Status);
             return;
         }
 

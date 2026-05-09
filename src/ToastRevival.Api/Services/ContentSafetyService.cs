@@ -97,6 +97,27 @@ public class ContentSafetyService : IContentModerationService
         return new ModerationResult(decision, textScores, imageScores, BlocklistTerm: null);
     }
 
+    public async Task<ModerationResult> ModerateImageBytesAsync(byte[] bytes, CancellationToken ct = default)
+    {
+        if (_client is null) return Pass();
+
+        try
+        {
+            var source   = new ContentSafetyImageData(new BinaryData(bytes));
+            var request  = new AnalyzeImageOptions(source);
+            var response = await _client.AnalyzeImageAsync(request, ct);
+            return Evaluate(textScores: null,
+                response.Value.CategoriesAnalysis.ToDictionary(
+                    c => c.Category.ToString(),
+                    c => c.Severity ?? 0));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[ContentSafety] image bytes scan failed: {ExType}", ex.GetType().Name);
+            return Pass();
+        }
+    }
+
     private static ModerationResult Pass() =>
         new(ModerationDecision.Pass, null, null, null);
 }

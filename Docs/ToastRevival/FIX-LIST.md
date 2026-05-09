@@ -114,12 +114,12 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** M8 integration testing milestone. For earlier milestones, individual controller/service tests can be added incrementally.
 **Blocking:** No.
 
-### INFO-M1-005 — Scheduled notifications lost on restart (low)
+### INFO-M1-005 — **RESOLVED 2026-05-09 (M5.C)**
+
 **Filed:** 2026-05-08 (M1 Code Sweep)
+**Resolved:** 2026-05-09 (M5.C)
 **Surface:** `Services/NotificationQueueService.cs`
-**Issue:** The `Channel<Guid>` is in-memory and unbounded. Notifications queued for future delivery (`ScheduledAt > now`) are not re-queued on service restart because they are never written to the channel.
-**Fix:** On startup, load all `Notification` rows with `Status = Queued` and `ScheduledAt <= now` and enqueue them. Long-term: replace with durable queue (e.g., PostgreSQL-backed queue or dedicated message broker).
-**Blocking:** No. Not a concern until real users schedule future notifications.
+**Resolution:** `EnqueueDueScheduledAsync` runs at startup (backfill) and every 60 seconds (via `RunSchedulerLoopAsync` PeriodicTimer). Backfill loads `Notifications WHERE Status=Queued AND ScheduledAt<=now` and enqueues them. Timer tick does the same sweep continuously. `ProcessAsync` now guards on `Status != Queued` to prevent double-fanout if a startup + timer tick overlap. Both tasks run concurrently via `Task.WhenAll` alongside the existing queue consumer (`ProcessQueueAsync`).
 
 ### INFO-M1-006 — JWT key requires environment-specific override (low)
 **Filed:** 2026-05-08 (M1 Code Sweep)
@@ -359,6 +359,27 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Surface:** `src/ToastRevival.Api/Controllers/TenantController.cs::UpdateSettings`
 **Issue:** `PrimaryColor` is stored as-is. A malicious admin could store arbitrary text. Downstream rendering uses the value only in a color picker input (not injected as CSS), so no XSS vector. But the data is untrusted.
 **Fix:** Add regex validation (`^#[0-9A-Fa-f]{6}$`) at M6+.
+**Blocking:** No.
+
+### INFO-M5C-001 (M9 — deploy doc) — Uploaded assets are publicly accessible by URL
+**Filed:** 2026-05-09 (M5.C Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Api/Program.cs` — `app.UseStaticFiles()`
+**Issue:** Files in `wwwroot/assets/` are served without authentication. Any client that knows a valid asset URL can fetch the image. This is intentional — the Windows agent must fetch hero/logo images from toast payloads without a user JWT.
+**Fix:** Document in M9 deployment notes. If privacy of notification images is ever required, move to a signed-URL pattern (Azure Blob SAS, S3 presigned). Not a concern for MSP-managed endpoint images.
+**Blocking:** No.
+
+### INFO-M5C-002 (M6+) — No index on (Status, ScheduledAt) for scheduler sweep
+**Filed:** 2026-05-09 (M5.C Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Api/Services/NotificationQueueService.cs::EnqueueDueScheduledAsync`
+**Issue:** The scheduler sweep queries `Notifications WHERE Status=Queued AND ScheduledAt<=now` across all tenants. No composite index. At MVP scale acceptable; at production scale (millions of rows) will become a sequential scan.
+**Fix:** Add `HasIndex(n => new { n.Status, n.ScheduledAt }).HasFilter("scheduled_at IS NOT NULL")` in AppDbContext and generate a migration at M6+.
+**Blocking:** No.
+
+### INFO-M5C-003 (acceptable) — Drop zone MIME type accepts image/* in addition to extension whitelist
+**Filed:** 2026-05-09 (M5.C Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Dashboard/src/pages/Assets.tsx` — file input `accept` attribute and drop handler
+**Issue:** The frontend accepts any `image/*` MIME type in addition to the explicit extension list. The backend validates extension strictly (`.jpg/.jpeg/.png/.gif/.webp`). Frontend MIME check is UX-only — the backend is the real gate.
+**Fix:** Acceptable. Backend extension whitelist is the authoritative check.
 **Blocking:** No.
 
 ### INFO-M5-003 (low) — TemplatesController.BuildDefaultTemplates couples Auth and Templates

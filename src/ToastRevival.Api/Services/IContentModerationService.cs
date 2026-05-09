@@ -21,4 +21,11 @@ public interface IContentModerationService
     /// Returns Pass/Review/Block with image category scores.
     /// </summary>
     Task<ModerationResult> ModerateImageUrlAsync(string imageUrl, CancellationToken ct = default);
+
+    /// <summary>
+    /// Scans raw image bytes — used for asset library uploads where the file
+    /// has not yet been persisted to a URL-addressable location.
+    /// Returns Pass/Review/Block with image category scores.
+    /// </summary>
+    Task<ModerationResult> ModerateImageBytesAsync(byte[] bytes, CancellationToken ct = default);
 }

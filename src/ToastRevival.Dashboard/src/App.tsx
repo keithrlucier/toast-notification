@@ -14,6 +14,7 @@ import ApiKeys from './pages/ApiKeys';
 import Users from './pages/Users';
 import Analytics from './pages/Analytics';
 import TenantSettings from './pages/TenantSettings';
+import Assets from './pages/Assets';
 
 const router = createBrowserRouter([
   { path: '/login',    element: <Login /> },
@@ -30,6 +31,7 @@ const router = createBrowserRouter([
       { path: '/devices',     element: <Devices /> },
       { path: '/templates',   element: <Templates /> },
       { path: '/compose',     element: <Compose /> },
+      { path: '/assets',       element: <Assets /> },
       { path: '/history',     element: <History /> },
       {
         path: '/moderation',

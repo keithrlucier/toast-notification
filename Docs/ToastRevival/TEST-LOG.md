@@ -1,5 +1,53 @@
 # ToastRevival - Test Log
 
+## 2026-05-09 (M5.C — Asset Library + Notification Scheduling)
+
+### Build Checks
+
+- `dotnet build ToastRevival.sln`: **0 warnings, 0 errors** (post M5.C, all backend + agent).
+- `npx tsc -p tsconfig.app.json --noEmit` (strict): **0 errors, 0 warnings**.
+- No EF migration needed — `AssetLibrary` table and `Notification.ScheduledAt` column both exist in `InitialCreate`.
+
+### New Backend Files
+- `Controllers/AssetsController.cs` — GET /api/assets, POST /api/assets (multipart), DELETE /api/assets/{id}.
+- `Services/IContentModerationService.cs` — additive `ModerateImageBytesAsync(byte[])`.
+- `Services/ContentSafetyService.cs` — implements `ModerateImageBytesAsync` via Azure Content Safety `BinaryData` API.
+- `Services/NotificationQueueService.cs` — `ProcessQueueAsync` (extracted), `RunSchedulerLoopAsync` (PeriodicTimer 60s), `EnqueueDueScheduledAsync` (startup backfill + timer sweep), `ProcessAsync` non-Queued guard.
+- `Program.cs` — `app.UseStaticFiles()` added; `wwwroot/assets/` ensured at startup.
+
+### New Frontend Files
+- `src/api/assets.ts` — `assetsApi` (list, upload via raw fetch/FormData, delete), `getModerationStatus`, `AssetRecord` type.
+- `src/pages/Assets.tsx` — full asset library page: drop zone, type selector, card grid, moderation status badges, Use as Hero/Logo actions, two-step inline delete.
+- `Sidebar.tsx` — Assets nav item added between Templates and History.
+- `App.tsx` — `/assets` route added.
+- `Compose.tsx` — `scheduledAt` UTC conversion fix (`new Date(scheduledAt).toISOString()`); timezone note added.
+
+### Code Sweep Results (M5.C — Abish, SHIP WITH NOTES)
+
+**Pre-commit verifications:**
+- AssetLibrary global query filter: confirmed at `AppDbContext.cs:120` — tenant isolation holds across List + Delete ✓.
+- `AssetsController.Delete()` path traversal prevention: `Path.GetFullPath + StartsWith(allowed, OrdinalIgnoreCase)` — confirmed ✓.
+- `UseStaticFiles()` ordering: after `UseCors()`, before `UseAuthentication()` — static file serving doesn't require auth (intentional for Windows agent image access) ✓.
+- `ProcessAsync` non-Queued guard: prevents double-fanout on duplicate enqueue ✓.
+- CSS audit on Assets.tsx: no `btn-danger-ghost`, no `--accent-primary`, no `form-label`/`form-input`, `.field` not needed (drop zone is custom), `btn-ghost` + inline `color: var(--status-error)` for delete ✓.
+- Diana sign-off: drop zone border dashed with accent highlight on dragover, card image preview 120px cover, moderation badge colors (Pass=success, Review=warning, Block=error), type chip teal, inline two-step delete confirmed ✓.
+
+**Pre-commit fix:**
+- Added `ProcessAsync` non-Queued guard before the `Sending` state write — prevents duplicate-enqueue from startup-backfill + timer-tick overlap producing double-fanout. One-liner. Build clean post-patch.
+
+**INFO items filed:**
+- INFO-M5C-001: Uploaded assets publicly accessible by URL (required for Windows agent; document at M9).
+- INFO-M5C-002: No `(Status, ScheduledAt)` index for scheduler sweep (acceptable MVP, M6+).
+- INFO-M5C-003: Frontend drop zone accepts `image/*` MIME (backend extension check is the gate).
+
+### Boundaries
+
+- Asset upload NOT end-to-end verified against a live backend (requires running API + Azure Content Safety key or degraded Pass). Structural correctness confirmed by code review.
+- Scheduler timer NOT verified with live notifications (requires running backend + scheduled notification in DB). Startup backfill logic confirmed by code review.
+- Frontend asset grid NOT browser-verified (requires running dev server + backend). CSS and component structure verified by code audit.
+
+---
+
 ## 2026-05-09 (M5.B — Analytics + Tenant Settings)
 
 ### Build Checks

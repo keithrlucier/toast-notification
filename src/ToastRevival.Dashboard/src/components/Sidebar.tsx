@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { to: '/analytics',   label: 'Analytics', icon: AnalyticsIcon },
   { to: '/compose',     label: 'Compose',   icon: ComposeIcon },
   { to: '/templates',   label: 'Templates', icon: TemplatesIcon },
+  { to: '/assets',      label: 'Assets',    icon: AssetsIcon },
   { to: '/history',     label: 'History',   icon: HistoryIcon },
   { to: '/devices',     label: 'Devices',   icon: DevicesIcon },
 ];
@@ -224,6 +225,16 @@ function ApiKeysIcon() {
       <circle cx="6" cy="9" r="3.5" stroke="currentColor" strokeWidth="1.5" />
       <path d="M8.5 7.5L14 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M12 4l1.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function AssetsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="4" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="9" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M9 10.5h5.5M11.75 7.5v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

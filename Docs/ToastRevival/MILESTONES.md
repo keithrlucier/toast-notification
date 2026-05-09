@@ -36,7 +36,7 @@
   - Win10 1809 install validation deferred to M0 D4 GPO matrix (no Win10 1809 lab machine on hand).
 - **D3** [x **COMPLETE 2026-05-08**]: MSI wrapper installs the agent + registers `\Toast2IT\ToastNotificationAgentLogon` Scheduled Task at install (replaces M0A's Startup-folder shortcut). Task is logon-triggered with BUILTIN\Users group principal (`S-1-5-32-545`) at `LeastPrivilege`; action runs `%ProgramFiles%\Toast Notification\ToastNotification.Agent.exe --template alert --no-wait`. WiX 5 deferred custom actions invoke `[System64Folder]schtasks.exe` with `/Create /XML /F` (after InstallFiles, condition `NOT REMOVE`) and `/Delete /F` (before RemoveFiles, condition `REMOVE="ALL"`, `Return="ignore"` for idempotency). Pre-install verification clean (XML parses, MSI Custom Action table correct Type 3106/3170, payload byte-identical repo → cab → admin-install extract). Lab install verified 2026-05-08: signed `ToastNotification.Agent-0.3.0.0.msi` installed cleanly on Win11 lab; `Get-ScheduledTask -TaskPath '\Toast2IT\' -TaskName 'ToastNotificationAgentLogon'` returned `State=Ready` with `MSFT_TaskLogonTrigger` and `MSFT_TaskExecAction`; alert toast fired at next user logon (Critical scenario, hero + logo + Acknowledge/Report buttons all rendered correctly). See `EVIDENCE/2026-05-08-m0-d3-msi-build-with-scheduled-task.md` and `EVIDENCE/2026-05-08-m0-d3-task-fires-at-logon.md`.
 - **D4** [x **COMPLETE 2026-05-08**]: Verified scheduled task on Win11 lab: MSI 0.3.1.0 installs cleanly, task State=Ready, toast fires, second local user account also receives toast (BUILTIN\Users principal confirmed), uninstall removes task cleanly. FIX-MSIX-002 applied (manifest MinVersion aligned with runtime gate). GPO/Intune testing deferred: GPO standing rules documented in CONTEXT.md, domain/Intune carry to M8 beta. See `EVIDENCE/2026-05-08-m0-d4-matrix-results.md`.
-- **D5**: Verify Store submission pipeline — push skeleton app to the existing 9P5L0MRMFRRF listing (private/hidden flight)
+- **D5**: Verify Store submission pipeline — push skeleton app to the existing 9PFD6004DVTN listing (private/hidden flight)
 - **D6**: Document deployment findings and any fallback mechanisms needed
 
 ### Open Research
@@ -248,9 +248,28 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 - Abish: Code Sweep ✓
 - Diana: Chart spec sign-off + D3 branding UI review ✓
 
-### M5.C (Future)
-- **D4**: Asset library — upload/manage hero images + logos, moderation status
-- **D6**: Notification scheduling — calendar view, timezone handling
+### M5.C: Asset Library + Notification Scheduling  **[COMPLETE 2026-05-09]**
+
+#### Deliverables (all closed)
+- **D4** [x]: Asset library — `AssetsController` (GET list, POST upload multipart, DELETE). `ModerateImageBytesAsync` added to `IContentModerationService` — scans bytes pre-persist, no URL dependency. Files at `wwwroot/assets/{tenantId}/{assetId}{ext}` via `UseStaticFiles()`. AssetLibrary global query filter enforces tenant isolation. `Assets.tsx`: drag-and-drop drop zone, type selector (HeroImage/Logo/Icon), card grid with moderation badge, "Use as Hero"/"Use as Logo" navigate actions, two-step inline delete confirm.
+- **D6** [x]: Notification scheduling — INFO-M1-005 resolved. `EnqueueDueScheduledAsync` backfills on startup; `RunSchedulerLoopAsync` PeriodicTimer(60s) sweeps for newly-due notifications. `ProcessAsync` guards non-Queued status (duplicate-enqueue safety). `Compose.tsx` UTC fix: `scheduledAt` converts datetime-local → ISO UTC; timezone note added.
+
+#### INFO Items Filed
+- INFO-M5C-001: Uploaded assets publicly accessible by URL (required for Windows agent image fetch). Document at M9.
+- INFO-M5C-002: No `(Status, ScheduledAt)` index for scheduler sweep — acceptable MVP, flag for M6+.
+- INFO-M5C-003: Drop zone accepts `image/*` MIME in addition to extension whitelist — backend extension check is the gate.
+
+#### Code Sweep
+- Commit pending: SHIP WITH NOTES. Pre-commit fix: ProcessAsync non-Queued guard prevents duplicate-fanout.
+
+#### Build
+- dotnet build: 0 warnings, 0 errors. No EF migration needed (AssetLibrary + ScheduledAt in InitialCreate).
+- tsc --noEmit: 0 errors.
+
+#### Agent Deployment (M5.C)
+- Anthony: D4+D6 backend ✓
+- Abish-1: D4+D6 frontend ✓
+- Abish: Code Sweep ✓
 
 ### M5.D (Future)
 - **D7**: Export — audit logs, delivery reports (CSV/PDF)
@@ -320,7 +339,7 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 
 ### Deliverables
 - **D1**: Production infrastructure — Azure/AWS deployment, monitoring, alerting, backups
-- **D2**: Store submission — update 9P5L0MRMFRRF with production build, expand to all markets
+- **D2**: Store submission — update 9PFD6004DVTN with production build, expand to all markets
 - **D3**: RMM deployment packages — documented scripts for NinjaOne, Datto, ConnectWise
 - **D4**: Launch marketing — email to beta users, social media, MSP community posts
 - **D5**: Support system — ticketing, knowledge base, SLA documentation

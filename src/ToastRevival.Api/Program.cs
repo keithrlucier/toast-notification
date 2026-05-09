@@ -153,6 +153,12 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+// Ensure wwwroot/assets directory exists for uploaded files
+var webRoot = app.Environment.WebRootPath
+    ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+Directory.CreateDirectory(Path.Combine(webRoot, "assets"));
+app.Environment.WebRootPath = webRoot;
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -167,6 +173,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseRateLimiter();
 app.UseCors();
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

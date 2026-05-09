@@ -22,7 +22,9 @@ jobs:
 
       - name: Install WiX
         shell: powershell
-        run: dotnet tool install -g wix
+        # Pin to 5.0.2 — local dev and every shipped MSI use this version.
+        # WiX 7 (latest) introduced the OSMF EULA and fails install on CI with WIX7015.
+        run: dotnet tool install -g wix --version 5.0.2
 
       - name: Restore
         shell: powershell

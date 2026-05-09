@@ -2,6 +2,15 @@
 
 ## Open Issues
 
+### FIX-CI-001 — **RESOLVED 2026-05-09**
+
+**Filed:** 2026-05-09 (Keith forwarded a recurring "Agent MSI Build" failure email after the M7.A push).
+**Surface:** `.github/workflows/agent-build.yml` (Install WiX step).
+**Symptom:** Every push to `main` since commit `1c41d3e` (CI runner switch) failed identically at the "Build unsigned MSI" step. Five back-to-back red runs across `f68295b` (M5.D), `ed928d2`, `918c723` (M6), `df41216`, `ca0972a` (M7.A). Failure window was always ~3:41 — long enough to clear restore + dotnet build, fast enough to suggest the WiX invocation itself.
+**Root cause:** `dotnet tool install -g wix` (no version pin) resolves to **WiX 7**, the current latest. WiX 7 introduces the Open Source Maintenance Fee EULA — `wix build` aborts at the very first invocation with `error WIX7015: You must accept the Open Source Maintenance Fee (OSMF) EULA to use WiX Toolset v7.` Local dev uses WiX 5.0.2 (the locked version since M0A); the CI runner had been silently drifting forward with every workflow run, and the WIX7015 gate landed when WiX 7 became default.
+**Fix applied (commit pending):** Pinned the install command to `dotnet tool install -g wix --version 5.0.2` with a header comment explaining why. Standing rule: any tool version that the local dev environment locks must be pinned in CI; "latest" is not a version.
+**Blocking:** No — agent MSI builds were broken in CI but Keith's local signed-MSI pipeline was unaffected (he installs WiX manually via `dotnet tool install -g wix --version 5.0.2`).
+
 ### INFO-M7A-001 — **RESOLVED 2026-05-09 (pre-commit)**
 
 **Filed:** 2026-05-09 (M7.A Code Sweep)

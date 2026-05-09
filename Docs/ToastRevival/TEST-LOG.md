@@ -1,5 +1,19 @@
 # ToastRevival - Test Log
 
+## 2026-05-09 (FIX-CI-001 — pin WiX to 5.0.2)
+
+### Problem
+Every push to main since commit `1c41d3e` (the CI runner-switch) had been failing identically in "Agent MSI Build / Build unsigned MSI" with `error WIX7015` (Open Source Maintenance Fee EULA). Five red runs (f68295b, ed928d2, 918c723, df41216, ca0972a). Keith forwarded the failure email after M7.A landed.
+
+### Root cause
+`.github/workflows/agent-build.yml` installs WiX with `dotnet tool install -g wix` — no version pin. The default resolves to WiX 7 (current latest), which introduced the OSMF EULA and aborts `wix build` invocations at the first call until accepted.
+
+### Fix
+Pinned to `dotnet tool install -g wix --version 5.0.2` — matches the version locked in M0A's environment spec and the version every shipped MSI was built against. Two-line comment in the workflow file explains the constraint for future maintainers.
+
+### Standing rule
+Any tool version locked by the local dev environment must be pinned in CI. "Latest" is not a version.
+
 ## 2026-05-09 (M7.A — Marketing Site Design Spec + Onboarding SVGs)
 
 ### Build Checks

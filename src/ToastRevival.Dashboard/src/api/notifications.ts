@@ -22,6 +22,7 @@ export interface SendNotificationRequest {
   scenario?: string;
   targetType: TargetType;
   targetIds?: string[];
+  templateId?: string;
   scheduledAt?: string;
 }
 
@@ -51,16 +52,18 @@ export interface NotificationHistoryItem {
   sentAt?: string;
 }
 
-export interface NotificationTemplate {
-  id: string;
+/** Template record from the backend database — used to resolve slug → Guid for sends */
+export interface TemplateDbRecord {
+  id: string;   // database Guid
+  slug: string; // 'announcement' | 'alert' | 'action-required' | etc.
   name: string;
-  description?: string;
-  defaultTitle: string;
-  defaultBodyLine1?: string;
-  defaultBodyLine2?: string;
-  defaultAudioSetting?: string;
-  defaultScenario?: string;
-  defaultButtons?: ActionButton[];
+  category: string;
+  titleTemplate: string | null;
+  bodyLine1Template: string | null;
+  bodyLine2Template: string | null;
+  audioSetting: string | null;
+  scenario: string;
+  isDefault: boolean;
 }
 
 export const notificationsApi = {
@@ -74,5 +77,5 @@ export const notificationsApi = {
     api.post<NotificationResponse>('/api/notifications', req),
 
   templates: () =>
-    api.get<NotificationTemplate[]>('/api/templates'),
+    api.get<TemplateDbRecord[]>('/api/templates'),
 };

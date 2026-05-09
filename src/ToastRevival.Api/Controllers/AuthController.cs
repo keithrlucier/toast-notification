@@ -62,6 +62,11 @@ public class AuthController : ControllerBase
             return BadRequest(result.Errors.Select(e => e.Description));
         }
 
+        // Seed 6 default notification templates for this tenant
+        foreach (var template in TemplatesController.BuildDefaultTemplates(tenant.Id))
+            _db.NotificationTemplates.Add(template);
+        await _db.SaveChangesAsync();
+
         await tx.CommitAsync();
 
         var token = _tokens.CreateUserToken(user);

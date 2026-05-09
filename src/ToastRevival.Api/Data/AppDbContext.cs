@@ -26,6 +26,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<AssetLibrary> AssetLibrary => Set<AssetLibrary>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<TenantBlocklistEntry> TenantBlocklistEntries => Set<TenantBlocklistEntry>();
+    public DbSet<TenantApiKey> TenantApiKeys => Set<TenantApiKey>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -134,6 +135,19 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.Property(b => b.Term).HasMaxLength(500);
             e.HasIndex(b => new { b.TenantId, b.Term }).IsUnique();
             e.HasQueryFilter(b => b.TenantId == _tenantProvider.TenantId);
+        });
+
+        builder.Entity<TenantApiKey>(e =>
+        {
+            e.HasOne(k => k.Tenant)
+             .WithMany()
+             .HasForeignKey(k => k.TenantId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.Property(k => k.Name).HasMaxLength(100);
+            e.Property(k => k.KeyPrefix).HasMaxLength(16);
+            e.Property(k => k.KeyHash).HasMaxLength(64);
+            e.HasIndex(k => k.KeyHash).IsUnique();
+            e.HasQueryFilter(k => k.TenantId == _tenantProvider.TenantId);
         });
     }
 

@@ -1,5 +1,32 @@
 # ToastRevival - Test Log
 
+## 2026-05-09 (M5.A — Pre-work + User Management + API Keys)
+
+### Build Checks
+
+- `dotnet build ToastRevival.sln`: 0 warnings, 0 errors. (Post-M5.A, all backend + agent)
+- `npx tsc -p tsconfig.app.json --noEmit` (strict): 0 errors, 0 warnings.
+- 22 new/modified backend files; 5 new/modified frontend files.
+
+### Code Sweep Results (M5.A — Abish, SHIP WITH NOTES)
+
+**Pre-commit verification:**
+- `NotificationTemplate` interface removal: confirmed zero imports in Dashboard. ✓
+- AuthController template seeding: confirmed SaveChangesAsync within active transaction; CommitAsync commits both user + templates atomically. ✓
+- DeviceGroupsController DeviceCount: increment on AddMember, decrement with floor guard on RemoveMember. ✓
+- UsersController self-deletion guard: HTTP 400 when userId == callerId. ✓
+- TemplateDbRecord only imported in notifications.ts + Compose.tsx — no orphaned references. ✓
+
+**INFO items filed:**
+- INFO-M5-001 (M6): No explicit RollbackAsync around template seeding in AuthController.Register.
+- INFO-M5-002 (acceptable): UsersController.Invite has no role ceiling.
+- INFO-M5-003 (M6): TemplatesController.BuildDefaultTemplates coupling (refactor to service).
+
+**INFO items closed:**
+- INFO-M4-001 ✓: templateId wired via TemplatesController + Compose.tsx slug→Guid fetch.
+- INFO-M4-002 ✓: DeviceGroupsController with full CRUD + member management.
+- INFO-M4-003 ✓: History() pagination with Skip/Take, page/pageSize params.
+
 ## 2026-05-08 (M4 Admin Dashboard)
 
 ### Build Checks

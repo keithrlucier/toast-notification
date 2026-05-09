@@ -10,7 +10,9 @@ const NAV_ITEMS = [
 ];
 
 const ADMIN_ITEMS = [
-  { to: '/moderation',  label: 'Moderation',   icon: ModerationIcon },
+  { to: '/moderation',        label: 'Moderation', icon: ModerationIcon },
+  { to: '/users',             label: 'Users',      icon: UsersIcon },
+  { to: '/settings/api-keys', label: 'API Keys',   icon: ApiKeysIcon },
 ];
 
 export default function Sidebar() {
@@ -199,6 +201,27 @@ function LogoutIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M11 5l3 3-3 3M14 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="6" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M1 13c0-2.21 2.239-4 5-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="12" cy="7" r="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10 13c0-1.657 1.343-3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ApiKeysIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="6" cy="9" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8.5 7.5L14 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M12 4l1.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

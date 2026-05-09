@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMPLETE. M3 COMPLETE. M4 COMPLETE 2026-05-08 (commit 016c4c9).** Admin dashboard: Vite 6/React 18/TypeScript, auth flow, device inventory, 6-template gallery with live CSS preview thumbnails, notification composer with real-time Windows toast preview (Segoe UI, Diana sign-off), send/schedule interface with MFA broadcast modal, history, moderation queue. Next: **M5 — Admin Dashboard Advanced Features**.
+Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMPLETE. M3 COMPLETE. M4 COMPLETE 2026-05-08. M5.A COMPLETE 2026-05-09 (commit pending).** M5.A delivered: DeviceGroupsController, notification pagination, TemplatesController + tenant seeding, User Management (D2), API Key Management (D5), Diana analytics chart spec in DESIGN-SPEC.md. Next: **M5.B — Analytics (D1) + Tenant Settings (D3)**.
 
 ## Keith
 

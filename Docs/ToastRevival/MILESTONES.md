@@ -198,21 +198,47 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 ---
 
 ## M5: Admin Dashboard — Advanced Features
-**Goal**: Complete dashboard with analytics, user management, tenant settings.
 
-### Deliverables
-- **D1**: Delivery analytics dashboard — send volume, delivery rates, interaction rates, trends over time
-- **D2**: User management — invite users, assign roles, MFA status, activity log
-- **D3**: Tenant settings — branding (logo, colors), notification defaults, rate limit configuration
-- **D4**: Asset library — upload/manage hero images and logos, moderation status indicators
-- **D5**: API key management — generate/revoke per-tenant API keys for programmatic access
-- **D6**: Notification scheduling — calendar view, recurring notifications, timezone handling
+### M5.A: Pre-work + User Management + API Keys  **[COMPLETE 2026-05-09]**
+**Goal**: Close M4 INFO items, add D2 user management and D5 API key management.
+
+#### Deliverables (all closed)
+- **INFO-M4-001** [x]: TemplatesController `GET /api/templates` + tenant seeding on Register + Compose.tsx slug→Guid map + templateId in buildRequest.
+- **INFO-M4-002** [x]: DeviceGroupsController — 6 endpoints (list, create, delete, members CRUD). DeviceCount maintained manually.
+- **INFO-M4-003** [x]: History() pagination — `page`/`pageSize` query params with `Skip/Take`. Frontend already sends these; now honored.
+- **D2** [x]: UsersController — `GET /api/users`, `POST /api/users/invite`, `PUT /api/users/{id}/role`, `DELETE /api/users/{id}`. Users.tsx page — table with role badge, MFA status, last active, role selector, remove action. Admin-only.
+- **D5** [x]: TenantApiKey model + migration `M5ApiKeyManagement`. ApiKeysController — generate (returns full key once), list (prefix only), revoke (soft delete). ApiKeys.tsx page — key table, generate form, one-time display modal with clipboard copy.
+- **Diana** [x]: Analytics chart spec delivered in DESIGN-SPEC.md — chart library (Recharts), layout, chart types, colors, tooltip style, backend API requirements for D1.
+
+#### INFO Items Filed
+- INFO-M5-001: No explicit error handling around template seeding in AuthController.Register() (M6)
+- INFO-M5-002: UsersController.Invite has no role ceiling (acceptable)
+- INFO-M5-003: TemplatesController.BuildDefaultTemplates coupling (M6 refactor candidate)
+
+#### Code Sweep
+- Commit pending: SHIP WITH NOTES — INFO-M5-001/002/003 logged.
+
+#### Agent Deployment (M5.A)
+- Anthony: INFO pre-work backend + D2 backend + D2 frontend ✓
+- Abish-1: D5 full (model + migration + controller + frontend) ✓
+- Abish: Code Sweep (significant scope) ✓
+- Diana: Analytics chart spec for DESIGN-SPEC.md ✓
+
+### M5.B: Analytics + Tenant Settings (NEXT)
+- **D1**: Delivery analytics dashboard — Recharts (see DESIGN-SPEC.md chart spec). Backend: 3 aggregate endpoints. Frontend: metric row + line chart + two bar charts.
+- **D3**: Tenant settings — branding (logo, colors), notification defaults, rate limit config.
+
+### M5.C (Future)
+- **D4**: Asset library — upload/manage hero images + logos, moderation status
+- **D6**: Notification scheduling — calendar view, timezone handling
+
+### M5.D (Future)
 - **D7**: Export — audit logs, delivery reports (CSV/PDF)
 
-### Agent Deployment
-- Anthony: D1, D6 (analytics requires data aggregation design, scheduling has timezone complexity)
-- Abish: D2-D5, D7 (CRUD interfaces, bounded feature work)
-- Diana: D1, D3-D4 (analytics visualization, branding UI, asset library UX)
+### Agent Deployment (M5.B planned)
+- Anthony: D1 backend (3 aggregate endpoints) + D1 frontend (Recharts charts)
+- Abish: D3 backend + D3 frontend
+- Diana: D1 chart sign-off, D3 branding UI review
 
 ---
 

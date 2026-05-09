@@ -148,6 +148,78 @@ The notification composer includes a preview panel on the right side that render
 
 ---
 
+## M5 Analytics Dashboard (D1 — for M5.B implementation)
+
+**Chart library: Recharts 2.x.** No other chart library. Configure `isAnimationActive={false}` on all charts — the only acceptable animation is the axis transition on first render, and even that should be killed on slow machines. If Recharts adds animation by default, turn it off.
+
+### Metric Summary Row
+Four metric cards across the top of the Analytics page. Same `.metric-card` CSS class already in the design system.
+
+| Card | Metric | Format |
+|---|---|---|
+| Sent (7d) | Total notifications sent in the last 7 days | Integer |
+| Delivery Rate | (Delivered / Total Deliveries) × 100 | `XX.X%` |
+| Interaction Rate | (Clicked / Delivered) × 100 | `XX.X%` |
+| Active Devices | Devices with a ping in the last 24h | Integer |
+
+### Notification Volume Chart (Line Chart)
+- **Position**: Full width, below metric row
+- **Chart type**: `<LineChart>` from Recharts
+- **Data**: Notifications sent per day, last 30 days. X-axis: date label (`"May 7"`). Y-axis: count, integer ticks only.
+- **Series**:
+  - Sent — color `#00C9A7` (accent), `strokeWidth={2}`, `dot={false}`
+  - Delivered — color `#60A5FA` (status-info), `strokeWidth={1.5}`, `dot={false}`, `strokeDasharray="4 2"`
+- **Grid**: `<CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false}`
+- **Tooltip**: Dark tooltip — `background: var(--bg-tertiary)`, `border: 1px solid rgba(255,255,255,0.08)`, `border-radius: 6px`, `font-size: 12px`. Do not use the default Recharts tooltip style.
+- **Legend**: Bottom, horizontal, `font-size: 12px`, `color: var(--text-secondary)`
+- **Height**: 240px
+
+### Delivery Status Breakdown (Bar Chart)
+- **Position**: Left column, below volume chart
+- **Chart type**: `<BarChart>` from Recharts
+- **Data**: Count of deliveries in each status (Pending / Delivered / Clicked / Dismissed / Failed) for the selected time range
+- **Bars**: One bar per status
+  - Delivered: `#4ADE80` (status-success)
+  - Clicked: `#00C9A7` (accent)
+  - Dismissed: `#7A7A92` (text-dim)
+  - Failed: `#F87171` (status-error)
+  - Pending: `#FBBF24` (status-warning)
+- **Bar radius**: 2px
+- **Grid**: Horizontal only, same style as volume chart
+- **Height**: 200px
+
+### Template Usage Breakdown (Horizontal Bar Chart)
+- **Position**: Right column, beside delivery status chart
+- **Chart type**: `<BarChart layout="vertical">` from Recharts
+- **Data**: Notification count per template category for the selected time range
+- **Bars**: Single series, color `#60A5FA` (status-info), radius 2px
+- **Height**: 200px
+
+### Time Range Selector
+- Position: Top-right of the Analytics page, inline with the page header
+- Options: 7 days | 30 days | 90 days (segmented button control — three `<button>` elements, teal background on active)
+- Default: 30 days
+- No date picker. These three presets are enough for MSPs.
+
+### Backend Requirements for D1 (Anthony reads this before building)
+Three new endpoints needed:
+1. `GET /api/analytics/summary?days=30` → `{ sentCount, deliveryRate, interactionRate, activeDeviceCount }`
+2. `GET /api/analytics/volume?days=30` → `[{ date: "2026-05-07", sent: 12, delivered: 10 }]`
+3. `GET /api/analytics/breakdown?days=30` → `{ byStatus: { Delivered: N, Clicked: N, ... }, byTemplate: { announcement: N, ... } }`
+
+These are read-only, tenant-scoped, aggregate queries. No new models, no migrations — pure SQL/LINQ over existing tables.
+
+### Rules for M5.B
+- Install Recharts: `npm install recharts` — confirm it exists before importing
+- `isAnimationActive={false}` on every chart component
+- All chart containers: `background: var(--bg-secondary)`, `border-radius: var(--radius-md)`, `padding: 24px` (`.card` class)
+- `ResponsiveContainer width="100%"` wraps every chart — never set a pixel width
+- Custom tooltip only — no Recharts default tooltip styling
+- No `<Legend>` on single-series charts
+- The metric row must render before the charts load (skeleton state acceptable — show `—` in metric cards while charts fetch)
+
+---
+
 ## Marketing Site (toastnotification.com)
 
 ### Structure

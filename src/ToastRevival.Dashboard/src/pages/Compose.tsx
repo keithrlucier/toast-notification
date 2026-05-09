@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { notificationsApi, type SendNotificationRequest, type ActionButton } from '../api/notifications';
+import { notificationsApi, type SendNotificationRequest, type ActionButton, type TemplateDbRecord } from '../api/notifications';
 import { devicesApi, type Device, type DeviceGroup } from '../api/devices';
 import ToastPreview, { CharCount } from '../components/ToastPreview';
 import BroadcastConfirmModal from '../components/BroadcastConfirmModal';
@@ -57,6 +57,10 @@ export default function Compose() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [groups,  setGroups]  = useState<DeviceGroup[]>([]);
 
+  // Template slug → DB Guid mapping (INFO-M4-001)
+  const [templateDbIds, setTemplateDbIds] = useState<Record<string, string>>({});
+  const [appliedTemplateSlug, setAppliedTemplateSlug] = useState('');
+
   // State
   const [sending,      setSending]      = useState(false);
   const [error,        setError]        = useState('');
@@ -67,6 +71,13 @@ export default function Compose() {
   useEffect(() => {
     void devicesApi.list().then(setDevices).catch(() => {});
     void devicesApi.listGroups().then(setGroups).catch(() => {});
+    void notificationsApi.templates()
+      .then((ts: TemplateDbRecord[]) => {
+        const map: Record<string, string> = {};
+        ts.forEach(t => { map[t.slug] = t.id; });
+        setTemplateDbIds(map);
+      })
+      .catch(() => {}); // graceful — templateId stays undefined if endpoint fails
   }, []);
 
   const estimatedDeviceCount = (() => {
@@ -89,9 +100,8 @@ export default function Compose() {
     scenario: scenario || undefined,
     targetType: targetMode,
     targetIds: targetMode === 'Device' ? selectedDevices : targetMode === 'Group' ? selectedGroups : undefined,
+    templateId: appliedTemplateSlug ? (templateDbIds[appliedTemplateSlug] ?? undefined) : undefined,
     scheduledAt: scheduledAt || undefined,
-    // templateId omitted — frontend uses string IDs ('announcement', 'alert')
-    // not database Guids. Wire at M5 when database-backed templates ship.
   });
 
   const handleSend = () => {
@@ -138,6 +148,7 @@ export default function Compose() {
     setButtons(t.defaults.actionButtons ?? []);
     setAudio(t.audioSetting);
     setScenario(t.scenario ?? '');
+    setAppliedTemplateSlug(templateId);
   };
 
   return (

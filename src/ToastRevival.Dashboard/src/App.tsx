@@ -10,6 +10,8 @@ import Templates from './pages/Templates';
 import Compose from './pages/Compose';
 import History from './pages/History';
 import Moderation from './pages/Moderation';
+import ApiKeys from './pages/ApiKeys';
+import Users from './pages/Users';
 
 const router = createBrowserRouter([
   { path: '/login',    element: <Login /> },
@@ -31,6 +33,22 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute requireAdmin>
             <Moderation />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/settings/api-keys',
+        element: (
+          <ProtectedRoute requireAdmin>
+            <ApiKeys />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/users',
+        element: (
+          <ProtectedRoute requireAdmin>
+            <Users />
           </ProtectedRoute>
         ),
       },

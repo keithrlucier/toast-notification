@@ -185,11 +185,16 @@ public class NotificationsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<NotificationHistoryItem>>> History()
+    public async Task<ActionResult<IEnumerable<NotificationHistoryItem>>> History(
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
     {
+        var p    = Math.Max(1, page);
+        var size = Math.Clamp(pageSize, 1, 100);
+
         var items = await _db.Notifications
             .OrderByDescending(n => n.CreatedAt)
-            .Take(100)
+            .Skip((p - 1) * size)
+            .Take(size)
             .Select(n => new NotificationHistoryItem(
                 n.Id, n.Title, n.Status.ToString(), n.TargetDeviceCount,
                 n.Deliveries.Count(d => d.Status == DeliveryStatus.Delivered),

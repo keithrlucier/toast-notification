@@ -300,29 +300,50 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Document Postgres minimum-version (13+) in M9 deployment infra.
 **Blocking:** No.
 
-### INFO-M4-001 (M5 — template gallery wiring) — templateId field omitted from send payload
+### INFO-M4-001 — **RESOLVED 2026-05-09 (M5.A)**
 
 **Filed:** 2026-05-08 (M4 Code Sweep — Abish caught)
-**Surface:** `src/ToastRevival.Dashboard/src/pages/Compose.tsx`
-**Issue:** Frontend template IDs are string slugs (`'announcement'`, `'alert'`, etc.), not database Guids. The backend's `SendNotificationRequest.TemplateId` is `Guid?`. Sending the string would cause a server-side JSON parse error.
-**Fix applied (pre-commit):** `templateId` omitted from `buildRequest()` return. Wire at M5 when database-backed templates are seeded.
-**Blocking:** No (fixed before commit).
+**Resolved:** 2026-05-09 (M5.A)
+**Surface:** `src/ToastRevival.Dashboard/src/pages/Compose.tsx`, `src/ToastRevival.Api/Controllers/TemplatesController.cs`
+**Resolution:** `GET /api/templates` endpoint added (TemplatesController). 6 default templates seeded on tenant registration (AuthController.Register). Compose.tsx fetches templates on mount, builds slug→Guid map, includes `templateId` in `buildRequest()` when a template has been applied. Graceful degradation: if fetch fails, templateId stays undefined. `TemplateDbRecord` interface added to notifications.ts. `templateId` added to `SendNotificationRequest` interface.
 
-### INFO-M4-002 (M5 — device groups API) — /api/devicegroups returns 404
-
-**Filed:** 2026-05-08 (M4 Code Sweep — Abish)
-**Surface:** `src/ToastRevival.Dashboard/src/api/devices.ts::listGroups`
-**Issue:** No `DeviceGroupsController` exists in the API. `GET /api/devicegroups` returns 404. Dashboard catches the error silently (`catch(() => {})`), Group target mode degrades to "No device groups configured." Correct behavior for M4.
-**Fix:** Add `DeviceGroupsController` at M5 alongside device group management UI.
-**Blocking:** No. Graceful degradation confirmed.
-
-### INFO-M4-003 (M5 — notification list pagination) — GET /api/notifications ignores pagination params
+### INFO-M4-002 — **RESOLVED 2026-05-09 (M5.A)**
 
 **Filed:** 2026-05-08 (M4 Code Sweep — Abish)
+**Resolved:** 2026-05-09 (M5.A)
+**Surface:** `src/ToastRevival.Api/Controllers/DeviceGroupsController.cs` (new)
+**Resolution:** `DeviceGroupsController` added with 6 endpoints: GET list, POST create, DELETE group, GET members, POST add member, DELETE remove member. DeviceCount maintained manually (increment on add, decrement with floor guard on remove). Admin-only for write operations, all-authenticated for reads.
+
+### INFO-M4-003 — **RESOLVED 2026-05-09 (M5.A)**
+
+**Filed:** 2026-05-08 (M4 Code Sweep — Abish)
+**Resolved:** 2026-05-09 (M5.A)
 **Surface:** `src/ToastRevival.Api/Controllers/NotificationsController.cs::History`
-**Issue:** `GET /api/notifications` accepts no `page`/`pageSize` query params and hard-caps at 100 items. Frontend sends pagination params that are silently ignored. Functionally correct at current scale.
-**Fix:** Add proper server-side pagination to the `History()` endpoint at M5.
+**Resolution:** `page` (default 1) and `pageSize` (default 25, clamped 1–100) query params added. `Skip/Take` applied server-side. Frontend's existing `notificationsApi.list(page, pageSize)` call now honored correctly.
+
+### INFO-M5-001 (M6 — hardening) — No explicit error handling on template seeding in AuthController.Register
+
+**Filed:** 2026-05-09 (M5.A Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Api/Controllers/AuthController.cs::Register`
+**Issue:** Template seeding (`TemplatesController.BuildDefaultTemplates` → `SaveChangesAsync`) runs inside the existing registration transaction but without an explicit try/catch + RollbackAsync. If seeding throws, the EF exception propagates, the transaction is not committed, and the DB rolls back implicitly — correct behavior. But the caller receives a 500 response instead of a clean error message.
+**Fix:** Wrap template seeding in try/catch at M6; on failure, roll back and return a clean 500 with a meaningful message: "Registration succeeded but template initialization failed. Contact support."
+**Blocking:** No. Template model has no constraints that would cause legitimate failures under normal operation.
+
+### INFO-M5-002 (acceptable) — UsersController.Invite has no role ceiling
+
+**Filed:** 2026-05-09 (M5.A Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Api/Controllers/UsersController.cs::Invite`
+**Issue:** An Admin can invite a SuperAdmin. No role ceiling enforcement.
+**Fix:** Acceptable for MSP context (admins are trusted operators). If compliance requires it, add: `if (req.Role > callerRole) return Forbid()` at M6.
 **Blocking:** No.
+
+### INFO-M5-003 (low) — TemplatesController.BuildDefaultTemplates couples Auth and Templates
+
+**Filed:** 2026-05-09 (M5.A Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Api/Controllers/TemplatesController.cs::BuildDefaultTemplates`
+**Issue:** `internal static` method on a controller is an unusual pattern. Creates implicit coupling between AuthController and TemplatesController.
+**Fix:** Extract to a `TemplateSeederService` or `DefaultTemplates` static class at M6+.
+**Blocking:** No. One caller only (AuthController.Register).
 
 ## Resolved
 

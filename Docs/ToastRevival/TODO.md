@@ -100,10 +100,10 @@ All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 
 - [x] FIX-M2B-001 patched pre-commit: agent `_lastCatchupSince` nullable + omit-on-first-call. Original `=DateTime.UtcNow` at ctor time would have excluded every pre-existing Pending delivery on first run.
 - [x] Build clean (0 warn / 0 err); MSIX smoke check clean. No EF migration required.
 
-### M2.C — Tray icon + MSI properties (Diana session)
-- [ ] D7: System tray icon — connected/disconnected/error iconography (Diana DESIGN-SPEC contribution before code).
-- [ ] D9: WiX MSI properties — `CLIENTID` + `SERVERURL` → `bootstrap.json` next to the exe at install.
-- [ ] D9: Silent install/uninstall verification, MSIX→MSI upgrade-path smoke check.
+### M2.C — COMPLETE 2026-05-08 (commit ecf79ce)
+- [x] D7: System tray icon — WinForms NotifyIcon on STA thread; 5 states; Diana spec colors; 700ms amber pulse; context menu wired.
+- [x] D9: WiX MSI properties CLIENTID + SERVERURL → bootstrap.json via SetupMode; WriteBootstrapJson/DeleteBootstrapJson CAs; version 0.4.0.0.
+- [ ] D9: Silent install/uninstall verification + MSIX→MSI upgrade-path smoke check — **Keith to verify with lab machine on next MSI build**.
 
 ### M2.D — Auto-update (Velopack)
 - [ ] D8: Velopack integration for MSI channel — feed-server config, delta package layout, signing flow, Velopack-vs-MSI uninstall semantics.

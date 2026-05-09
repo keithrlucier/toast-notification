@@ -86,9 +86,9 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 - **D4** [x **COMPLETE 2026-05-09 (M2.A)**]: Payload verification — `Tenant.SigningKey` (32-byte random base64, generated at tenant create, returned to agent at registration). Server-side: `NotificationQueueService.BuildSignedPayload` HMAC-SHA256s the pre-serialized JSON bytes; sends `(payloadJson, signature)` as separate SignalR args to eliminate transport-serializer drift. Agent-side: `HmacVerifier.Verify` uses `CryptographicOperations.FixedTimeEquals` for constant-time compare; reject-and-drop on mismatch.
 - **D5** [x **COMPLETE 2026-05-09 (M2.A)**]: Notification interaction tracking — `AgentHubClient.OnReceiveNotificationAsync` calls `ReportDelivery(notificationId)` after a successful render; `OnNotificationInvoked` parses click args and calls `ReportInteraction(notificationId, action)`. Plus REST `POST /api/notifications/{id}/interactions` for the activation-handler exit path (device-JWT-authenticated, same DeliveryStatus update + DeliveryUpdate hub broadcast as the hub method).
 - **D6** [x **COMPLETE 2026-05-09 (M2.B)**]: Missed notification catch-up — `GET /api/notifications/pending?since=<DateTime?>` (device-JWT-authenticated, `device-per-hour` rate limit). Returns `PendingNotificationItem(NotificationId, PayloadJson, Signature, CreatedAt)[]` for the device's `Pending` deliveries; cap 100 per call; ordered by CreatedAt asc. PayloadJson + Signature byte-identical to the hub fanout via shared `NotificationPayloadBuilder.BuildSigned` helper — agent runs the same HMAC verify path regardless of channel. Agent: on `_hub.Reconnected` and once after cold `StartAsync`, fires `RunCatchupAsync` → fire-and-forget GET → for each item: verify, dedup-check, render, ReportDelivery. Plus INFO-M2A-003 startup recovery (`NotificationQueueService.RecoverOrphansAsync` sweeps `Notifications WHERE Status=Sending AND SentAt < now-5min` to `Failed`; deliveries STAY Pending so catch-up can still deliver — Carl's M2.B overrule on the original FIX-LIST plan) and INFO-M2A-004 agent dedup (`MemoryCache<Guid,byte>` with 1-hour sliding expiration; short-circuits BOTH render AND ReportDelivery; entry only set after `Show()` succeeds so render failures don't poison the cache). FIX-M2B-001 patched pre-commit (Abish caught: `_lastCatchupSince = DateTime.UtcNow` at ctor would have excluded every pre-existing Pending delivery on first call, defeating the catch-up's primary scenario). See `EVIDENCE/2026-05-09-m2b-catchup-and-recovery.md`.
-- **D7**: System tray icon with status indicator (connected/disconnected/error). **Deferred to M2.C** (Diana-engaged session — needs design spec for status iconography per her 2026-05-08 sign-off boundary).
+- **D7** [x **COMPLETE 2026-05-08 (M2.C)**]: System tray icon — WinForms `NotifyIcon` on dedicated STA background thread. Five states per Diana's spec: Connecting (`#7A7A92`), Connected (`#00C9A7` teal), Reconnecting (`#F59E0B` amber 700ms pulse), Disconnected (`#F59E0B` amber static), Error (`#DC2626` red). Context menu: Open Dashboard / Send Test / View Log / Reconnect Now / Quit. `ConnectionStateChanged` event + `ReconnectAsync()` on `AgentHubClient`. Icon visible from process start. `UseWindowsForms=true`. Commit `ecf79ce`.
 - **D8**: Auto-update mechanism — Velopack integration for MSI-deployed instances, Store-deployed use Store updates. **Deferred to M2.D** (significant standalone integration with feed-server + delta package surface).
-- **D9**: Installer refinement — MSI properties (CLIENTID, SERVERURL), silent install/uninstall, upgrade path. **Deferred to M2.C** (paired with D7 tray so the tray comes pre-configured from MSI properties).
+- **D9** [x **COMPLETE 2026-05-08 (M2.C)**]: `CLIENTID` + `SERVERURL` MSI public properties → `bootstrap.json` via `SetupMode` (`--setup-bootstrap`). Detected before elevation guard. WiX `WriteBootstrapJson` deferred CA sequences before `InstallScheduledTask`. `DeleteBootstrapJson` on uninstall. MSI version 0.4.0.0. Silent install: `msiexec /i ... /qn CLIENTID=<guid> SERVERURL=https://...`. Commit `ecf79ce`.
 
 ### M2.A Closure (2026-05-09)
 - 7 deliverables shipped (D1, D2, D3, D4, D5 + INFO-D5-001 mutex + INFO-MSIX-004-D activation handler).
@@ -113,10 +113,17 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 - Abish: Code Sweep — caught FIX-M2B-001 (catch-up since-window bug) pre-commit.
 - Diana: On bench — backend-only. Active at M2.C (tray icon).
 
+### M2.C Closure (2026-05-08)
+- 2 deliverables shipped (D7 tray icon + D9 MSI property wiring).
+- Code Sweep returned SHIP WITH NOTES. INFO-M2C-001 through INFO-M2C-004 logged (see FIX-LIST.md). No blocking findings.
+- Build clean: 0 warnings + 0 errors solution-wide. MSIX smoke check clean (pre-existing FIX-MSIX-003 only). MSIX manifest verified from produced artifact — all three extensions intact, MinVersion/MaxVersionTested unchanged.
+- New standing rules (Carl): (1) WinForms STA tray thread is owned by `TrayIconService` and signalled via `SynchronizationContext.Post`; never update `NotifyIcon` from non-STA thread directly. (2) `SetupMode` must always be detected before the elevation guard in `AgentEntryPoint.RunAsync`.
+- Diana design sign-off: Five-state iconography spec delivered and implemented. Placeholder GDI+ circles at spec colors; production SVG-rasterized assets owed before M9 GA.
+
 ### Agent Deployment (Future M2 Slices)
-- Anthony: D8 (Velopack); D9 (WiX MSI property wiring)
+- Anthony: D8 (Velopack)
 - Abish: Code Sweep all slices
-- Diana: D7 (tray icon iconography spec)
+- Diana: Production tray icon SVG assets (before M9)
 
 ---
 

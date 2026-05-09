@@ -181,6 +181,38 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Set `SizeLimit = 50_000` on `MemoryCacheOptions` and `Size = 1` on each entry's `MemoryCacheEntryOptions`.
 **Blocking:** No.
 
+### INFO-M2C-001 (M9 — pre-launch) — Tray icon HICON handles not freed
+
+**Filed:** 2026-05-08 (M2.C Code Sweep)
+**Surface:** `src/ToastRevival.Agent/TrayIconService.cs::CreateCircleIcon`
+**Issue:** `Bitmap.GetHicon()` creates Win32 HICON handles. `Icon.FromHandle()` wraps them without taking ownership — handles are not freed when the Icon or TrayIconService is disposed. For process-lifetime tray icons (5 handles total), the leak is ~5 HICONs per agent session, released on process exit. Non-issue at current scale.
+**Fix:** Before M9 GA: store HICON handles and call `DestroyIcon` (P/Invoke) in TrayIconService.Dispose(). Low priority until production tile assets replace placeholder GDI+ icons anyway.
+**Blocking:** No.
+
+### INFO-M2C-002 (M3) — SetupMode after OS version check
+
+**Filed:** 2026-05-08 (M2.C Code Sweep)
+**Surface:** `src/ToastRevival.Agent/Program.cs::AgentEntryPoint.RunAsync`
+**Issue:** `--setup-bootstrap` detection is after the `IsWindowsVersionAtLeast(10,0,19041)` guard. On a sub-19041 machine, the WiX WriteBootstrapJson CA exits 2 and bootstrap.json is not written. This is the unsupported OS floor — the agent wouldn't run on that machine anyway. A MSI-level OS version condition (LaunchCondition or Condition on Feature) would prevent installs on unsupported OS entirely, eliminating the ambiguity.
+**Fix:** Add `LaunchCondition` in WiX requiring `VersionNT64 >= 1904` (hex 0x774) at M3 or before M9.
+**Blocking:** No.
+
+### INFO-M2C-003 (acceptable) — async void ReconnectRequested lambda
+
+**Filed:** 2026-05-08 (M2.C Code Sweep)
+**Surface:** `src/ToastRevival.Agent/Program.cs::PrimaryMode.RunAsync`
+**Issue:** `async void` lambda subscribed to `tray.ReconnectRequested`. Unhandled exceptions in async void crash the process. The entire body is wrapped in try/catch, which mitigates this. Pattern is consistent with existing `async void OnNotificationInvoked` in AgentClient.cs.
+**Fix:** Acceptable as-is. If future modifications add code paths outside the try/catch, revisit.
+**Blocking:** No.
+
+### INFO-M2C-004 (acceptable) — TrayIconService 3s STA init wait
+
+**Filed:** 2026-05-08 (M2.C Code Sweep)
+**Surface:** `src/ToastRevival.Agent/TrayIconService.cs` constructor
+**Issue:** Constructor blocks the calling thread up to 3 seconds waiting for `_uiReady`. In normal conditions the STA thread initializes in <50ms. Under extreme resource contention, if initialization exceeds 3 seconds, `_notifyIcon` may be null and the tray icon never appears. The agent functions normally — tray icon is cosmetic/UX surface, not correctness-critical.
+**Fix:** Acceptable. The graceful degradation path (ApplyState null-checks _notifyIcon) is verified.
+**Blocking:** No.
+
 ### INFO-M2B-005 (M3) — Catch-up rate limit during reconnect storms
 
 **Filed:** 2026-05-09 (M2.B Code Sweep)

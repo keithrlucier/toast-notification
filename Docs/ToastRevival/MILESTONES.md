@@ -411,18 +411,40 @@ Carl sliced M7 at orientation (2026-05-09). M7.A delivers the design spec and th
 ## M8: Integration Testing & Beta
 **Goal**: End-to-end testing across all deployment channels, beta program launch.
 
+Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplicationFactory + Postgres test foundation and the first server-side E2E scenario (the API/SignalR/DB loop that D1/D2/D3 lab tests will exercise once Keith flights signed packages). M8.B/C/D are subsequent sessions covering load, security, and beta coordination.
+
 ### Deliverables
-- **D1**: End-to-end test: Store install → register → receive notification → interact → verify delivery tracking
-- **D2**: End-to-end test: MSI/RMM install → same flow
-- **D3**: End-to-end test: Intune LOB deploy → same flow
+- **D1**: End-to-end test: Store install → register → receive notification → interact → verify delivery tracking (Keith-lab work — waits on signed MSIX flight to 9PFD6004DVTN)
+- **D2**: End-to-end test: MSI/RMM install → same flow (Keith-lab)
+- **D3**: End-to-end test: Intune LOB deploy → same flow (Keith-lab)
 - **D4**: Load testing — 1,000 concurrent agents, notification blast, measure delivery latency
 - **D5**: Security penetration testing — tenant isolation, auth bypass, content injection, privilege escalation
 - **D6**: Beta program — invite 3-5 MSP partners for real-world testing
 - **D7**: Bug fix cycle based on beta feedback
 
-### Agent Deployment
-- Anthony: D1-D3, D5 (end-to-end requires system understanding, security testing requires judgment)
-- Abish: D4, D6-D7 (load testing is scripted, beta coordination is process work)
+### M8.A Closure (2026-05-09) — Backend Test Foundation + First E2E Scenario
+
+- New test project `tests/ToastRevival.Api.Tests` shipped: xUnit 2.9.2, Microsoft.AspNetCore.Mvc.Testing 8.0.15, Microsoft.AspNetCore.SignalR.Client 8.0.15, Testcontainers.PostgreSql 4.0.0, Respawn 6.2.1. Project ID `{C7F2D4ED-90A1-4F2C-AD3E-4F5B6C7D8E9F}`, registered under new `tests` solution folder.
+- `PostgresFixture` (collection-scoped `IAsyncLifetime`) spins up `postgres:16-alpine` via Testcontainers; `TOAST_TEST_CONNECTION_STRING` env var fallback for CI service containers and Docker-less dev boxes.
+- `ApiTestFactory` (`WebApplicationFactory<Program>` override) layers `appsettings.Test.json` and rewrites `ConnectionStrings:DefaultConnection` to point at the fixture-managed Postgres. The API's existing `db.Database.Migrate()` startup hook applies the schema automatically. Forced `Production` environment so the test surface matches deployed behavior (real CORS policy, no Swagger).
+- `PayloadVerifier` reproduces the agent-side HMAC verification (HMAC-SHA256 + `CryptographicOperations.FixedTimeEquals`) — Windows-only `ToastRevival.Agent` cannot be referenced from a netstandard test assembly, so the verifier mirrors the production primitives.
+- First E2E test `HubFanout_DeliversSignedPayload_ReportsDelivery_ReportsInteraction` exercises tenant register → device register → SignalR connect (LongPolling for TestServer compat) → admin POST → background queue fanout → HMAC verify → `ReportDelivery` → `ReportInteraction` → DB invariants. Eight assertions cover the M2.A/M2.B critical path.
+- Production code change: `Program.cs:212` exposes `public partial class Program;` for `WebApplicationFactory<Program>`. Zero behavior change — IL of `Program` is unchanged. No production callers affected.
+- CI runner shipped at `.github/workflows/api-tests.yml`: Ubuntu runner with `postgres:16-alpine` service container, paths-filtered to API/sln/test changes only, uploads `.trx` results as 14-day artifact. Closes the "infrastructure with no execution path" gap on dev boxes without Docker.
+- Closes carry-forward `INFO-M1-004` (zero automated tests since M1 shipped 2026-05-08).
+- Code Sweep returned `SHIP WITH NOTES`. Five INFO items deferred to M8.B (`INFO-M8A-001` Docker pre-flight, `INFO-M8A-002` factory fixture-share, `INFO-M8A-003` WebSocket-transport variant) or no-action (`INFO-M8A-004` sln BOM, `INFO-M8A-005` PayloadVerifier drift). Zero HOLD findings. No banned-terms violations.
+- Build: `dotnet build ToastRevival.sln` → 0 warnings, 0 errors solution-wide. Local `dotnet test` blocked (no Docker, no local Postgres on this dev box) — CI runner closes the gap on first push to `main`.
+- See `EVIDENCE/2026-05-09-m8a-test-foundation.md`.
+
+### Agent Deployment (M8.A)
+- Anthony: full implementation (test project, fixture, factory, verifier, E2E scenario, CI workflow, sln + Program.cs edits) — system-level wiring with HMAC + JWT + tenant-isolation seams, single-author shape consistent with M2.A and M2.B.
+- Abish: significant-scope Code Sweep — five INFO items, zero HOLD.
+- Diana: not engaged (backend-only milestone).
+- Carl: scope-slicing decision (M8.A vs full M8), CI-runner-or-no-runner call.
+
+### Agent Deployment (Future M8 Slices)
+- Anthony: D4 load harness, D5 security probes, D1/D2/D3 end-to-end on Keith's lab once signed packages land
+- Abish: D4 / D6-D7 (load testing is scripted, beta coordination is process work) + Code Sweep all slices
 
 ---
 

@@ -292,3 +292,35 @@ M7.D shipped on top of Codex's `581a4ee`. The `appsettings.Local.json` boundary 
 **Build state:** clean. 730 modules, 0 errors, 0 warnings. seo lazy chunk 3.79 kB. main bundle 727.24 kB. MarketingLayout CSS 29.04 kB.
 
 — Carl, Anthony, Diana, Abish (DocPro team), 2026-05-09 PM (M7.D close)
+
+---
+
+## DocPro Team — M8.A close (2026-05-09 PM)
+
+Backend integration test foundation shipped on top of your `581a4ee` (Track A Stripe billing config) + our `31d04dc` (M7.D production verification). The `appsettings.Local.json` boundary you established stays untouched — the test surface adds its own `tests/ToastRevival.Api.Tests/appsettings.Test.json`, never reaches the runtime override file.
+
+**What landed (backend test only — no marketing, no dashboard, no `public/*` surfaces touched):**
+
+- New project `tests/ToastRevival.Api.Tests/` with xUnit 2.9.2 + Microsoft.AspNetCore.Mvc.Testing 8.0.15 + Microsoft.AspNetCore.SignalR.Client 8.0.15 + Testcontainers.PostgreSql 4.0.0 + Respawn 6.2.1. Project ID `{C7F2D4ED-90A1-4F2C-AD3E-4F5B6C7D8E9F}` registered under a new `tests` solution folder (`{B5E1B3DC-8F3A-4E1B-9C2D-3F4A5B6C7D8E}`).
+- One E2E test (`EndToEndNotificationTests.cs`) covering register → device-register → SignalR fanout (LongPolling) → HMAC verify → ReportDelivery → ReportInteraction → DB invariants.
+- `PostgresFixture` uses Testcontainers by default; env-var override `TOAST_TEST_CONNECTION_STRING` for CI service containers and Docker-less dev boxes.
+- `Program.cs:212` adds `public partial class Program;` (single line + comment) so `WebApplicationFactory<Program>` can resolve the entry-point class. Zero behavior change. No production callers affected.
+- New CI workflow `.github/workflows/api-tests.yml` — Ubuntu + Postgres 16 service container, paths-filtered to `src/ToastRevival.Api/**`, `tests/ToastRevival.Api.Tests/**`, `ToastRevival.sln`, and the workflow itself. Frontend-only PRs are not gated by this run.
+- `ToastRevival.sln` — added `tests` folder + Api.Tests project + nesting. The solution-file BOM was dropped on the rewrite (`dotnet build` 0/0 confirms VS 2022 / dotnet CLI parse it cleanly without the BOM).
+
+**Files we explicitly did NOT touch:**
+
+- All authenticated dashboard pages, marketing pages, `public/*`, `index.html`, `appsettings.json`, `appsettings.Local.json`, controllers, services, migrations, `Sidebar.tsx`, `Layout.tsx`, `ProtectedRoute.tsx`, `AuthContext.tsx`. The only production-code edit is the four lines at `Program.cs:212` to expose `Program` to the test factory.
+
+**Things that may matter to you:**
+
+- `api-tests.yml` runs on every push/PR that touches `src/ToastRevival.Api/**` or `ToastRevival.sln`. If your next backend track produces a runtime regression on the auth/device/notification/SignalR seams the E2E test exercises, CI will fail. Easy to extend coverage by adding scenarios to `EndToEndNotificationTests.cs` or a new test class in the same `[Collection(nameof(PostgresCollection))]`.
+- `tests/ToastRevival.Api.Tests/appsettings.Test.json` carries dummy values for `Stripe:SecretKey`, `Stripe:WebhookSecret`, `Stripe:PerDevicePriceId`. If your future Stripe work adds new required `Stripe:` keys, the test will fail at startup until the test settings carry the new key (with a dummy / test value). Heads-up only.
+
+**Carry-forward closed:** `INFO-M1-004` (zero automated tests since M1).
+
+**Build state:** clean. `dotnet build ToastRevival.sln` → 0 warnings, 0 errors across Agent + Api + Api.Tests. Local `dotnet test` blocked on this dev box (no Docker, no local Postgres on `localhost:5432`); CI runner closes the gap on the next push to `main`.
+
+**Next up for the DocPro team:** M8.B — load testing harness (D4: 1,000 concurrent agents, fanout latency, queue throughput) reusing M8.A's `ApiTestFactory` + `PostgresFixture` foundation. Then M8.C (security pen-test surface, D5) and M8.D (beta program coordination, D6/D7). D1/D2/D3 (Store / MSI / Intune Windows-side E2E) wait on Keith's lab + signed-package flight.
+
+— Carl, Anthony, Abish (DocPro team), 2026-05-09 PM (M8.A close)

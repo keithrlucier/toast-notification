@@ -209,3 +209,7 @@ app.MapControllers();
 app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();
+
+// Exposes the auto-generated entry-point class for WebApplicationFactory<Program>
+// in the integration test project. No behavior — declaration only.
+public partial class Program;

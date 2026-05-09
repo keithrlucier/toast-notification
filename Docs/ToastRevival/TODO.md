@@ -2,9 +2,11 @@
 
 ## Current Reality
 
-Project status: **M0A through M7 ALL COMPLETE. M7.D COMPLETE 2026-05-09 — SEO + LLM-discovery layer shipped: `llms.txt` + `robots.txt` + `sitemap.xml`, per-page JSON-LD via the new `useSeo` hook (no new deps), favicon set (SVG + 32/64/192/512/180 PNGs), 1200×630 OG card. INFO-M7C-005 closed (docs body contrast tightened to `--text-primary`). FIX-M7D-001 patched pre-commit (defensive `</script>` escape on JSON-LD).** M7.A/B/C COMPLETE earlier today — marketing site rebuilt corporate-grade (Bloomberg/Datadog register, real product screenshot, single-plan pricing) + public docs hub at `/docs/*`. Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt. **FIX-PROD-001 RESOLVED 2026-05-09** — Vite `assetsDir: 'static'` fixed the blank-page blocker. **FIX-PROD-002 RESOLVED 2026-05-09** — register flow end-to-end. **First-time admin signup at https://toastnotification.com/register.**
+Project status: **M0A through M7 ALL COMPLETE. M8.A COMPLETE 2026-05-09 — Backend integration test foundation shipped.** New `tests/ToastRevival.Api.Tests` project (xUnit + Microsoft.AspNetCore.Mvc.Testing 8.0.15 + Testcontainers.PostgreSql 4.0.0 + Microsoft.AspNetCore.SignalR.Client 8.0.15) with first E2E scenario covering tenant register → device register → SignalR fanout → HMAC verify → ReportDelivery → ReportInteraction → DB invariants. Production code minimally extended (`public partial class Program;` only). CI runner at `.github/workflows/api-tests.yml` runs on every push/PR touching API/sln/test files against a Postgres 16 service container. Closes carry-forward `INFO-M1-004` (zero automated tests since M1).
 
-**M7 (marketing site) complete 2026-05-09 evening.** Next milestone: M8 (integration testing + beta program). M7-class SEO/discovery work that lives outside the milestone bar (sitemap lastmod auto-generation, dashboard per-route titles, no-JS crawler fallback) is logged as INFO-M7D-001/002/003 in FIX-LIST.md.
+M7.D earlier same day shipped SEO + LLM-discovery layer (`llms.txt`, `robots.txt`, `sitemap.xml`, per-page JSON-LD via the new `useSeo` hook, favicon set, 1200×630 OG card). M7.A/B/C earlier shipped marketing site rebuilt corporate-grade + public docs hub. Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt.
+
+**Next milestone: M8.B** — load testing harness (D4: 1,000 concurrent agents, fanout latency, queue throughput) reusing M8.A's `ApiTestFactory` + `PostgresFixture` foundation. Then M8.C (security pen-test surface — D5) and M8.D (beta program coordination — D6/D7). D1/D2/D3 (Store / MSI / Intune Windows-side E2E) wait on Keith's lab + signed-package flight.
 
 **Codex handoff tracks closed 2026-05-09:**
 - Pricing v2 shipped: single Standard plan, $0.22/device/month, 100-device monthly floor ($22), 14-day Stripe trial, no Free/Pro/Enterprise plan picker.
@@ -161,6 +163,45 @@ All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 
 - [ ] Resolve INFO-M7A-002: fix `DEPLOY.md:451` SSH key path (`Docs/ToastRevival/Assets/...` → `Docs/Assets/...`).
 - [ ] Deploy to toastnotification.com (same Lightsail box, same nginx, no DNS change).
 - [ ] Lighthouse SEO 100, Accessibility ≥ 95, Performance ≥ 90 mobile.
+
+## M8 — Integration Testing & Beta (sliced 2026-05-09)
+
+### M8.A — COMPLETE 2026-05-09
+- [x] `tests/ToastRevival.Api.Tests` xUnit project + Microsoft.AspNetCore.Mvc.Testing 8.0.15 + Testcontainers.PostgreSql 4.0.0 + SignalR.Client 8.0.15.
+- [x] `PostgresFixture` (Testcontainers + `TOAST_TEST_CONNECTION_STRING` env-var fallback for CI).
+- [x] `ApiTestFactory` (`WebApplicationFactory<Program>` override, layered `appsettings.Test.json`, runtime connection-string rewrite).
+- [x] `PayloadVerifier` agent-side HMAC reproduction.
+- [x] First E2E test `HubFanout_DeliversSignedPayload_ReportsDelivery_ReportsInteraction` — 8 assertions covering M2.A/M2.B critical path.
+- [x] `Program.cs:212` adds `public partial class Program;` for `WebApplicationFactory<Program>`.
+- [x] `ToastRevival.sln` updated with `tests` folder + Api.Tests project + nesting.
+- [x] `.github/workflows/api-tests.yml` Ubuntu runner with Postgres 16 service container, paths-filtered, uploads `.trx` artifact.
+- [x] Closes `INFO-M1-004` (zero automated tests since M1).
+- [x] Code Sweep SHIP WITH NOTES (5 INFO items: M8A-001 Docker pre-flight, M8A-002 factory share, M8A-003 WebSocket variant, M8A-004 sln BOM, M8A-005 PayloadVerifier mirroring).
+- [x] Build clean (0 warnings, 0 errors solution-wide).
+- [x] EVIDENCE captured at `EVIDENCE/2026-05-09-m8a-test-foundation.md`.
+
+### M8.B — Load testing (next session)
+- [ ] D4: 1,000 concurrent agents harness (parallel SignalR connections, single-tenant or multi-tenant fan-out, fixed-rate notification blast).
+- [ ] Latency percentiles: p50/p95/p99 from POST /api/notifications → ReceiveNotification arrival → ReportDelivery acknowledgment.
+- [ ] Queue saturation behavior: when `Channel<Guid>` writer outpaces reader, observe back-pressure / processing rate.
+- [ ] `Respawn` integration for per-test DB cleanup once test count grows.
+- [ ] Address INFO-M8A-001 (Docker pre-flight) and INFO-M8A-002 (factory share) as part of harness restructure.
+
+### M8.C — Security pen-test (after M8.B)
+- [ ] D5: tenant-isolation probes (cross-tenant device read/write, hub group leakage, audit log fence).
+- [ ] D5: auth bypass attempts (expired JWT, swapped tenantId claim, malformed device JWT, missing-MFA broadcast).
+- [ ] D5: content injection (XSS in notification body, oversized payload, unicode boundary cases).
+- [ ] D5: privilege escalation (Technician self-grant Admin, Admin self-grant SuperAdmin, BYO-platformAdmin claim).
+- [ ] WebSocket-transport hub variant test (closes INFO-M8A-003).
+
+### M8.D — Beta program (Keith-driven)
+- [ ] D6: invite 3–5 MSP partners — Keith identifies and contacts.
+- [ ] D7: bug fix cycle from beta feedback — triage queue, prioritize, ship via paths-filtered CI.
+
+### M8 Windows-side E2E (waiting on Keith's lab)
+- [ ] D1: Store install → register → receive → interact → DB delivery row verified.
+- [ ] D2: MSI/RMM install → same flow.
+- [ ] D3: Intune LOB deploy → same flow.
 
 ## Deferred (later milestones)
 

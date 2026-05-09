@@ -2,6 +2,32 @@
 
 ## Open Issues
 
+### INFO-M1-004 — **RESOLVED 2026-05-09 (M8.A)** (Zero automated tests in backend)
+
+**Filed:** 2026-05-08 during M1 close (carry-forward across M2–M7).
+**Surface:** entire `src/ToastRevival.Api` — no test project existed.
+**Resolution:** New `tests/ToastRevival.Api.Tests` project shipped at M8.A with xUnit + Microsoft.AspNetCore.Mvc.Testing 8.0.15 + Testcontainers PostgreSQL fixture + Microsoft.AspNetCore.SignalR.Client 8.0.15. First end-to-end scenario covers the M2.A/M2.B critical path: tenant register → device register → admin send → SignalR fanout → HMAC verify → ReportDelivery → ReportInteraction → DB invariants. CI runner at `.github/workflows/api-tests.yml` runs the suite against a Postgres 16 service container on every push/PR touching API, sln, or tests. See `EVIDENCE/2026-05-09-m8a-test-foundation.md`.
+
+### INFO-M8A-001 (open, M8.B candidate)
+
+`tests/ToastRevival.Api.Tests/PostgresFixture.cs` has no friendly Docker-availability pre-flight. If neither Docker nor `TOAST_TEST_CONNECTION_STRING` is configured locally, `_container.StartAsync()` fails with a Testcontainers exception that isn't immediately self-explanatory. Add a `[SkippableFact]` pattern or a clearer prefatory check at M8.B when more tests come online and dev-box discoverability matters more.
+
+### INFO-M8A-002 (open, M8.B candidate)
+
+`ApiTestFactory` is created per-test-method in `EndToEndNotificationTests.cs`. Acceptable for one test; once M8.B+ adds more scenarios in the same class, refactor to `IClassFixture<ApiTestFactory>` so the in-process API + TestServer is shared across tests in the class.
+
+### INFO-M8A-003 (open, M8.B candidate)
+
+The first E2E scenario forces SignalR `LongPolling` transport because in-process TestServer does not speak WebSockets. Production agents use WebSockets via `Microsoft.AspNetCore.SignalR.Client` default negotiation. The query-string JWT path (`Program.cs:65-75 — JwtBearerEvents.OnMessageReceived` reading `Query["access_token"]` for `/hubs` paths) is therefore not exercised by M8.A. Add a WebSocket-transport variant test in M8.B using `factory.Server.CreateWebSocketClient()` to cover this seam.
+
+### INFO-M8A-004 (open, no action)
+
+`ToastRevival.sln` BOM was dropped during the M8.A rewrite. `dotnet build` 0/0 confirms VS 2022 17.x and the dotnet CLI parse the BOM-less UTF-8 file without warnings. Legacy Visual Studio 2019 or older may emit a warning if the user opens the solution there. Acceptable trade-off for a cross-tool-edited file.
+
+### INFO-M8A-005 (open, no action)
+
+`tests/ToastRevival.Api.Tests/PayloadVerifier.cs` reproduces the production HMAC verification logic (HMAC-SHA256 + `CryptographicOperations.FixedTimeEquals`) because the Windows-only `ToastRevival.Agent` project cannot be referenced from a netstandard test assembly. Drift risk is minimal — both ends use the same vendor primitives, and the tenant signing key encoding is shared via `DeviceTokenResponse`. If `Tenant.SigningKey` ever changes encoding, both surfaces update at once. Flagged for record only.
+
 ### FIX-M7D-001 — **RESOLVED 2026-05-09 (pre-commit)** (Defensive `</script>` escape on JSON-LD serialization)
 
 **Filed:** 2026-05-09 during Abish's M7.D Code Sweep (Step 5 — security perspective).

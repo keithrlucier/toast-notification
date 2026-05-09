@@ -485,3 +485,41 @@ Before declaring a frontend deploy clean, verify:
 
 ### Lesson (FIX-PROD-001, 2026-05-09)
 Production blank-page blocker shipped because the M5.C asset library introduced `/assets/` as an API prefix without anyone re-validating Vite's default output dir against the nginx routing table. The deploy passed every existing check (HTML 200, build 0 errors, files-on-disk verify) but no check covered "does the URL the SPA emits actually resolve to the file the SPA emits." Add to deploy verification: a single `curl --max-time 10 https://toastnotification.com<emitted-script-src>` per deploy, expecting 200 with bytes > 0.
+
+## Backend Test Foundation (M8.A, 2026-05-09)
+
+### Layout
+
+```
+tests/ToastRevival.Api.Tests/
+  ToastRevival.Api.Tests.csproj    # xUnit + Mvc.Testing + SignalR.Client + Testcontainers.PostgreSql
+  appsettings.Test.json            # dummy Stripe values, test JWT key, suppressed log noise
+  PostgresFixture.cs               # IAsyncLifetime collection fixture (Testcontainers + env-var fallback)
+  ApiTestFactory.cs                # WebApplicationFactory<Program> override (forces Production env, rewrites connection string)
+  PayloadVerifier.cs               # Agent-side HMAC reproduction (mirrors NotificationPayloadBuilder.BuildSigned)
+  EndToEndNotificationTests.cs     # First E2E: tenant-register → device-register → SignalR-fanout → HMAC-verify → ReportDelivery → ReportInteraction
+```
+
+### Standing rules
+
+1. **Production code minimally extended for testability.** `Program.cs:212` exposes `public partial class Program;` so `WebApplicationFactory<Program>` can resolve the auto-generated entry-point class. No `InternalsVisibleTo`, no test-only branches in production code.
+2. **Hermetic fixture by default.** `PostgresFixture` spins up `postgres:16-alpine` per collection via Testcontainers. Env-var override `TOAST_TEST_CONNECTION_STRING` skips Testcontainers for CI service containers and Docker-less dev boxes. Never points at a shared dev DB or production.
+3. **Production environment in tests.** `ApiTestFactory.CreateHost` sets `UseEnvironment("Production")` so CORS uses the configured `AllowedOrigins` (empty) instead of the dev `SetIsOriginAllowed(_ => true)`, and Swagger doesn't load. Test surface matches deployed behavior.
+4. **`db.Database.Migrate()` runs on test startup** — same hook as production. Schema is applied automatically when the WebApplicationFactory boots; no separate migration step in test setup.
+5. **PayloadVerifier mirrors production primitives only** — HMAC-SHA256 + `CryptographicOperations.FixedTimeEquals`. Format changes go through `NotificationPayloadBuilder.BuildSigned`; verifier doesn't reproduce the format, just verifies the HMAC over received bytes.
+6. **SignalR client uses LongPolling for TestServer compat.** In-process TestServer doesn't speak WebSockets; the payload-signing and hub-method paths are transport-agnostic, so LongPolling is a faithful exercise of the agent loop. Production WebSocket-transport coverage is deferred to a M8.B+ variant test (INFO-M8A-003).
+
+### CI surface
+
+`.github/workflows/api-tests.yml`:
+- Ubuntu runner, Postgres 16 service container with health-check.
+- Triggered on push/PR/manual dispatch when paths touching `src/ToastRevival.Api/**`, `tests/ToastRevival.Api.Tests/**`, `ToastRevival.sln`, or the workflow file change. Frontend-only PRs don't pay the spin-up cost.
+- Restores ONLY `tests/ToastRevival.Api.Tests/ToastRevival.Api.Tests.csproj` (transitively brings in `Api`); avoids `Agent`'s Windows-only target framework on the Linux runner.
+- `TOAST_TEST_CONNECTION_STRING` env var is set to the service-container Postgres so `PostgresFixture` skips Testcontainers and uses the GitHub-managed Postgres directly.
+- Uploads `.trx` results as 14-day artifact.
+
+### Deploy / commit-time discipline
+
+- Tests run on every push to `main` and on every PR that touches API/sln/test files. CI failure blocks merge.
+- Local `dotnet test` requires either Docker Desktop (Testcontainers default) or `TOAST_TEST_CONNECTION_STRING` pointing at a developer Postgres. Dev box without either: rely on CI, or install Postgres 16 locally and set the env var.
+- Test code is subject to the same banned-terms grep as customer-facing surfaces — `persona`, `audio drama`, `jailbreak`, `DocPro`, `AI-built`, team-member names. Internal milestone codes in test-internal doc-comments are acceptable; never on customer-facing strings.

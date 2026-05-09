@@ -127,6 +127,73 @@ public class NotificationsController : ControllerBase
     }
 
     /// <summary>
+    /// Device-authenticated catch-up endpoint (M2.B). Returns the same signed
+    /// payload + signature pairs the hub fanout would have pushed for any
+    /// Pending deliveries the agent missed while disconnected. Agent calls this
+    /// on every Reconnected event and once after cold StartAsync.
+    ///
+    /// Filtering: `delivery.DeviceId == me AND delivery.TenantId == me AND
+    /// delivery.Status == Pending`, optionally bounded by `since` against
+    /// delivery.CreatedAt (which is set when the delivery row was created at
+    /// /api/notifications send time). Response capped at 100 items per call —
+    /// a device that has been offline for a long time pages on subsequent calls
+    /// since its remaining Pending deliveries will still be Pending after the
+    /// first batch is reported delivered.
+    ///
+    /// Authorization: device-JWT only (type=device claim). User JWTs are
+    /// rejected even though the controller-level [Authorize] would let them
+    /// through — the response contains payloads scoped to a specific device.
+    /// Rate limit overridden to device-per-hour.
+    /// </summary>
+    [HttpGet("pending")]
+    [EnableRateLimiting("device-per-hour")]
+    public async Task<ActionResult<IEnumerable<PendingNotificationItem>>> GetPending([FromQuery] DateTime? since = null)
+    {
+        var typeClaim = User.FindFirstValue("type");
+        var deviceIdClaim = User.FindFirstValue("deviceId");
+        var tenantIdClaim = User.FindFirstValue("tenantId");
+
+        if (typeClaim != "device"
+            || !Guid.TryParse(deviceIdClaim, out var deviceId)
+            || !Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            return Unauthorized();
+        }
+
+        // The tenant filter on Tenants is keyed off ITenantProvider, which reads
+        // tenantId from the JWT — so the filtered query would work, but we use
+        // IgnoreQueryFilters() to be explicit and parallel to the rest of the
+        // device-context paths that all bypass filters.
+        var signingKey = await _db.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId)
+            .Select(t => t.SigningKey)
+            .FirstOrDefaultAsync();
+        if (signingKey is null) return Unauthorized();
+
+        var query = _db.NotificationDeliveries.IgnoreQueryFilters()
+            .Where(d => d.DeviceId == deviceId
+                     && d.TenantId == tenantId
+                     && d.Status == DeliveryStatus.Pending);
+
+        if (since.HasValue)
+            query = query.Where(d => d.CreatedAt >= since.Value);
+
+        var pending = await query
+            .Include(d => d.Notification)
+            .OrderBy(d => d.CreatedAt)
+            .Take(100)
+            .ToListAsync();
+
+        var items = pending.Select(d =>
+        {
+            var (payloadJson, signature) = NotificationPayloadBuilder.BuildSigned(d.Notification, signingKey);
+            return new PendingNotificationItem(d.NotificationId, payloadJson, signature, d.CreatedAt);
+        }).ToList();
+
+        return Ok(items);
+    }
+
+    /// <summary>
     /// Device-authenticated REST fallback for reporting an interaction. The hub
     /// path is preferred (NotificationHub.ReportInteraction) — this endpoint exists
     /// for the MSIX activation handler exit path, where the framework launches a

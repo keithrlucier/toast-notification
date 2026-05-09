@@ -126,6 +126,9 @@ The script:
 3. **Token signing is not "hard"** — the SafeNet client exposes the token cert to Windows CryptoAPI when unlocked. Any signtool/signtool-wrapper that talks to CryptoAPI (DigiCert Utility, signtool.exe, custom wrappers) sees the cert through that surface. The token is incidental once SafeNet is set up.
 4. **`TargetPlatformVersion` must be passed on the `dotnet build` command line, not set in a csproj PropertyGroup.** The .NET SDK sets `TargetPlatformVersion` from the TFM (`net8.0-windows10.0.19041.0`) in a late `.targets` import that runs AFTER PropertyGroup evaluation. Any csproj PropertyGroup value — including a conditional `Condition="'$(WindowsPackageType)' == 'MSIX'"` block — is silently overridden by the TFM-derived value. Command-line flags (`-p:TargetPlatformVersion=10.0.22621.0`) have higher MSBuild precedence and win reliably. The canonical MSIX smoke check and `build-msix.ps1` both include this flag. Discovered M0 D5 (2026-05-08).
 5. **MSIX smoke check includes `StartupTask` extension check.** Since M0 D5, the manifest contains three extension categories: `windows.comServer`, `windows.toastNotificationActivation`, and `windows.startupTask`. Code Sweep Step 4 for any manifest `<Extensions>` change must verify all three are present, `uap5` is in `IgnorableNamespaces`, and `xmlns:uap5` is declared on `<Package>`.
+6. **Single signed-payload source of truth** (M2.B). Any path that emits a notification payload to an agent calls `NotificationPayloadBuilder.BuildSigned`. Hub fanout (`NotificationQueueService.ProcessAsync`) and catch-up endpoint (`NotificationsController.GetPending`) both go through this helper so the byte sequence the agent verifies is bit-identical regardless of channel. Never reimplement the JSON wire shape or the HMAC step inline.
+7. **Catch-up `since` initialization** (M2.B, FIX-M2B-001 lesson). Any future catch-up endpoint that takes a `since` parameter must initialize the agent-side tracking variable in a way that does NOT exclude pre-existing pending state on first run. Nullable + omit-on-first-call is the canonical pattern. Initializing to `DateTime.UtcNow` at construction excludes everything created before the agent process started — exactly the case catch-up exists to fix.
+8. **Orphan recovery semantic** (M2.B). When the queue service restarts and finds notifications stuck in `Sending` past the orphan threshold (5 minutes), mark the notification `Failed` but **leave Pending deliveries Pending**. The catch-up endpoint will still serve them. The state divergence (Failed notification with delivery counts ticking up later) is acceptable and correct — it reflects reality (the synchronous fanout failed, but the deliveries can still happen via catch-up).
 
 ## Toast Activator Class ID (MSIX, FIX-MSIX-004)
 
@@ -253,8 +256,10 @@ agent fires, and whether the fired toast is visible.
 - Scenarios: default, alarm, reminder, incomingCall, urgent
 
 ### Resilience
-- SignalR auto-reconnect with exponential backoff
-- Missed notification catch-up on reconnect
+- SignalR auto-reconnect with exponential backoff `[0, 2, 5, 10, 30]`s (M2.A)
+- Missed notification catch-up on reconnect (M2.B): `GET /api/notifications/pending?since=<DateTime?>` device-JWT-authenticated, returns same `(payloadJson, signature)` shape as hub fanout via shared `NotificationPayloadBuilder.BuildSigned`. Cap 100 per call; ordered `CreatedAt` asc.
+- Server-side orphan recovery (M2.B): `NotificationQueueService.RecoverOrphansAsync` runs once at startup, sweeps `Notifications WHERE Status=Sending AND SentAt < now()-5min` to `Failed`. **Standing rule (Carl, M2.B): Pending deliveries are NOT touched** — the catch-up endpoint can still serve them on agent reconnect. The state divergence (Failed notification with Pending→Delivered deliveries trickling in) is acceptable; the alternative ("deliveries to Failed accordingly," the original FIX-LIST plan) would have defeated catch-up entirely.
+- Agent-side dedup (M2.B): `MemoryCache<Guid, byte>` 1-hour sliding expiration. Shared between hub-push and catch-up paths via `RenderAndReportAsync`. Short-circuits BOTH render AND ReportDelivery; entry only set after `Show()` succeeds (render failures don't poison the cache).
 - Survives sleep/wake, network transitions
 - Graceful degradation if backend unreachable
 

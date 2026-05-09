@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A COMPLETE (2026-05-07). M0 D2 COMPLETE (2026-05-08). M0 D3 COMPLETE (2026-05-08).** Signed `ToastNotification.Agent-0.3.0.0.msi` installed cleanly on Win11 lab; `\Toast2IT\ToastNotificationAgentLogon` Scheduled Task created with State=Ready, MSFT_TaskLogonTrigger, MSFT_TaskExecAction; alert toast fired at next user logon. Per-machine MSI now uses logon-triggered Scheduled Task in BUILTIN\Users group context (`S-1-5-32-545` at LeastPrivilege) instead of M0A's all-users Startup-folder shortcut — better GPO/Intune story for the MSI/RMM channel. Next deliverable: **M0 D4** — GPO/domain/Intune/multi-user matrix with `FIX-MSIX-002` applied first.
+Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE 2026-05-08. M2.A COMPLETE 2026-05-09. M2.B COMPLETE 2026-05-09.** Backend pending endpoint + queue startup recovery + agent reconnect catch-up + 1-hour dedup all shipped. FIX-M2B-001 caught + patched pre-commit by Abish (catch-up since-window bug). 4 INFO items deferred to M3/M5. Next: **M2.C** — Diana-engaged tray icon spec (D7) + WiX MSI property wiring (D9) so the agent picks up CLIENTID/SERVERURL from the installer.
 
 ## Keith
 
@@ -91,11 +91,14 @@ All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 
 - [x] INFO-D5-001 (session-local mutex `Local\Toast2IT.ToastNotification.PrimaryWorker` — FIX-M2A-001 patched `Global\` → `Local\` pre-commit).
 - [x] INFO-MSIX-004-D (activation-handler short-circuit before mutex/SignalR; `ActivationMode` runs Register() → wait for `NotificationInvoked` → POST REST → exit clean).
 
-### M2.B — Missed catch-up + recovery (next session)
-- [ ] Backend: `GET /api/notifications/pending?since=<timestamp>` (device-JWT-authenticated) — return all `Pending` deliveries for the device with their notification payloads, signed.
-- [ ] Backend: `NotificationQueueService.ExecuteAsync` startup recovery — sweep `Notifications WHERE Status=Sending AND SentAt < now() - INTERVAL '5 minutes'` to `Failed` (INFO-M2A-003).
-- [ ] Agent: on `Reconnected` event, GET pending, render each (HMAC verify), `ReportDelivery`.
-- [ ] Agent: `notificationId` de-dup window via `MemoryCache` 1-hour sliding (INFO-M2A-004).
+### M2.B — COMPLETE 2026-05-09
+- [x] Backend: `GET /api/notifications/pending?since=<DateTime?>` device-JWT-authenticated, `device-per-hour` rate limit, returns `PendingNotificationItem[]` of (NotificationId, PayloadJson, Signature, CreatedAt) for the device's Pending deliveries; cap 100 per call.
+- [x] Backend: `NotificationQueueService.RecoverOrphansAsync` runs once at `ExecuteAsync` startup. Notifications stuck in `Sending` past 5 minutes → Failed; pending deliveries STAY pending so catch-up can still deliver. Carl's overrule on the original FIX-LIST plan.
+- [x] Backend: shared `NotificationPayloadBuilder.BuildSigned` helper — hub fanout + catch-up endpoint sign byte-identical UTF-8 sequences via the same code path.
+- [x] Agent: on `_hub.Reconnected` and once after cold `StartAsync`, `RunCatchupAsync` GETs `/pending`, verifies + de-dups + renders + ReportDeliverys each item.
+- [x] Agent: `MemoryCache<Guid,byte>` 1-hour sliding dedup. Short-circuits BOTH render and ReportDelivery; entry only set after `Show()` succeeds (render failures don't poison the cache).
+- [x] FIX-M2B-001 patched pre-commit: agent `_lastCatchupSince` nullable + omit-on-first-call. Original `=DateTime.UtcNow` at ctor time would have excluded every pre-existing Pending delivery on first run.
+- [x] Build clean (0 warn / 0 err); MSIX smoke check clean. No EF migration required.
 
 ### M2.C — Tray icon + MSI properties (Diana session)
 - [ ] D7: System tray icon — connected/disconnected/error iconography (Diana DESIGN-SPEC contribution before code).

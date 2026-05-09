@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Windows.AppNotifications;
 
 namespace ToastRevival.Agent;
@@ -59,17 +60,55 @@ internal static class RegistrationService
 }
 
 /// <summary>
+/// Wire shape returned by GET /api/notifications/pending. PayloadJson + Signature
+/// are the same byte sequence the hub fanout would have pushed via
+/// "ReceiveNotification", so the agent runs the exact same HMAC verify + render
+/// path regardless of which channel delivered the payload.
+/// </summary>
+internal sealed record PendingNotificationItem(
+    Guid NotificationId,
+    string PayloadJson,
+    string Signature,
+    DateTime CreatedAt);
+
+/// <summary>
 /// Holds a long-running HubConnection. Renders incoming notifications,
 /// reports delivery and interaction back through the hub. Heartbeat ping is
 /// best-effort liveness in addition to the hub-OnConnectedAsync LastPing touch.
 /// </summary>
 internal sealed class AgentHubClient : IAsyncDisposable
 {
+    /// <summary>
+    /// Sliding-expiration window for the notificationId de-dup cache (M2.B,
+    /// INFO-M2A-004). SignalR can redeliver buffered ReceiveNotification
+    /// messages after a reconnect, and the catch-up endpoint can serve a
+    /// notification the hub already pushed in the same connection — both
+    /// paths share this cache so a notification is rendered + acknowledged
+    /// at most once per hour-long sliding window.
+    /// </summary>
+    private static readonly TimeSpan DedupWindow = TimeSpan.FromHours(1);
+
     private readonly DeviceConfig _config;
     private readonly HubConnection _hub;
     private readonly HttpClient _http;
+    private readonly MemoryCache _renderedCache = new(new MemoryCacheOptions());
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _pingLoop;
+
+    /// <summary>
+    /// Lower bound for the next catch-up call. Null on first run so the
+    /// initial GET drains the full backlog — the most common scenario is an
+    /// agent that rebooted and reconnects with Pending deliveries that
+    /// pre-date this process. After each successful catch-up, set to UtcNow
+    /// so subsequent calls only fetch deliveries created since the last
+    /// drain.
+    ///
+    /// FIX-M2B-001 (caught by Abish in Code Sweep): initializing this to
+    /// UtcNow at ctor time would have made the first call exclude every
+    /// pre-existing Pending delivery (CreatedAt &lt; ctor_time), defeating
+    /// the very milestone shipping. Stay null on first call.
+    /// </summary>
+    private DateTime? _lastCatchupSince = null;
 
     public AgentHubClient(DeviceConfig config)
     {
@@ -105,10 +144,19 @@ internal sealed class AgentHubClient : IAsyncDisposable
             DiagLog.Write($"Hub reconnecting: {ex?.GetType().Name}: {ex?.Message}");
             return Task.CompletedTask;
         };
-        _hub.Reconnected += id =>
+        _hub.Reconnected += async id =>
         {
             DiagLog.Write($"Hub reconnected: connectionId={id}");
-            return Task.CompletedTask;
+            // M2.B: drain anything sent while we were disconnected. Fire-and-forget
+            // semantics — do not block the SignalR client's event pump.
+            try
+            {
+                await RunCatchupAsync(_shutdown.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                DiagLog.Write($"Catch-up after Reconnected failed: {ex.GetType().Name}: {ex.Message}");
+            }
         };
         _hub.Closed += ex =>
         {
@@ -126,6 +174,19 @@ internal sealed class AgentHubClient : IAsyncDisposable
         DiagLog.Write($"Hub started: state={_hub.State}; connectionId={_hub.ConnectionId}");
 
         _pingLoop = Task.Run(() => RunPingLoopAsync(_shutdown.Token));
+
+        // Cold-start catch-up: cover anything dispatched while the agent was
+        // down (process exit, machine asleep, network out). The hub will only
+        // push notifications sent AFTER OnConnectedAsync put us in the
+        // device-{id} group; this fills the gap.
+        try
+        {
+            await RunCatchupAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"Catch-up after StartAsync failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -140,21 +201,99 @@ internal sealed class AgentHubClient : IAsyncDisposable
 
         try { await _hub.DisposeAsync(); } catch { /* best-effort */ }
         _http.Dispose();
+        _renderedCache.Dispose();
         _shutdown.Dispose();
     }
 
     private async Task OnReceiveNotificationAsync(string payloadJson, string signature)
     {
+        await RenderAndReportAsync(payloadJson, signature, source: "hub");
+    }
+
+    /// <summary>
+    /// Fetch every Pending delivery for this device since the last known
+    /// good window and run them through the same verify+render+report
+    /// pipeline as live hub messages. Idempotent via the de-dup cache —
+    /// notifications already rendered in this process lifetime are skipped.
+    /// </summary>
+    private async Task RunCatchupAsync(CancellationToken ct)
+    {
+        // Capture `since` BEFORE the round-trip so concurrent hub deliveries
+        // arriving during the GET don't get filtered out of the next catch-up.
+        var since = _lastCatchupSince;
+        var nextSince = DateTime.UtcNow;
+
+        // First call (since == null) omits the query param so the server
+        // drains the full Pending backlog — see FIX-M2B-001 in the field
+        // doc on this class. Subsequent calls send the captured timestamp.
+        var url = since.HasValue
+            ? $"/api/notifications/pending?since={Uri.EscapeDataString(since.Value.ToString("o"))}"
+            : "/api/notifications/pending";
+
+        List<PendingNotificationItem>? items;
+        try
+        {
+            using var resp = await _http.GetAsync(url, ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync(ct);
+                DiagLog.Write($"Catch-up GET {(int)resp.StatusCode}: {body}");
+                return;
+            }
+            items = await resp.Content.ReadFromJsonAsync<List<PendingNotificationItem>>(cancellationToken: ct);
+        }
+        catch (OperationCanceledException) { return; }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"Catch-up GET failed: {ex.GetType().Name}: {ex.Message}");
+            return;
+        }
+
+        if (items is null || items.Count == 0)
+        {
+            DiagLog.Write($"Catch-up: nothing pending since {(since.HasValue ? since.Value.ToString("O") : "(beginning)")}");
+            _lastCatchupSince = nextSince;
+            return;
+        }
+
+        DiagLog.Write($"Catch-up: {items.Count} pending notification(s) since {(since.HasValue ? since.Value.ToString("O") : "(beginning)")}");
+        foreach (var item in items)
+        {
+            if (ct.IsCancellationRequested) return;
+            await RenderAndReportAsync(item.PayloadJson, item.Signature, source: "catchup");
+        }
+
+        _lastCatchupSince = nextSince;
+    }
+
+    /// <summary>
+    /// Verify HMAC, de-dup, render, and ReportDelivery. Shared between the
+    /// hub fanout (OnReceiveNotificationAsync) and the catch-up endpoint
+    /// (RunCatchupAsync). De-dup short-circuits BOTH render and
+    /// ReportDelivery — once we've delivered a notificationId in this
+    /// process, we won't re-acknowledge it through any path.
+    /// </summary>
+    private async Task RenderAndReportAsync(string payloadJson, string signature, string source)
+    {
         if (!HmacVerifier.Verify(payloadJson, signature, _config.SigningKey))
         {
-            DiagLog.Write("ReceiveNotification: HMAC verification FAILED — payload dropped.");
+            DiagLog.Write($"{source}: HMAC verification FAILED — payload dropped.");
             return;
         }
 
         var payload = HmacVerifier.TryDeserialize(payloadJson);
         if (payload is null)
         {
-            DiagLog.Write("ReceiveNotification: payload deserialization failed after HMAC pass — payload dropped.");
+            DiagLog.Write($"{source}: payload deserialization failed after HMAC pass — payload dropped.");
+            return;
+        }
+
+        // De-dup BEFORE render. Sliding window resets every time we touch the
+        // entry, so a notification that gets re-served on every reconnect for
+        // an hour stays cached.
+        if (_renderedCache.TryGetValue(payload.NotificationId, out _))
+        {
+            DiagLog.Write($"{source}: notificationId={payload.NotificationId} already rendered — de-dup hit, skipping.");
             return;
         }
 
@@ -162,24 +301,33 @@ internal sealed class AgentHubClient : IAsyncDisposable
         {
             var notification = ToastTemplateBuilder.BuildFromPayload(payload);
             AppNotificationManager.Default.Show(notification);
-            DiagLog.Write($"ReceiveNotification: rendered notificationId={payload.NotificationId}; title='{payload.Title}'");
+            DiagLog.Write($"{source}: rendered notificationId={payload.NotificationId}; title='{payload.Title}'");
         }
         catch (Exception ex)
         {
-            DiagLog.Write($"ReceiveNotification: render failed: {ex.GetType().Name}: {ex.Message}");
+            DiagLog.Write($"{source}: render failed: {ex.GetType().Name}: {ex.Message}");
             return;
         }
 
-        // Report delivery via hub. If the hub call fails (transient disconnect during
-        // reconnect window), the event is lost — backend M2.B catch-up endpoint will
-        // surface this on next reconnect.
+        // Mark rendered ONLY after Show() succeeded — a render failure should
+        // not poison the cache and prevent a future retry.
+        _renderedCache.Set(payload.NotificationId, (byte)1, new MemoryCacheEntryOptions
+        {
+            SlidingExpiration = DedupWindow,
+        });
+
         try
         {
             await _hub.InvokeAsync("ReportDelivery", payload.NotificationId);
         }
         catch (Exception ex)
         {
-            DiagLog.Write($"ReportDelivery failed for {payload.NotificationId}: {ex.GetType().Name}: {ex.Message}");
+            // Hub may be mid-reconnect during catch-up; the next Reconnected
+            // catch-up cycle will retry because the delivery is still Pending
+            // server-side. The agent dedup cache prevents a re-render but
+            // re-acknowledgement is the explicit goal here, so we don't fight
+            // it — eventual ReportDelivery wins.
+            DiagLog.Write($"{source}: ReportDelivery failed for {payload.NotificationId}: {ex.GetType().Name}: {ex.Message}");
         }
     }
 

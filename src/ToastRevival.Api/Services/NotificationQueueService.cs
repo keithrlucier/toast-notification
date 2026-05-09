@@ -1,6 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +10,14 @@ namespace ToastRevival.Api.Services;
 
 public class NotificationQueueService : BackgroundService, INotificationQueueService
 {
+    /// <summary>
+    /// Time a Notification is allowed to sit in the Sending state before it is
+    /// considered orphaned by the M2.B startup recovery sweep. Five minutes is
+    /// long enough to swallow a normal restart with an in-flight fanout, short
+    /// enough that a stuck row doesn't shadow real product behavior for an hour.
+    /// </summary>
+    private static readonly TimeSpan OrphanThreshold = TimeSpan.FromMinutes(5);
+
     private readonly Channel<Guid> _channel = Channel.CreateUnbounded<Guid>(
         new UnboundedChannelOptions { SingleReader = true });
     private readonly IServiceScopeFactory _scopeFactory;
@@ -34,6 +39,22 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        // M2.B: recover orphan Sending rows from a previous process that crashed
+        // mid-fanout (INFO-M2A-003). Run once before entering the channel loop.
+        // Notification → Failed; deliveries STAY Pending so the catch-up endpoint
+        // can still deliver them to agents on reconnect (Carl's M2.B overrule on
+        // the original "deliveries to Failed accordingly" plan, which would have
+        // defeated catch-up).
+        try
+        {
+            await RecoverOrphansAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Orphan recovery sweep failed at startup");
+            // Non-fatal — the queue can still serve new traffic without recovery.
+        }
+
         await foreach (var notificationId in _channel.Reader.ReadAllAsync(ct))
         {
             try
@@ -45,6 +66,38 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
                 _logger.LogError(ex, "Failed to process notification {NotificationId}", notificationId);
             }
         }
+    }
+
+    /// <summary>
+    /// Sweep Notifications stuck in Sending past the orphan threshold to Failed.
+    /// Pending deliveries are NOT touched — the catch-up endpoint serves them on
+    /// agent reconnect. Idempotent (rerunning after a fast restart finds nothing
+    /// because the threshold rejects rows under 5 minutes old).
+    /// </summary>
+    private async Task RecoverOrphansAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var threshold = DateTime.UtcNow - OrphanThreshold;
+        var orphans = await db.Notifications
+            .IgnoreQueryFilters()
+            .Where(n => n.Status == NotificationStatus.Sending && n.SentAt < threshold)
+            .ToListAsync(ct);
+
+        if (orphans.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        foreach (var n in orphans)
+        {
+            n.Status = NotificationStatus.Failed;
+            n.CompletedAt = now;
+        }
+        await db.SaveChangesAsync(ct);
+
+        _logger.LogWarning(
+            "Recovered {Count} orphan Sending notification(s) older than {ThresholdMinutes}m to Failed; pending deliveries left intact for catch-up",
+            orphans.Count, OrphanThreshold.TotalMinutes);
     }
 
     private async Task ProcessAsync(Guid notificationId, CancellationToken ct)
@@ -77,7 +130,7 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
         notification.SentAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
-        var (payloadJson, signature) = BuildSignedPayload(notification, tenant.SigningKey);
+        var (payloadJson, signature) = NotificationPayloadBuilder.BuildSigned(notification, tenant.SigningKey);
 
         int sent = 0;
         foreach (var delivery in notification.Deliveries)
@@ -112,36 +165,5 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
 
         _logger.LogInformation("Notification {NotificationId} sent to {Sent}/{Total} devices",
             notificationId, sent, notification.Deliveries.Count);
-    }
-
-    private static readonly JsonSerializerOptions PayloadJsonOptions = new()
-    {
-        // Match the agent's deserialization defaults so the byte sequence we sign
-        // is the byte sequence the agent verifies. No camelCase rewrite — properties
-        // are already lowerCamel here.
-        WriteIndented = false,
-    };
-
-    private static (string PayloadJson, string Signature) BuildSignedPayload(Notification n, string signingKey)
-    {
-        var payload = new
-        {
-            notificationId = n.Id,
-            title = n.Title,
-            bodyLine1 = n.BodyLine1,
-            bodyLine2 = n.BodyLine2,
-            heroImageUrl = n.HeroImageUrl,
-            logoUrl = n.LogoUrl,
-            actionButtons = n.ActionButtonsJson is not null
-                ? JsonSerializer.Deserialize<JsonElement?>(n.ActionButtonsJson)
-                : null,
-            audioSetting = n.AudioSetting,
-            scenario = n.Scenario.ToString().ToLower(),
-        };
-
-        var payloadJson = JsonSerializer.Serialize(payload, PayloadJsonOptions);
-        using var hmac = new HMACSHA256(Convert.FromBase64String(signingKey));
-        var signature = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(payloadJson)));
-        return (payloadJson, signature);
     }
 }

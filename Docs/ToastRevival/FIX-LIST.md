@@ -143,21 +143,60 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Wrap `Save`/`TryLoad` with `ProtectedData.Protect`/`Unprotect` at `DataProtectionScope.CurrentUser`. Acceptable additional surface for the security-hardening milestone.
 **Blocking:** No. M3 work.
 
-### INFO-M2A-003 (M2.B) — Orphan Sending notifications on service crash
+### INFO-M2A-003 — **RESOLVED 2026-05-09 (M2.B)**
 
 **Filed:** 2026-05-09 (M2.A Code Sweep)
-**Surface:** `src/ToastRevival.Api/Services/NotificationQueueService.cs::ProcessAsync`
-**Issue:** Two `SaveChangesAsync` calls per notification (`Status=Sending`; later `Status=Sent/Failed`). A service crash between the two leaves the row stuck in `Sending` indefinitely and its deliveries stuck in `Pending`. Background-service semantic, not a controller-action transaction concern — but a recovery concern.
-**Fix:** On `ExecuteAsync` startup, sweep all `Notifications WHERE Status=Sending AND SentAt < now() - INTERVAL '5 minutes'` to `Failed`, with deliveries to `Failed` accordingly. M2.B catch-up work.
-**Blocking:** No.
+**Resolved:** 2026-05-09 (M2.B, `NotificationQueueService.RecoverOrphansAsync`)
+**Surface:** `src/ToastRevival.Api/Services/NotificationQueueService.cs::RecoverOrphansAsync` (new, called once at `ExecuteAsync` startup before the channel loop).
+**Resolution:** Sweep `Notifications WHERE Status=Sending AND SentAt < now() - INTERVAL '5 minutes'` → Status=`Failed`, CompletedAt=now. **Pending deliveries are NOT touched** (Carl's M2.B overrule on the originally-planned "deliveries to Failed accordingly") — the `GET /pending` catch-up endpoint can still serve them to the agent on reconnect. The state divergence (notification Failed, deliveries Pending → Delivered later) is acceptable: dashboard sees Failed-fanout while delivery counts trickle up; the alternative (mark deliveries Failed) would have defeated catch-up entirely. Sweep is non-fatal (try/catch around it; the queue still serves new traffic if recovery fails). Idempotent — rerun after a fast restart finds nothing because the threshold rejects rows under 5 minutes old.
 
-### INFO-M2A-004 (M2.B) — Agent has no de-dup window for hub redelivery
+### INFO-M2A-004 — **RESOLVED 2026-05-09 (M2.B)**
 
 **Filed:** 2026-05-09 (M2.A Code Sweep)
-**Surface:** `src/ToastRevival.Agent/AgentClient.cs::OnReceiveNotificationAsync`
-**Issue:** SignalR can redeliver a buffered `ReceiveNotification` message after a reconnect. The agent has no `notificationId` de-dup, so it could double-render the same toast.
-**Fix:** Track recently-rendered `notificationId` in a `MemoryCache` with a 1-hour sliding window. Skip render + skip `ReportDelivery` on cache hit. M2.B catch-up work — pairs naturally with the missed-catch-up endpoint.
+**Resolved:** 2026-05-09 (M2.B, `AgentHubClient.RenderAndReportAsync`)
+**Surface:** `src/ToastRevival.Agent/AgentClient.cs::AgentHubClient` (`_renderedCache: MemoryCache<Guid, byte>`, 1-hour sliding expiration; checked in `RenderAndReportAsync`).
+**Resolution:** Notification render + ReportDelivery now go through a shared `RenderAndReportAsync` helper called from both the hub-pushed path (`OnReceiveNotificationAsync`) and the catch-up path (`RunCatchupAsync`). Dedup short-circuits BOTH render AND ReportDelivery — once a notificationId has been delivered in this process, no path re-acknowledges it. The cache entry is set ONLY after `Show()` returns successfully, so a render failure does not poison the cache and prevents a future retry. Sliding window resets on every touch — a notification re-served on every reconnect for an hour stays cached.
+
+### INFO-M2B-002 (M3 / M5) — Pending endpoint pagination beyond 100
+
+**Filed:** 2026-05-09 (M2.B Code Sweep)
+**Surface:** `src/ToastRevival.Api/Controllers/NotificationsController.cs::GetPending`
+**Issue:** Hard cap of 100 items per call. A device with >100 backlog drains across multiple reconnect cycles. Functionally correct (dedup cache prevents replay during paging; remaining Pending deliveries get served on the next Reconnected catch-up cycle), but a long-offline endpoint with a heavy notification volume could take many reconnects to fully drain.
+**Fix:** Add explicit pagination — return `(items, nextCursor)` and let the agent loop until `nextCursor==null`. Or raise the cap.
+**Blocking:** No. Acceptable for current MVP scale.
+
+### INFO-M2B-003 (M3 / M5) — DB index for catch-up query
+
+**Filed:** 2026-05-09 (M2.B Code Sweep)
+**Surface:** `src/ToastRevival.Api/Data/AppDbContext.cs` — `NotificationDelivery` entity model.
+**Issue:** No composite index on `(DeviceId, Status, CreatedAt)`. The catch-up query filters on all three; PostgreSQL will currently scan or use the FK index on DeviceId. Acceptable at MVP scale; will become a real concern once a single MSP customer accumulates millions of delivery rows.
+**Fix:** Add `e.HasIndex(d => new { d.DeviceId, d.Status, d.CreatedAt })` in `OnModelCreating` and generate a migration.
 **Blocking:** No.
+
+### INFO-M2B-004 (M3) — Agent dedup MemoryCache is unbounded
+
+**Filed:** 2026-05-09 (M2.B Code Sweep)
+**Surface:** `src/ToastRevival.Agent/AgentClient.cs::AgentHubClient._renderedCache`
+**Issue:** No `SizeLimit` on `MemoryCacheOptions`. ~100 bytes per entry × notification volume × agent uptime — a long-running agent on a high-volume tenant could grow the cache unboundedly. At 10K entries (~1MB) it's still fine; at 1M entries (~100MB) it isn't.
+**Fix:** Set `SizeLimit = 50_000` on `MemoryCacheOptions` and `Size = 1` on each entry's `MemoryCacheEntryOptions`.
+**Blocking:** No.
+
+### INFO-M2B-005 (M3) — Catch-up rate limit during reconnect storms
+
+**Filed:** 2026-05-09 (M2.B Code Sweep)
+**Surface:** `src/ToastRevival.Api/Controllers/NotificationsController.cs::GetPending` `[EnableRateLimiting("device-per-hour")]`
+**Issue:** Catch-up endpoint shares the `device-per-hour` (10 req/hr fixed window) policy with `ReportInteraction`. A flaky network with frequent reconnects could exhaust the budget. Fire-and-forget semantics mean a 429 just delays delivery to the next successful reconnect — not catastrophic — but a separate higher-budget policy for catch-up could improve real-world behavior on bad networks.
+**Fix:** Add `device-catchup-per-hour` policy at e.g. 60/hr. Or accept current limit (10/hr is plenty for normal connectivity).
+**Blocking:** No.
+
+### FIX-M2B-001 — **PATCHED PRE-COMMIT 2026-05-09 (M2.B Code Sweep)**
+
+**Filed:** 2026-05-09 (M2.B Code Sweep — Abish caught)
+**Resolved:** 2026-05-09 (same session, before commit)
+**Surface:** `src/ToastRevival.Agent/AgentClient.cs::AgentHubClient._lastCatchupSince`
+**Issue:** First implementation initialized `_lastCatchupSince = DateTime.UtcNow` at ctor. The catch-up GET would then send `since=<ctor_time>` on the very first call. Server filter `delivery.CreatedAt >= since` would have excluded EVERY pre-existing Pending delivery — exactly the case M2.B exists to fix (agent rebooted, has Pending from before the reboot, reconnects). The catch-up endpoint would have returned zero results in its primary scenario.
+**Fix:** Changed `_lastCatchupSince` to nullable `DateTime?`, default null. First catch-up call omits the `since` query param entirely so the server returns all Pending up to the cap. Subsequent calls send the captured `nextSince` timestamp from the previous call. Side benefit: avoids time-zone coercion issues with `DateTime.MinValue.Kind=Unspecified` against Npgsql `timestamptz` columns.
+**Blocking:** WAS BLOCKING — patched before commit. Build clean post-patch.
 
 ### INFO-M2A-005 (M9 — deploy doc) — Migration backfill requires Postgres 13+
 
@@ -174,3 +213,9 @@ preventative for a platform below the product's stated floor, and the lab machin
 - **INFO-D5-001** (low) - 2026-05-09 (M2.A). Named mutex (`Local\Toast2IT.ToastNotification.PrimaryWorker`) gates primary worker mode. Activation + diagnostic modes short-circuit before mutex acquisition. See entry above.
 
 - **INFO-MSIX-004-D** (low) - 2026-05-09 (M2.A). Activation-handler short-circuits before SignalR; routes button-click events to new REST `POST /api/notifications/{id}/interactions` endpoint. See entry above.
+
+- **INFO-M2A-003** (M2.B) - 2026-05-09 (M2.B). Orphan `Sending` notification recovery sweep at queue-service startup. Marks stuck notifications Failed but leaves Pending deliveries Pending so catch-up can deliver. See entry above.
+
+- **INFO-M2A-004** (M2.B) - 2026-05-09 (M2.B). Agent notificationId dedup via `MemoryCache` 1-hour sliding. Shared between hub-push and catch-up paths. See entry above.
+
+- **FIX-M2B-001** (BLOCKING) - 2026-05-09 (M2.B Code Sweep, patched pre-commit). Agent `_lastCatchupSince` now nullable; first call omits `since` query param so server drains full Pending backlog. See entry above.

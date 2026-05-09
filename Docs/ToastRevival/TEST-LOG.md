@@ -327,3 +327,49 @@ M2 sliced. M2.A delivers D1 SignalR client + auto-reconnect, D2 toast rendering 
 - This confirms the wire-protocol + HMAC contract is structurally correct (server signs, agent verifies via constant-time compare, both sides agree on the JSON byte sequence to sign over because the server pre-serializes and ships the string + signature as separate SignalR args).
 - This does NOT confirm end-to-end runtime: a real Postgres instance + running API + agent install on a signed Win11 lab + button-click → ReportInteraction round-trip. That hand-off is Keith's lab work, gated on MSI/MSIX rebuild + signing.
 - Test coverage gap (INFO-M1-004) inherited from M1 — first tests at M8.
+
+## 2026-05-09 (M2.B — Missed catch-up + Orphan recovery + Agent dedup)
+
+### Scope
+
+M2.B closes D6 from the M2 plan plus the two M2.A INFO items it carried. Three structural pieces:
+
+1. **Backend `GET /api/notifications/pending?since=<DateTime?>`** — device-JWT-authenticated, `device-per-hour` rate-limit, returns `PendingNotificationItem[]` of `(NotificationId, PayloadJson, Signature, CreatedAt)` for the device's `Pending` deliveries; cap 100 per call; ordered `CreatedAt` asc.
+2. **Backend `NotificationQueueService.RecoverOrphansAsync`** — runs once at `ExecuteAsync` startup before the channel loop. Sweeps `Notifications WHERE Status=Sending AND SentAt < now()-5min` to `Failed`; pending deliveries left intact for catch-up.
+3. **Agent `RunCatchupAsync` + `_renderedCache: MemoryCache<Guid, byte>`** — fires on `_hub.Reconnected` and once after cold `StartAsync`; verifies HMAC + dedups + renders + ReportDeliverys each pending item. Dedup window 1-hour sliding, shared between hub-push and catch-up paths.
+
+Plus a structural improvement: `NotificationPayloadBuilder.BuildSigned` extracted as the single source of truth for the wire shape + signature. The hub fanout and the catch-up endpoint now sign byte-identical UTF-8 sequences via the same code path — M2.A standing rule #14 made into a structural guarantee, not a convention.
+
+### Build Checks
+
+- `dotnet build ToastRevival.sln`: passed with **0 warnings, 0 errors** (post-FIX-M2B-001 patch verify).
+- MSIX smoke check (`dotnet build src\ToastRevival.Agent\ToastRevival.Agent.csproj -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=false -p:AppxPackageSigningEnabled=false -p:TargetPlatformVersion=10.0.22621.0`): passed with 0 warnings, 0 errors. (We didn't generate the .msix package on this run since no manifest changes; smoke check confirms the `WindowsPackageType=MSIX` build path still resolves cleanly with the new `Microsoft.Extensions.Caching.Memory` package reference.)
+- No EF migration generated — pure code milestone, no schema changes.
+
+### Runtime Smoke Checks
+
+- **DiagnosticMode regression** (`dotnet run --project src/ToastRevival.Agent --no-build -- --template plain --no-wait`): N/A this session (no agent-mode dispatch changes; the catch-up wiring is scoped to PrimaryMode `AgentHubClient`).
+- End-to-end runtime confirmation (real Postgres + API + agent + reconnect → catch-up GET → render → ReportDelivery) requires a lab run with a signed agent build talking to a running backend. Same hand-off pattern as M2.A — out of scope for the structural session.
+
+### Code Sweep — Pre-Commit FIX
+
+- **FIX-M2B-001** (BLOCKING → resolved before commit): `AgentClient.cs::AgentHubClient._lastCatchupSince` was initialized to `DateTime.UtcNow` at ctor. First catch-up GET would send `since=<ctor_time>`; server filter `delivery.CreatedAt >= since` would have excluded EVERY pre-existing Pending delivery — exactly the case M2.B was shipping to fix (agent rebooted, Pending from before the reboot, reconnects). **The catch-up endpoint would have returned zero results in its primary scenario.** Patched: `_lastCatchupSince` is now nullable `DateTime?` (default null); first call omits the `since` query param entirely; subsequent calls send the captured `nextSince` from the previous call. Build re-verified clean post-patch. Side benefit: no time-zone Kind=Unspecified hazard against `timestamptz` columns.
+
+### Code Sweep — INFO findings (non-blocking, deferred)
+
+- **INFO-M2B-002** (M3 / M5): Pending endpoint hard cap of 100 items per call. >100 backlog drains across multiple reconnect cycles. Acceptable for now; explicit pagination can land at M3/M5.
+- **INFO-M2B-003** (M3 / M5): No composite DB index on `NotificationDelivery (DeviceId, Status, CreatedAt)`. Catch-up query will scan once delivery volume grows. Add via EF model + migration when needed.
+- **INFO-M2B-004** (M3): Agent dedup `MemoryCache` is unbounded (no `SizeLimit`). Acceptable at MVP scale (~100 bytes/entry); set `SizeLimit=50_000` + `Size=1` on entry options at M3.
+- **INFO-M2B-005** (M3): Catch-up endpoint shares the `device-per-hour` (10/hr fixed) policy with `ReportInteraction`. Flaky-network reconnect storms could throttle catch-up. Fire-and-forget semantics mean a 429 just delays delivery to the next successful reconnect — acceptable for now. Consider a separate `device-catchup-per-hour` policy at e.g. 60/hr.
+
+### New Standing Rules (Carl, M2.B)
+
+1. **Orphan recovery semantic**: Sweep marks the notification `Failed` but leaves Pending deliveries untouched so the catch-up endpoint can still serve them. The original FIX-LIST plan ("deliveries to Failed accordingly") would have defeated catch-up entirely. State divergence (Failed notification with Delivered devices) is acceptable — the dashboard sees fanout-Failed while delivery counts trickle up.
+2. **Single signed-payload source of truth**: any new path that emits a notification payload to an agent uses `NotificationPayloadBuilder.BuildSigned`. Never reimplement the JSON shape or the HMAC step inline — byte-deterministic equivalence between hub fanout and catch-up is structural, not coincidental.
+3. **Catch-up `since` initialization rule**: any future catch-up endpoint that takes a `since` parameter must initialize the agent's tracking variable in a way that does NOT exclude pre-existing pending state on first run. Nullable + omit-on-first-call is the canonical pattern (FIX-M2B-001 lesson).
+
+### Boundaries
+
+- This confirms structural correctness: handler shape, auth boundary, dedup wiring, recovery semantic, byte-identical signing path between hub and catch-up.
+- This does NOT confirm end-to-end runtime — pending live-server lab run.
+- Test coverage gap (INFO-M1-004) inherited; first tests at M8.

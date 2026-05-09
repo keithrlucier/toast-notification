@@ -85,7 +85,7 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 - **D3** [x **COMPLETE 2026-05-09 (M2.A)**]: Device registration flow — `RegistrationService.RegisterAsync` posts to `/api/devices/register` with machine name + username + OS + agent version. `ConfigStore` persists `DeviceConfig{tenantId, serverUrl, deviceId, deviceToken, signingKey}` to `%LOCALAPPDATA%\Toast2IT\Toast Notification\config.json` (or the package's LocalState equivalent when packaged) via atomic temp+Move. Bootstrap config sourced from env vars (`TOAST_TENANT_ID`, `TOAST_SERVER_URL`) or `bootstrap.json` next to the exe (D9 will write this from MSI properties). 30-minute REST `/api/devices/ping` heartbeat in addition to the hub's `OnConnectedAsync` LastPing touch.
 - **D4** [x **COMPLETE 2026-05-09 (M2.A)**]: Payload verification — `Tenant.SigningKey` (32-byte random base64, generated at tenant create, returned to agent at registration). Server-side: `NotificationQueueService.BuildSignedPayload` HMAC-SHA256s the pre-serialized JSON bytes; sends `(payloadJson, signature)` as separate SignalR args to eliminate transport-serializer drift. Agent-side: `HmacVerifier.Verify` uses `CryptographicOperations.FixedTimeEquals` for constant-time compare; reject-and-drop on mismatch.
 - **D5** [x **COMPLETE 2026-05-09 (M2.A)**]: Notification interaction tracking — `AgentHubClient.OnReceiveNotificationAsync` calls `ReportDelivery(notificationId)` after a successful render; `OnNotificationInvoked` parses click args and calls `ReportInteraction(notificationId, action)`. Plus REST `POST /api/notifications/{id}/interactions` for the activation-handler exit path (device-JWT-authenticated, same DeliveryStatus update + DeliveryUpdate hub broadcast as the hub method).
-- **D6**: Missed notification catch-up — on reconnect, fetch and display any notifications sent while offline. **Deferred to M2.B** (paired with INFO-M2A-003 startup recovery for orphan `Sending` rows + INFO-M2A-004 agent-side de-dup window).
+- **D6** [x **COMPLETE 2026-05-09 (M2.B)**]: Missed notification catch-up — `GET /api/notifications/pending?since=<DateTime?>` (device-JWT-authenticated, `device-per-hour` rate limit). Returns `PendingNotificationItem(NotificationId, PayloadJson, Signature, CreatedAt)[]` for the device's `Pending` deliveries; cap 100 per call; ordered by CreatedAt asc. PayloadJson + Signature byte-identical to the hub fanout via shared `NotificationPayloadBuilder.BuildSigned` helper — agent runs the same HMAC verify path regardless of channel. Agent: on `_hub.Reconnected` and once after cold `StartAsync`, fires `RunCatchupAsync` → fire-and-forget GET → for each item: verify, dedup-check, render, ReportDelivery. Plus INFO-M2A-003 startup recovery (`NotificationQueueService.RecoverOrphansAsync` sweeps `Notifications WHERE Status=Sending AND SentAt < now-5min` to `Failed`; deliveries STAY Pending so catch-up can still deliver — Carl's M2.B overrule on the original FIX-LIST plan) and INFO-M2A-004 agent dedup (`MemoryCache<Guid,byte>` with 1-hour sliding expiration; short-circuits BOTH render AND ReportDelivery; entry only set after `Show()` succeeds so render failures don't poison the cache). FIX-M2B-001 patched pre-commit (Abish caught: `_lastCatchupSince = DateTime.UtcNow` at ctor would have excluded every pre-existing Pending delivery on first call, defeating the catch-up's primary scenario). See `EVIDENCE/2026-05-09-m2b-catchup-and-recovery.md`.
 - **D7**: System tray icon with status indicator (connected/disconnected/error). **Deferred to M2.C** (Diana-engaged session — needs design spec for status iconography per her 2026-05-08 sign-off boundary).
 - **D8**: Auto-update mechanism — Velopack integration for MSI-deployed instances, Store-deployed use Store updates. **Deferred to M2.D** (significant standalone integration with feed-server + delta package surface).
 - **D9**: Installer refinement — MSI properties (CLIENTID, SERVERURL), silent install/uninstall, upgrade path. **Deferred to M2.C** (paired with D7 tray so the tray comes pre-configured from MSI properties).
@@ -96,13 +96,25 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 - Code Sweep returned SHIP WITH NOTES. **FIX-M2A-001 patched pre-commit** (mutex prefix `Global\` → `Local\` to prevent multi-user-session collision). 4 INFO items deferred (INFO-M2A-002 → M3, INFO-M2A-003 + INFO-M2A-004 → M2.B, INFO-M2A-005 → M9).
 - Build clean: 0 warnings + 0 errors solution-wide. MSIX smoke check clean (modulo pre-existing FIX-MSIX-003 cosmetic).
 
+### M2.B Closure (2026-05-09)
+- 1 deliverable shipped (D6 missed catch-up + recovery), closing the two M2.A INFO items it carried (INFO-M2A-003 orphan `Sending` recovery + INFO-M2A-004 agent dedup).
+- New shared helper `NotificationPayloadBuilder.BuildSigned` enforces byte-deterministic signing across hub fanout and catch-up — M2.A standing rule #14 made into structural guarantee, not convention.
+- Code Sweep returned SHIP WITH NOTES. **FIX-M2B-001 patched pre-commit** (catch-up `since=ctor_time` would have excluded every pre-existing Pending delivery on first run; nullable + omit-on-first-call). 4 INFO items deferred: INFO-M2B-002 (pagination beyond 100), INFO-M2B-003 (DB index `(DeviceId,Status,CreatedAt)`), INFO-M2B-004 (MemoryCache SizeLimit), INFO-M2B-005 (rate-limit on flaky-network catch-up storms).
+- Build clean: 0 warnings + 0 errors solution-wide. No EF migration (pure code milestone).
+- New standing rule (Carl): orphan `Sending` recovery marks the notification `Failed` but leaves `Pending` deliveries Pending so catch-up can still deliver. The original FIX-LIST plan ("deliveries → Failed accordingly") would have defeated catch-up.
+
 ### Agent Deployment (M2.A)
 - Anthony: D1-D5 + INFO-D5-001 + INFO-MSIX-004-D + REST interaction endpoint (system-level wiring; no agent track parallelizable on this slice).
 - Abish: Code Sweep (significant scope, multi-file, new wire protocol with security implications).
 - Diana: On bench — backend wiring. Active at M2.C (tray icon design).
 
+### Agent Deployment (M2.B)
+- Anthony: D6 (backend pending endpoint + queue startup recovery; agent catch-up + dedup) — system-level, no parallelizable agent track on this slice.
+- Abish: Code Sweep — caught FIX-M2B-001 (catch-up since-window bug) pre-commit.
+- Diana: On bench — backend-only. Active at M2.C (tray icon).
+
 ### Agent Deployment (Future M2 Slices)
-- Anthony: D6 (catch-up endpoint + agent de-dup); D8 (Velopack); D9 (WiX MSI property wiring)
+- Anthony: D8 (Velopack); D9 (WiX MSI property wiring)
 - Abish: Code Sweep all slices
 - Diana: D7 (tray icon iconography spec)
 

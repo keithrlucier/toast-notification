@@ -38,3 +38,14 @@ public record NotificationHistoryItem(
     int ClickedCount,
     DateTime CreatedAt,
     DateTime? SentAt);
+
+/// <summary>
+/// One pending delivery returned from GET /api/notifications/pending. Same wire
+/// shape the hub fanout uses (payloadJson + signature) — agent runs the same
+/// HMAC verification path regardless of which channel delivered the payload.
+/// </summary>
+public record PendingNotificationItem(
+    Guid NotificationId,
+    string PayloadJson,
+    string Signature,
+    DateTime CreatedAt);

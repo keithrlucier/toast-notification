@@ -1,0 +1,273 @@
+<#
+.SYNOPSIS
+    Silent install of the Toast Notification Windows agent. Designed to be
+    invoked by RMM tools (NinjaOne, Datto RMM, ConnectWise Automate, Kaseya,
+    Atera, etc.) against managed endpoints.
+
+.DESCRIPTION
+    1. Skips if a same-or-newer agent version is already installed.
+    2. Downloads the signed MSI to ProgramData (creates folder if needed).
+    3. Verifies the MSI Authenticode signature is issued to "Toast2IT, LLC"
+       AND chains to a trusted root before any execution.
+    4. Runs msiexec with /qn /norestart and the tenant config properties
+       (CLIENTID, SERVERURL, ENROLLMENTKEY) so the agent self-registers on
+       first user logon.
+    5. Returns msiexec's exit code so the RMM can detect failures.
+
+    Designed to be idempotent — safe to run on every endpoint at every
+    patch cycle. If the agent is already up-to-date, the script logs and
+    exits 0 without touching the system.
+
+.PARAMETER TenantId
+    Required. The tenant GUID assigned at signup. Visible at
+    https://toastnotification.com/dashboard under Settings → Tenant.
+
+.PARAMETER ServerUrl
+    Required. Full URL to the Toast Notification API endpoint, e.g.
+    https://toastnotification.com . The agent appends /api/... and
+    /hubs/... paths internally.
+
+.PARAMETER EnrollmentKey
+    Optional. Pre-shared key required when the tenant has registration
+    gating enabled (Settings → Tenant → "Require enrollment key"). Leave
+    blank when gating is off. The key is base64 random opaque text — the
+    agent forwards it once at registration and discards it.
+
+.PARAMETER MsiUrl
+    Optional. URL of the signed MSI. Defaults to the production hosted
+    location. Set this only when running an internal mirror.
+
+.PARAMETER WorkDir
+    Optional. Local cache directory for the downloaded MSI and install
+    log. Defaults to %ProgramData%\Toast2IT\Install.
+
+.PARAMETER TimeoutSeconds
+    Optional. msiexec wall-clock timeout. Default 300 (5 minutes). The
+    agent install includes WindowsAppSDK so the package is ~50 MB and
+    install typically completes in <60 seconds; the cushion covers slow
+    endpoints and SSD lag.
+
+.EXAMPLE
+    .\install-toast-agent.ps1 -TenantId 'a1b2c3d4-...' `
+        -ServerUrl 'https://toastnotification.com' `
+        -EnrollmentKey 'xQ9...'
+
+.EXAMPLE
+    # No enrollment key gating
+    .\install-toast-agent.ps1 -TenantId 'a1b2c3d4-...' `
+        -ServerUrl 'https://toastnotification.com'
+
+.NOTES
+    Exit codes:
+       0  install completed (or agent was already at-or-above target version)
+       1  parameter validation failed
+       2  MSI download failed
+       3  Authenticode verification failed
+       4+ msiexec exit code (passed through)
+
+    Run as SYSTEM (RMM agent context) or any user with local admin. The
+    agent itself runs in the logged-on user's session — see the bundled
+    Scheduled Task in the MSI.
+
+    The Authenticode check rejects unsigned binaries AND binaries signed
+    by anyone other than "Toast2IT, LLC" — protects against a malicious
+    MSI substitute on the wire even if the MsiUrl host is compromised.
+#>
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string] $TenantId,
+
+    [Parameter(Mandatory = $true)]
+    [string] $ServerUrl,
+
+    [string] $EnrollmentKey = '',
+
+    [string] $MsiUrl = 'https://toastnotification.com/downloads/agent/ToastNotification.Agent-latest.msi',
+
+    [string] $WorkDir = (Join-Path $env:ProgramData 'Toast2IT\Install'),
+
+    [int] $TimeoutSeconds = 300
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Write-Log {
+    param([string] $Message, [string] $Level = 'INFO')
+    $ts = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ssK')
+    $line = "[$ts] [$Level] $Message"
+    Write-Host $line
+    if ($script:LogFile) {
+        try { Add-Content -Path $script:LogFile -Value $line -Encoding utf8 } catch { }
+    }
+}
+
+# ── Step 1: validate parameters ────────────────────────────────────────────
+
+try {
+    [void] [Guid]::Parse($TenantId)
+} catch {
+    Write-Error "TenantId '$TenantId' is not a valid GUID."
+    exit 1
+}
+
+try {
+    [void] [Uri]::new($ServerUrl)
+    if (-not $ServerUrl.StartsWith('https://') -and -not $ServerUrl.StartsWith('http://')) {
+        throw "ServerUrl must include scheme."
+    }
+} catch {
+    Write-Error "ServerUrl '$ServerUrl' is not a valid absolute URL."
+    exit 1
+}
+
+# ── Step 2: prep work dir + log ────────────────────────────────────────────
+
+if (-not (Test-Path -LiteralPath $WorkDir)) {
+    [void] (New-Item -ItemType Directory -Path $WorkDir -Force)
+}
+$script:LogFile = Join-Path $WorkDir 'install-toast-agent.log'
+Write-Log "Toast Notification agent installer started. WorkDir=$WorkDir"
+$enrollmentKeyState = if ($EnrollmentKey) { 'set' } else { 'not set' }
+Write-Log "TenantId=$TenantId ServerUrl=$ServerUrl EnrollmentKey=$enrollmentKeyState"
+
+# ── Step 3: idempotency — check if already installed ───────────────────────
+
+$installedVersion = $null
+try {
+    $uninstallKeys = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    $found = Get-ItemProperty -Path $uninstallKeys -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -eq 'Toast Notification' } |
+        Select-Object -First 1
+    if ($found) {
+        $installedVersion = [Version] $found.DisplayVersion
+        Write-Log "Existing install detected: version $installedVersion"
+    } else {
+        Write-Log "No existing install detected."
+    }
+} catch {
+    Write-Log "Could not query uninstall registry: $($_.Exception.Message)" 'WARN'
+}
+
+# ── Step 4: download the MSI ───────────────────────────────────────────────
+
+$msiPath = Join-Path $WorkDir 'ToastNotification.Agent.msi'
+Write-Log "Downloading MSI from $MsiUrl to $msiPath"
+
+try {
+    # PowerShell 5.1 ships with .NET Framework 4.x; SecurityProtocolType.Tls13
+    # may not be defined on every endpoint. Tls12 alone is sufficient for
+    # toastnotification.com (modern Let's Encrypt cert with TLS 1.2/1.3 cipher
+    # suites). If Tls13 is available, layer it in defensively.
+    $protocols = [Net.SecurityProtocolType]::Tls12
+    try {
+        $protocols = $protocols -bor [Net.SecurityProtocolType]::Tls13
+    } catch { }
+    [Net.ServicePointManager]::SecurityProtocol = $protocols
+
+    $progressBefore = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'  # 50x faster on slow endpoints
+    Invoke-WebRequest -Uri $MsiUrl -OutFile $msiPath -UseBasicParsing -TimeoutSec 120
+    $ProgressPreference = $progressBefore
+} catch {
+    Write-Log "MSI download failed: $($_.Exception.Message)" 'ERROR'
+    exit 2
+}
+
+if (-not (Test-Path -LiteralPath $msiPath) -or (Get-Item $msiPath).Length -lt 1MB) {
+    Write-Log "MSI download produced no file or a truncated file." 'ERROR'
+    exit 2
+}
+Write-Log "MSI downloaded successfully ($([math]::Round((Get-Item $msiPath).Length / 1MB, 1)) MB)."
+
+# ── Step 5: Authenticode verification ──────────────────────────────────────
+
+# Defense in depth — the agent itself verifies its own update binaries
+# (UpdateService.IsSignedByToast2IT) but we check the install MSI here too
+# so a malicious MSI can't slip through a compromised hosting domain.
+$expectedSigner = 'Toast2IT, LLC'
+
+try {
+    $sig = Get-AuthenticodeSignature -FilePath $msiPath
+    if ($sig.Status -ne 'Valid') {
+        Write-Log "Authenticode signature status is '$($sig.Status)' — refusing to install. Message: $($sig.StatusMessage)" 'ERROR'
+        exit 3
+    }
+    if (-not $sig.SignerCertificate -or
+        -not $sig.SignerCertificate.Subject -or
+        -not ($sig.SignerCertificate.Subject -like "*$expectedSigner*")) {
+        Write-Log "MSI is signed by '$($sig.SignerCertificate.Subject)' — expected '$expectedSigner'. Refusing to install." 'ERROR'
+        exit 3
+    }
+    Write-Log "Authenticode OK. Signer=$($sig.SignerCertificate.Subject), Status=Valid."
+} catch {
+    Write-Log "Authenticode verification raised an exception: $($_.Exception.Message)" 'ERROR'
+    exit 3
+}
+
+# ── Step 6: idempotency — short-circuit if same-or-newer is installed ──────
+
+$msiVersion = $null
+try {
+    # Read ProductVersion property out of the MSI without launching msiexec
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = $installer.GetType().InvokeMember(
+        'OpenDatabase', 'InvokeMethod', $null, $installer, @($msiPath, 0))
+    $view = $database.GetType().InvokeMember(
+        'OpenView', 'InvokeMethod', $null, $database,
+        @("SELECT Value FROM Property WHERE Property = 'ProductVersion'"))
+    $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+    $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+    if ($record) {
+        $msiVersion = [Version] $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @(1))
+    }
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($view)
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($database)
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($installer)
+} catch {
+    Write-Log "Could not read MSI ProductVersion — skipping same-or-newer check. ($($_.Exception.Message))" 'WARN'
+}
+
+if ($installedVersion -and $msiVersion -and $installedVersion -ge $msiVersion) {
+    Write-Log "Already at version $installedVersion (MSI is $msiVersion) — nothing to do."
+    exit 0
+}
+
+# ── Step 7: msiexec install ────────────────────────────────────────────────
+
+$msiLog = Join-Path $WorkDir 'msiexec.log'
+$arguments = @(
+    '/i'; "`"$msiPath`""
+    "CLIENTID=`"$TenantId`""
+    "SERVERURL=`"$ServerUrl`""
+)
+if ($EnrollmentKey) {
+    $arguments += "ENROLLMENTKEY=`"$EnrollmentKey`""
+}
+$arguments += @('/qn'; '/norestart'; '/l*v'; "`"$msiLog`"")
+
+Write-Log "Running: msiexec.exe $($arguments -join ' ')"
+
+$proc = Start-Process -FilePath 'msiexec.exe' -ArgumentList $arguments `
+    -NoNewWindow -PassThru
+if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
+    Write-Log "msiexec did not exit within $TimeoutSeconds seconds — killing." 'ERROR'
+    try { $proc | Stop-Process -Force } catch { }
+    exit 124
+}
+$exitCode = $proc.ExitCode
+
+# ── Step 8: report ────────────────────────────────────────────────────────
+
+switch ($exitCode) {
+    0     { Write-Log "msiexec succeeded (exit 0). Install complete."; exit 0 }
+    3010  { Write-Log "msiexec succeeded but flagged a reboot pending (exit 3010). Treating as success."; exit 0 }
+    1602  { Write-Log "msiexec was canceled (exit 1602)." 'ERROR'; exit $exitCode }
+    1603  { Write-Log "msiexec fatal error (exit 1603). See $msiLog for verbose log." 'ERROR'; exit $exitCode }
+    1618  { Write-Log "msiexec rejected — another install is in progress (exit 1618). Retry later." 'ERROR'; exit $exitCode }
+    1638  { Write-Log "msiexec reports another version of this product is already installed (exit 1638)." 'ERROR'; exit $exitCode }
+    default { Write-Log "msiexec exit code $exitCode. See $msiLog for verbose log." 'ERROR'; exit $exitCode }
+}

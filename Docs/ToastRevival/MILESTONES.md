@@ -506,7 +506,7 @@ Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplica
 ### Deliverables
 - **D1**: Production infrastructure — Azure/AWS deployment, monitoring, alerting, backups
 - **D2**: Store submission — update 9PFD6004DVTN with production build, expand to all markets
-- **D3**: RMM deployment packages — documented scripts for NinjaOne, Datto, ConnectWise
+- **D3** [x **COMPLETE 2026-05-09**]: RMM deployment packages — `infrastructure/rmm/install-toast-agent.ps1` (canonical PowerShell 5.1+ install script with Authenticode verify, idempotent skip-if-installed, msiexec /qn) + `uninstall-toast-agent.ps1` + per-RMM READMEs for NinjaOne, Datto RMM, ConnectWise Automate. Single source of truth; per-RMM dirs explain how to import the canonical script. Defense-in-depth: script verifies MSI Authenticode `Toast2IT, LLC` cert + chain before execution, refuses to install otherwise.
 - **D4**: Launch marketing — email to beta users, social media, MSP community posts
 - **D5**: Support system — ticketing, knowledge base, SLA documentation
 - **D6**: SOC 2 preparation — document controls, begin audit process

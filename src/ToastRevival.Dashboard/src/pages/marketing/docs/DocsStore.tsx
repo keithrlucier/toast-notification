@@ -1,20 +1,27 @@
-import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { CodeBlock, Callout } from '../../../components/marketing/CodeBlock';
+import { useSeo, techArticleLd, breadcrumbLd } from '../../../lib/seo';
 
 export default function DocsStore() {
-  useEffect(() => {
-    document.title = 'Microsoft Store deployment - Toast Notification';
-    const description =
-      'Install the Toast Notification agent from the Microsoft Store. Best for individual users, BYOD endpoints, and quick proof-of-concept rollouts.';
-    let meta = document.querySelector('meta[name="description"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.setAttribute('name', 'description');
-      document.head.appendChild(meta);
-    }
-    meta.setAttribute('content', description);
-  }, []);
+  useSeo({
+    title: 'Microsoft Store deployment',
+    description:
+      'Install the Toast Notification agent from the Microsoft Store. Best for individual users, BYOD endpoints, and quick proof-of-concept rollouts.',
+    path: '/docs/deploy/store',
+    jsonLd: [
+      techArticleLd({
+        headline: 'Microsoft Store deployment',
+        description:
+          'Install the signed MSIX from the Microsoft Store. Lowest-friction path for individual users and BYOD endpoints.',
+        path: '/docs/deploy/store',
+      }),
+      breadcrumbLd([
+        { name: 'Home', path: '/' },
+        { name: 'Docs', path: '/docs' },
+        { name: 'Microsoft Store', path: '/docs/deploy/store' },
+      ]),
+    ],
+  });
 
   return (
     <article>

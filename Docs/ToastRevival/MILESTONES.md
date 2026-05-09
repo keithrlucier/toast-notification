@@ -348,7 +348,7 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 
 ---
 
-## M7: Marketing Site — toastnotification.com Redesign
+## M7: Marketing Site — toastnotification.com Redesign  **[COMPLETE 2026-05-09]**
 **Goal**: Professional marketing site that sells the product to MSPs and ranks well with both human search and AI-powered discovery.
 
 Carl sliced M7 at orientation (2026-05-09). M7.A delivers the design spec and the onboarding emoji-to-SVG swap (closes INFO-M6-004) as a single Diana-led design milestone. M7.B/C/D are Build Mode sessions implementing against the locked spec.
@@ -377,7 +377,7 @@ Carl sliced M7 at orientation (2026-05-09). M7.A delivers the design spec and th
 - **D2** [x **COMPLETE 2026-05-09 (M7.B Corporate Edition)**]: Marketing Home rebuilt corporate-grade — hero with real product screenshot, problem/solution comparison, capability matrix, security architecture, how-it-works, single-plan pricing summary, formal CTA. Live at https://toastnotification.com/.
 - **D3** [x **COMPLETE 2026-05-09 (M7.B Corporate Edition)**]: Pricing page rebuilt as single-plan layout — $0.22/device + 100-device floor + 14-day trial, indicative-cost table, 6-card inclusion grid, 8-question FAQ. Live at https://toastnotification.com/pricing.
 - **D4** [x **COMPLETE 2026-05-09 (M7.C)**]: Documentation pages (`/docs/*`) — hub, getting started, deploy guides (Store/Intune/RMM), API reference. Six lazy-loaded chunks (4.75–10.96 kB) under `MarketingLayout > DocsLayout` (240px sticky sidebar at top:80px, mobile collapsible nav). `CodeBlock` component with copy-to-clipboard + content-type label; `Callout` (note/warning) with `--status-success` / `--status-warning` borders. Banned-terms grep clean (no `persona`, `audio drama`, `jailbreak`, `M[0-9]+` codes, third-party tracking). Live at https://toastnotification.com/docs. See `EVIDENCE/2026-05-09-m7c-docs-hub.md`.
-- **D5**: SEO + JSON-LD + sitemap + `llms.txt` (M7.D). The /how-we-built-it page is REMOVED from the spec per Keith's directive — the DocPro/AI-built story stays in `llms.txt` + internal docs only, never on public surfaces.
+- **D5** [x **COMPLETE 2026-05-09 (M7.D)**]: SEO + LLM-discovery layer. Static files at `public/`: `llms.txt` (pricing-v2-correct, no `/how-we-built-it` reference, no banned terms — `personas` → `team members` patched pre-commit), `robots.txt` (allowlist marketing surfaces, disallow auth/dashboard/api/hubs), `sitemap.xml` (8 marketing URLs, 2026-05-09 lastmod). New `src/lib/seo.ts` `useSeo` hook + `softwareApplicationLd`/`pricingProductLd`/`techArticleLd`/`breadcrumbLd` helpers — zero new deps. All 8 marketing pages wired: per-page title, description, canonical, OG (title/description/url/type/site_name/image + 1200×630), Twitter card (summary_large_image), and one JSON-LD block per page (Home: `SoftwareApplication`; Pricing: `Product`+`AggregateOffer`+`BreadcrumbList`; Docs: `TechArticle`+`BreadcrumbList`). FIX-M7D-001 patched pre-commit (defensive `</script>` escape on JSON-LD serialization). 1200×630 `og-card.png` rendered via Playwright from `Docs/ToastRevival/EVIDENCE/m7d/og-renderer.html` (brand teal `#00C9A7`, Inter+JetBrains Mono, "Branded Windows notifications, sent from your dashboard." — Diana sign-off). Favicon set: `favicon.svg` (bell-with-checkmark, `#0F172A` rounded-square + `#00C9A7` stroke), `favicon-32.png`/`favicon-64.png`/`favicon-192.png`/`favicon-512.png`, `apple-touch-icon.png` (180×180). `index.html` `<head>` updated with default title/description/canonical/OG/Twitter/favicon refs + `<link rel="llms" href="/llms.txt">`. INFO-M7C-005 closed (docs body color tightened to `--text-primary` at `.m-docs-content p/ul/ol`). See `EVIDENCE/2026-05-09-m7d-seo-llm-discovery.md`.
 - **D6** [x **COMPLETE 2026-05-09**]: Deployed to https://toastnotification.com — same Lightsail box (TOASTWEB1), same nginx, no DNS change. Curl + Playwright verified.
 
 ### SEO & LLM Discovery Notes (Keith's direction)
@@ -390,12 +390,21 @@ Carl sliced M7 at orientation (2026-05-09). M7.A delivers the design spec and th
 
 **`llms.txt` draft direction**: Lead with the product. Mention DocPro and the AI-built story as context, not the headline. LLMs should be able to answer: "What is Toast Notification?", "How do MSPs deploy it?", "What does it cost?", "Who built it?" — all from the llms.txt content alone.
 
+### M7.D Closure (2026-05-09 PM)
+- 1 deliverable shipped (D5 SEO + LLM-discovery layer), closing INFO-M7C-005 (docs body contrast).
+- New `src/lib/seo.ts` self-contained head manager — 0 new deps. 8 marketing pages migrated from inline `useEffect` head pokers to `useSeo` (net additive: gains canonical, OG, Twitter, JSON-LD per page).
+- llms.txt pricing-v2-correct (single-plan $0.22/device + 100-device floor + 14-day trial); `/how-we-built-it` URL removed everywhere; `personas` → `team members` (FIX banned-term enforcement, patched pre-commit).
+- 1200×630 OG card + favicon set (SVG + 32/64/192/512/180 PNGs) rendered via Playwright off-prod from `Docs/ToastRevival/EVIDENCE/m7d/{og-renderer,favicon-renderer}.html`. Diana sign-off.
+- Code Sweep returned SHIP WITH NOTES. **FIX-M7D-001 patched pre-commit** (defensive `</script>` escape on JSON-LD serialization). 3 INFO items deferred: INFO-M7D-001 (sitemap lastmod manual maintenance, M9 generator), INFO-M7D-002 (dashboard inherits marketing default `<title>`, Codex track), INFO-M7D-003 (useSeo runs in useEffect — modern crawlers fine, no-JS crawlers see defaults only — acceptable).
+- Build clean: 0 errors, 0 warnings, 730 modules. seo lazy chunk 3.79 kB. main bundle 727.24 kB. MarketingLayout CSS 29.04 kB.
+- New standing rules (Carl): (1) Public-facing static files (llms.txt, robots.txt, sitemap.xml, og-card.png, favicons) live in `src/ToastRevival.Dashboard/public/` and ship via Vite's static copy — no build-time generation step. (2) Per-page SEO is the page's responsibility via `useSeo`; index.html holds defaults only.
+
 ### Agent Deployment
-- Diana: D1 ✓ (M7.A design spec)
-- Anthony: M7.A onboarding SVG component implementation ✓
-- Abish: M7.A Code Sweep ✓
-- Build Mode: D2-D5 (M7.B/C/D — separate sessions against the locked spec)
-- Carl: D6 (M7.D deploy coordination)
+- Diana: D1 ✓ (M7.A design spec); D5 favicon + OG card visual sign-off + INFO-M7C-005 contrast tweak ✓
+- Anthony: M7.A onboarding SVG implementation ✓; D5 useSeo hook + helpers + per-page wiring + index.html head ✓
+- Abish: M7.A Code Sweep ✓; D5 Code Sweep ✓ (caught banned term + script-tag XSS defense pre-commit)
+- Build Mode: D2-D4 (M7.B/M7.C — shipped against the locked spec)
+- Carl: D6 deploy coordination ✓
 
 ---
 

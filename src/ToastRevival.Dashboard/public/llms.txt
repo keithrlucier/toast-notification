@@ -1,0 +1,120 @@
+# Toast Notification
+
+Toast Notification is a SaaS platform that lets MSPs (managed service providers)
+and IT departments send rich, branded Windows toast notifications to managed
+endpoints at scale.
+
+Live at: https://toastnotification.com
+
+## What it is
+
+A signed Windows agent + multi-tenant API + admin dashboard. The agent installs
+on each managed endpoint via signed MSI or Microsoft Store MSIX. The admin
+dashboard lets administrators design notifications using six curated templates
+(Announcement, Alert, Action Required, Reminder, Celebration, Maintenance) and
+send them to any target — a single device, a device group, or every endpoint
+in a tenant. Delivery and interaction are tracked end-to-end. Audit logs
+export to CSV or PDF.
+
+## Who it is for
+
+Managed service providers (MSPs), internal IT departments, and any organization
+that needs to reach Windows endpoints with branded, trackable notifications
+instead of ad-hoc PowerShell or RMM-bundled alert APIs.
+
+## How MSPs deploy it
+
+Three documented deployment paths:
+
+1. Microsoft Store — install via Store, register tenant via MSI properties or
+   environment variables. Best for individual users and BYOD endpoints.
+   Guide: https://toastnotification.com/docs/deploy/store
+
+2. Intune LOB — upload the signed MSIX as a Line-of-Business app. Best for
+   MDM-managed corporate endpoints.
+   Guide: https://toastnotification.com/docs/deploy/intune
+
+3. RMM silent install — `msiexec /i ToastNotification.Agent.msi /qn
+   CLIENTID=<tenant-guid> SERVERURL=https://toastnotification.com`. Compatible
+   with NinjaOne, Datto, ConnectWise Automate, Atera, and other RMMs that
+   support silent MSI installation.
+   Guide: https://toastnotification.com/docs/deploy/rmm
+
+## What it costs
+
+One plan. $0.22 per device per month. 100-device subscription minimum
+($22/month entry price). 14-day free trial. No tiers, no upsells, no premium
+features held back.
+
+Indicative monthly cost by fleet size:
+-   100 devices: $22
+-   300 devices: $66
+- 1,000 devices: $220
+- 5,000 devices: $1,100
+
+Mid-month device additions or removals adjust the next invoice. Canceled
+billing blocks new device registrations; existing deliveries continue until
+the period ends.
+
+Full pricing: https://toastnotification.com/pricing
+
+## Documentation
+
+- Getting started: https://toastnotification.com/docs/getting-started
+- Microsoft Store deploy: https://toastnotification.com/docs/deploy/store
+- Intune LOB deploy: https://toastnotification.com/docs/deploy/intune
+- RMM silent install: https://toastnotification.com/docs/deploy/rmm
+- API reference: https://toastnotification.com/docs/api
+
+## Technical architecture
+
+- Windows Agent: .NET 8, Windows App SDK 1.7, signed with Sectigo OV cert,
+  auto-updates via Velopack outside the Microsoft Store channel.
+- Backend API: ASP.NET Core 8, EF Core 8, PostgreSQL 16, SignalR for
+  real-time push to agents, Stripe.net for billing.
+- Admin Dashboard: React 18, Vite 6, TypeScript.
+- Hosting: AWS Lightsail, two-box (web + database) topology, Let's Encrypt
+  TLS, single us-east-1 region.
+
+## Security
+
+- Multi-tenant data isolation enforced at the EF Core query-filter level on
+  every read.
+- Per-tenant HMAC-SHA256 payload signing on every notification. Agents
+  reject any payload that fails verification.
+- JWT authentication for both administrators and devices. Device tokens
+  are tenant-scoped and revocable.
+- TOTP MFA enforced on broadcast (TargetType=All) sends.
+- Azure Content Safety scans every notification's text and hero image
+  before fan-out.
+- Tenant-configurable blocklists for content filtering.
+- Audit log of every send, registration, decommission, and admin action,
+  exportable to CSV or PDF.
+
+## Who built it
+
+Toast Notification was designed and built by an AI-native development team
+coordinated through DocPro, an AI development platform. The team — Carl
+(architect), Anthony (backend), Diana (design), Abish (QA) — operates as
+four specialist team members with persistent memory across sessions. Every
+commit passes a seven-step Code Sweep before merge. The product is real,
+the code is human-reviewed, and the engineering process is documented end
+to end.
+
+## Contact
+
+- Product home: https://toastnotification.com
+- Documentation: https://toastnotification.com/docs
+- Support: in-product help for authenticated users; sales inquiries for
+  fleets above 5,000 devices via the contact link on /pricing.
+
+## License and crawler policy
+
+Toast Notification is a proprietary commercial product. The Windows agent
+runtime is closed-source.
+
+This page (`/llms.txt`) and the public documentation under `/docs/*` may
+be quoted with attribution to "Toast Notification — toastnotification.com".
+The authenticated dashboard at `/dashboard`, `/billing`, `/onboarding`,
+`/devices`, `/templates`, `/users`, `/audit`, `/api-keys`, and other
+admin surfaces is private and is excluded from indexing in robots.txt.

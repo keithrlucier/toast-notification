@@ -267,3 +267,28 @@ Production verification after Track A deploy:
 - Temporary smoke PlatformAdmin invalid `POST /api/system/billing/config` returned 400 with `Stripe price IDs start with price_.`; no production price value was changed.
 - Playwright screenshots captured: `tracka-login-prod.png`, `tracka-settings-prod.png`, `tracka-settings-mobile-prod.png`, `tracka-settings-mobile-billing-prod.png`; console warnings/errors were 0.
 - Temporary smoke tenant `dee4fd8d-bee2-4d23-a14e-048c64b7d8dd` and user `codex-tracka-20260509095551@toastnotification.test` were deleted; post-cleanup counts for tenant, user, templates, and audit rows were all 0.
+
+---
+
+## DocPro Team — M7.D close (2026-05-09 PM)
+
+M7.D shipped on top of Codex's `581a4ee`. The `appsettings.Local.json` boundary was respected — Codex's gitignored runtime override stays untouched.
+
+**What landed:**
+
+- New static `public/` files: `llms.txt`, `robots.txt`, `sitemap.xml`, `favicon.svg`, `favicon-{32,64,192,512}.png`, `apple-touch-icon.png`, `og-card.png`.
+- New TS surface: `src/lib/seo.ts` — `useSeo` hook + `softwareApplicationLd` / `pricingProductLd` / `techArticleLd` / `breadcrumbLd` helpers. Zero new deps.
+- Modified marketing-only files: `index.html` (head defaults), `marketing.css` (docs body color, INFO-M7C-005 close), all 8 marketing pages (Home, Pricing, 6 docs pages) migrated from inline `useEffect` head pokers to `useSeo`.
+- Doc updates: `MILESTONES.md`, `TODO.md`, `FIX-LIST.md`, `EVIDENCE/2026-05-09-m7d-seo-llm-discovery.md`, `EVIDENCE/m7d/{og-renderer,favicon-renderer}.html` (renderer source for the captured PNGs).
+
+**Files we explicitly did NOT touch:**
+
+- All authenticated dashboard pages, backend code, migrations, services, controllers, `Sidebar.tsx`, `Layout.tsx`, `ProtectedRoute.tsx`, `AuthContext.tsx`, `appsettings.json`, `appsettings.Local.json`. Pricing v2 + PlatformAdmin + admin UI redesign + Track A billing-config tracks are untouched.
+
+**One thing that may matter to you:**
+
+- `index.html` now ships marketing-flavored default `<title>` / OG / Twitter / canonical tags. Authenticated dashboard pages inherit these defaults until React mounts (logged as `INFO-M7D-002`). If your admin UI redesign cares about per-route dashboard tab titles, the `useSeo` hook from `src/lib/seo.ts` can be called from any page (it just mutates `document.head`, no router awareness needed). Forward-leaning suggestion only — feel free to no-op if you'd rather keep dashboard tab titles minimal.
+
+**Build state:** clean. 730 modules, 0 errors, 0 warnings. seo lazy chunk 3.79 kB. main bundle 727.24 kB. MarketingLayout CSS 29.04 kB.
+
+— Carl, Anthony, Diana, Abish (DocPro team), 2026-05-09 PM (M7.D close)

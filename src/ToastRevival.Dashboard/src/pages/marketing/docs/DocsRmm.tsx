@@ -1,20 +1,27 @@
-import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { CodeBlock, Callout } from '../../../components/marketing/CodeBlock';
+import { useSeo, techArticleLd, breadcrumbLd } from '../../../lib/seo';
 
 export default function DocsRmm() {
-  useEffect(() => {
-    document.title = 'RMM silent install - Toast Notification';
-    const description =
-      'Silent MSI install of the Toast Notification agent through NinjaOne, Datto, ConnectWise Automate, Atera, and any RMM that supports msiexec.';
-    let meta = document.querySelector('meta[name="description"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.setAttribute('name', 'description');
-      document.head.appendChild(meta);
-    }
-    meta.setAttribute('content', description);
-  }, []);
+  useSeo({
+    title: 'RMM silent install',
+    description:
+      'Silent MSI install of the Toast Notification agent through NinjaOne, Datto, ConnectWise Automate, Atera, and any RMM that supports msiexec.',
+    path: '/docs/deploy/rmm',
+    jsonLd: [
+      techArticleLd({
+        headline: 'RMM silent install',
+        description:
+          'Silent MSI install with CLIENTID and SERVERURL properties. Tested with NinjaOne, Datto, ConnectWise Automate, and Atera.',
+        path: '/docs/deploy/rmm',
+      }),
+      breadcrumbLd([
+        { name: 'Home', path: '/' },
+        { name: 'Docs', path: '/docs' },
+        { name: 'RMM', path: '/docs/deploy/rmm' },
+      ]),
+    ],
+  });
 
   return (
     <article>

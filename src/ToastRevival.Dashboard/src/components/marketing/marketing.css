@@ -1612,11 +1612,14 @@
   scroll-margin-top: 96px;
 }
 
+/* Docs body copy renders at --text-primary (FIX-M7C-005, Diana). Chrome
+   surfaces (sidebar, footer, labels) keep --text-secondary; reading-grade
+   prose lands a notch darker than utility text for sustained readability. */
 .m-docs-content p {
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.7;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   margin: 0 0 16px;
 }
 
@@ -1625,7 +1628,7 @@
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.7;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   margin: 0 0 16px;
   padding-left: 24px;
 }

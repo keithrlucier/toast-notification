@@ -2,6 +2,27 @@
 
 ## Open Issues
 
+### FIX-M7D-001 — **RESOLVED 2026-05-09 (pre-commit)** (Defensive `</script>` escape on JSON-LD serialization)
+
+**Filed:** 2026-05-09 during Abish's M7.D Code Sweep (Step 5 — security perspective).
+**Surface:** `src/ToastRevival.Dashboard/src/lib/seo.ts` (`useSeo` hook, JSON-LD `<script>` injection).
+**Symptom:** `script.text = JSON.stringify(jsonLd)` — current schema payload has no `</script>` substrings, so behavior is correct today. But if any future schema field ever holds user-controllable text containing a literal `</`, it would close the script tag prematurely and execute the rest of the page as inline script context. Latent injection vector.
+**Fix applied:** `script.text = JSON.stringify(jsonLd).replace(/<\//g, '<\\/')`. JSON parsers accept the backslash-escaped form unchanged; HTML parsers no longer see a closing tag.
+**Verification:** Build clean (730 modules). seo chunk gained ~20 bytes (3.79 kB vs 3.77 kB).
+**Blocking:** No — defensive only, no live exploit path with current static schema. Caught and patched before commit.
+
+### INFO-M7C-005 — **RESOLVED 2026-05-09 (M7.D)** (Docs body reads soft on light bg)
+**Resolution:** Docs body copy (`.m-docs-content p`, `.m-docs-content ul/ol`) bumped from `--text-secondary` to `--text-primary`. Chrome surfaces (sidebar, footer, labels) keep `--text-secondary`. Standing rule: reading-grade prose lands a notch darker than utility text for sustained readability.
+
+### INFO-M7D-001 (open, M9 candidate)
+`src/ToastRevival.Dashboard/public/sitemap.xml` hardcodes `<lastmod>2026-05-09</lastmod>` for every URL. Manual update required on subsequent doc edits. Acceptable at MVP scale; promote to a build-time generator (or static-pull from git mtime) at M9.
+
+### INFO-M7D-002 (open, Codex-track candidate)
+After M7.D, `index.html` ships marketing-flavored default `<title>`/description/OG tags. Marketing pages override per-route via `useSeo`. Authenticated dashboard pages currently inherit the marketing defaults until React mounts (no dashboard-track `useSeo` calls yet). Codex's admin UI redesign track may add per-route titles via the same hook if desired; otherwise tab-title parity with the previous "Admin Dashboard" string is lost. Acceptable trade-off for a public marketing launch; Codex owns the dashboard chrome decision.
+
+### INFO-M7D-003 (open, no action)
+`useSeo` runs in `useEffect` — modern AI/search crawlers (Googlebot, Anthropic, OpenAI, Perplexity) execute JS and see per-page meta + JSON-LD. Legacy/non-JS crawlers see `index.html` defaults only (canonical → `/`, OG → marketing Home). Acceptable for a 2026 SaaS launch; pre-rendering or SSR is out of scope until product traction warrants the build complexity.
+
 ### FIX-M7C-001 — **RESOLVED 2026-05-09 (pre-commit)** (Mobile docs nav links below 44px tap target)
 
 **Filed:** 2026-05-09 during Abish's M7.C Code Sweep (Step 5 — architectural / Diana standing rule).

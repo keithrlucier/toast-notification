@@ -1,20 +1,27 @@
-import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { CodeBlock, Callout } from '../../../components/marketing/CodeBlock';
+import { useSeo, techArticleLd, breadcrumbLd } from '../../../lib/seo';
 
 export default function DocsGettingStarted() {
-  useEffect(() => {
-    document.title = 'Getting started - Toast Notification';
-    const description =
-      'Sign up, register your tenant, install the Windows agent, and send your first toast notification in under ten minutes.';
-    let meta = document.querySelector('meta[name="description"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.setAttribute('name', 'description');
-      document.head.appendChild(meta);
-    }
-    meta.setAttribute('content', description);
-  }, []);
+  useSeo({
+    title: 'Getting started',
+    description:
+      'Sign up, register your tenant, install the Windows agent, and send your first toast notification in under ten minutes.',
+    path: '/docs/getting-started',
+    jsonLd: [
+      techArticleLd({
+        headline: 'Getting started with Toast Notification',
+        description:
+          'From empty browser to first delivered notification in four steps. Sign up, register tenant, install agent, send first notification.',
+        path: '/docs/getting-started',
+      }),
+      breadcrumbLd([
+        { name: 'Home', path: '/' },
+        { name: 'Docs', path: '/docs' },
+        { name: 'Getting started', path: '/docs/getting-started' },
+      ]),
+    ],
+  });
 
   return (
     <article>

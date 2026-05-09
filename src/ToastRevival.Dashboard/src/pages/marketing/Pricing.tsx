@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown } from '../../components/marketing/FeatureIcons';
+import { useSeo, pricingProductLd, breadcrumbLd } from '../../lib/seo';
 
 const INCLUSIONS = [
   {
@@ -111,18 +112,19 @@ const COSTS = [
 export default function Pricing() {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
 
-  useEffect(() => {
-    document.title = 'Pricing - Toast Notification';
-    const description =
-      '$0.22 per managed device per month. 100-device subscription minimum. 14-day free trial. One plan, no tiers, no upsells.';
-    let meta = document.querySelector('meta[name="description"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.setAttribute('name', 'description');
-      document.head.appendChild(meta);
-    }
-    meta.setAttribute('content', description);
-  }, []);
+  useSeo({
+    title: 'Pricing',
+    description:
+      '$0.22 per managed device per month. 100-device subscription minimum. 14-day free trial. One plan, no tiers, no upsells.',
+    path: '/pricing',
+    jsonLd: [
+      pricingProductLd(),
+      breadcrumbLd([
+        { name: 'Home', path: '/' },
+        { name: 'Pricing', path: '/pricing' },
+      ]),
+    ],
+  });
 
   return (
     <>

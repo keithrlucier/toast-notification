@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useSeo, techArticleLd, breadcrumbLd } from '../../../lib/seo';
 
 const HUB_LINKS = [
   {
@@ -30,18 +30,24 @@ const HUB_LINKS = [
 ];
 
 export default function DocsIndex() {
-  useEffect(() => {
-    document.title = 'Documentation - Toast Notification';
-    const description =
-      'Toast Notification documentation: getting started, deployment guides for Microsoft Store, Intune, and RMM, and the REST API reference.';
-    let meta = document.querySelector('meta[name="description"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.setAttribute('name', 'description');
-      document.head.appendChild(meta);
-    }
-    meta.setAttribute('content', description);
-  }, []);
+  useSeo({
+    title: 'Documentation',
+    description:
+      'Toast Notification documentation: getting started, deployment guides for Microsoft Store, Intune, and RMM, and the REST API reference.',
+    path: '/docs',
+    jsonLd: [
+      techArticleLd({
+        headline: 'Toast Notification documentation',
+        description:
+          'Getting started, deployment guides for Microsoft Store, Intune, and RMM, and the REST API reference.',
+        path: '/docs',
+      }),
+      breadcrumbLd([
+        { name: 'Home', path: '/' },
+        { name: 'Docs', path: '/docs' },
+      ]),
+    ],
+  });
 
   return (
     <article>

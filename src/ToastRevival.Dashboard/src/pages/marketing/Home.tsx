@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FeatureBellCheck,
@@ -6,6 +5,7 @@ import {
   FeatureCloudArrow,
   FeatureLockKey,
 } from '../../components/marketing/FeatureIcons';
+import { useSeo, softwareApplicationLd } from '../../lib/seo';
 
 const CAPABILITIES = [
   {
@@ -67,19 +67,13 @@ const STEPS = [
 ];
 
 export default function Home() {
-  useEffect(() => {
-    document.title = 'Toast Notification - Managed Windows notifications for MSPs';
-
-    const description =
-      'Toast Notification is the platform MSPs use to send branded Windows toast notifications across thousands of endpoints. Multi-tenant, signed, audited.';
-    let meta = document.querySelector('meta[name="description"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.setAttribute('name', 'description');
-      document.head.appendChild(meta);
-    }
-    meta.setAttribute('content', description);
-  }, []);
+  useSeo({
+    title: 'Managed Windows notifications for MSPs',
+    description:
+      'Toast Notification is the platform MSPs use to send branded Windows toast notifications across thousands of endpoints. Multi-tenant, signed, audited.',
+    path: '/',
+    jsonLd: softwareApplicationLd(),
+  });
 
   return (
     <>

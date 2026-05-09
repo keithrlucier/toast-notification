@@ -1,20 +1,27 @@
-import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { CodeBlock, Callout } from '../../../components/marketing/CodeBlock';
+import { useSeo, techArticleLd, breadcrumbLd } from '../../../lib/seo';
 
 export default function DocsIntune() {
-  useEffect(() => {
-    document.title = 'Intune deployment - Toast Notification';
-    const description =
-      'Deploy the Toast Notification agent through Microsoft Intune as a Line-of-Business app. Includes assignment groups, detection rules, and tenant-ID delivery.';
-    let meta = document.querySelector('meta[name="description"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.setAttribute('name', 'description');
-      document.head.appendChild(meta);
-    }
-    meta.setAttribute('content', description);
-  }, []);
+  useSeo({
+    title: 'Intune deployment',
+    description:
+      'Deploy the Toast Notification agent through Microsoft Intune as a Line-of-Business app. Includes assignment groups, detection rules, and tenant-ID delivery.',
+    path: '/docs/deploy/intune',
+    jsonLd: [
+      techArticleLd({
+        headline: 'Intune (LOB) deployment',
+        description:
+          'Deploy the signed MSIX through Microsoft Intune as a Line-of-Business app for MDM-managed corporate endpoints.',
+        path: '/docs/deploy/intune',
+      }),
+      breadcrumbLd([
+        { name: 'Home', path: '/' },
+        { name: 'Docs', path: '/docs' },
+        { name: 'Intune (LOB)', path: '/docs/deploy/intune' },
+      ]),
+    ],
+  });
 
   return (
     <article>

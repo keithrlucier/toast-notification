@@ -1,0 +1,36 @@
+# https://toastnotification.com/robots.txt
+# Marketing surfaces are public and crawlable. The authenticated dashboard,
+# the API, and the SignalR hub are private and must not be indexed.
+
+User-agent: *
+Allow: /
+Allow: /pricing
+Allow: /docs
+Allow: /llms.txt
+Allow: /sitemap.xml
+
+# Auth surfaces — login forms render no content of value to a search index.
+Disallow: /login
+Disallow: /register
+
+# Authenticated dashboard surfaces (returns the SPA shell to anonymous
+# crawlers but the routes themselves require a JWT). Excluded for clarity.
+Disallow: /dashboard
+Disallow: /onboarding
+Disallow: /billing
+Disallow: /analytics
+Disallow: /devices
+Disallow: /templates
+Disallow: /compose
+Disallow: /assets
+Disallow: /history
+Disallow: /moderation
+Disallow: /users
+Disallow: /audit
+Disallow: /settings/
+
+# Backend surfaces. Always 401/404 to anon, but excluded for crawler hygiene.
+Disallow: /api/
+Disallow: /hubs/
+
+Sitemap: https://toastnotification.com/sitemap.xml

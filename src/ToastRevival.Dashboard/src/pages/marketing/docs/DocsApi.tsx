@@ -1,20 +1,27 @@
-import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { CodeBlock, Callout } from '../../../components/marketing/CodeBlock';
+import { useSeo, techArticleLd, breadcrumbLd } from '../../../lib/seo';
 
 export default function DocsApi() {
-  useEffect(() => {
-    document.title = 'REST API reference - Toast Notification';
-    const description =
-      'Toast Notification REST API: authentication, devices, notifications, and webhooks. Bearer-token JWT, JSON over HTTPS, multi-tenant isolation enforced server-side.';
-    let meta = document.querySelector('meta[name="description"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.setAttribute('name', 'description');
-      document.head.appendChild(meta);
-    }
-    meta.setAttribute('content', description);
-  }, []);
+  useSeo({
+    title: 'REST API reference',
+    description:
+      'Toast Notification REST API: authentication, devices, notifications, and webhooks. Bearer-token JWT, JSON over HTTPS, multi-tenant isolation enforced server-side.',
+    path: '/docs/api',
+    jsonLd: [
+      techArticleLd({
+        headline: 'Toast Notification REST API reference',
+        description:
+          'Authentication, devices, notifications, webhooks. Bearer-token JWT, JSON over HTTPS, multi-tenant isolation server-side.',
+        path: '/docs/api',
+      }),
+      breadcrumbLd([
+        { name: 'Home', path: '/' },
+        { name: 'Docs', path: '/docs' },
+        { name: 'API reference', path: '/docs/api' },
+      ]),
+    ],
+  });
 
   return (
     <article>

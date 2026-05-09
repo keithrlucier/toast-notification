@@ -38,9 +38,17 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **M5.D: COMPLETE 2026-05-09.** Export (D7) — AuditController (list + CSV/PDF export, admin-only), NotificationsController delivery report per-notification (CSV/PDF), PdfExportService (QuestPDF Community, A4 landscape audit + A4 portrait delivery), AuditLog.tsx admin page, History.tsx export button.
 
-**PRODUCTION LIVE 2026-05-09.** https://toastnotification.com deployed to AWS Lightsail 2-box setup. HTTPS via Let's Encrypt (auto-renews). React dashboard + ASP.NET Core 8 API on TOASTWEB1 (54.82.103.160). PostgreSQL 16 on TOASTDATA1 (172.26.3.164 private). EF migrations ran clean on first startup. SSH keys at `Docs/ToastRevival/Assets/`.
+**M6: COMPLETE 2026-05-09 (commit 918c723).** Licensing & Subscription System — Stripe.net 47.3.0 integration (BillingController with checkout/portal/webhooks/invoices), per-tier device limits (Free=10, Pro=250, Enterprise=unlimited), license enforcement in DevicesController.Register, Stripe webhook event handling (checkout/subscription/invoice events), Onboarding.tsx 3-step wizard, Billing.tsx admin page. Migration M6Billing adds StripeCustomerId/StripeSubscriptionId/PastDueAt and IX indexes on AuditLogs.Timestamp + Notifications(Status, ScheduledAt). Stripe price IDs are placeholders in appsettings.json — production must override via env vars (INFO-M6-001).
 
-**Next: M6 — Licensing & Subscription System (Stripe).**
+**M7.A: COMPLETE 2026-05-09 (commit ca0972a).** Marketing site DESIGN-SPEC delivered (Diana, ~480 lines locked) + onboarding emoji→SVG swap closed INFO-M6-004. Four hand-coded React SVG components at `src/ToastRevival.Dashboard/src/icons/onboarding/index.tsx` (Bell, Template, Package, Launch). Pre-commit security fix: `*.pem` and `*.key` patterns added to `.gitignore` after Abish caught two Lightsail SSH keys at `Docs/Assets/` that were untracked but not ignored.
+
+**M7.B: PAUSED 2026-05-09.** Build Mode session for marketing Home / Pricing / How We Built It pages was started, then paused per Keith. Visual rendering came out flat against the locked spec (hero placeholder frame, generic line icons, internal milestone codes leaking into customer-facing copy). Standing rule established: DocPro/AI-built case study NEVER appears on public marketing surfaces — llms.txt + internal .md files only. Standing rule established: internal milestone codes (M0A–M9, "roadmap", "publishes shortly") MUST NOT appear in any user-facing string. Standing rule established: placeholder pages (coming-soon stubs) do not ship — if a feature isn't ready, it's not in nav, not routed, not referenced. Stash: `M7.B WIP — paused 2026-05-09 per Keith; revisit with real screenshots + tighter visual brief`.
+
+**FIX-PROD-001: RESOLVED 2026-05-09.** Production `/register` (and every other dashboard route) was rendering as a blank white page. Root cause: nginx `location /assets/ { proxy_pass http://localhost:5216 }` block (added for the M5.C asset library to serve user-uploaded hero/logo files from ASP.NET) collided with Vite's default build output directory (`dist/assets/index-*.js`). Every SPA bundle request was proxied to ASP.NET, which had no route → 404, so the SPA could never bootstrap. Fix: Vite `build.assetsDir = 'static'` in `vite.config.ts`. SPA bundles now output to `/static/*` and are served by the SPA fallback `try_files`. Asset library `/assets/{tenantId}/*` proxy unchanged. Deployed 2026-05-09. Verified externally: `/register` and `/login` render with zero console errors. See `EVIDENCE/2026-05-09-fix-prod-001-static-assets-dir.md`.
+
+**PRODUCTION LIVE 2026-05-09.** https://toastnotification.com deployed to AWS Lightsail 2-box setup. HTTPS via Let's Encrypt (auto-renews). React dashboard + ASP.NET Core 8 API on TOASTWEB1 (54.82.103.160). PostgreSQL 16 on TOASTDATA1 (172.26.3.164 private). EF migrations ran clean on first startup. SSH keys at `Docs/Assets/`. **First-time admin signup at https://toastnotification.com/register** — register endpoint creates the tenant, makes the registrant admin, seeds the 6 default templates.
+
+**Next: M7.B (resume with real screenshots), M7.C (docs hub), M7.D (SEO + llms.txt + favicon + OG image), M8 (integration testing + closed beta), M9 (launch).**
 
 ## M0A Deliverables - All Closed
 
@@ -74,8 +82,8 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 - **Service:** `toast-api.service` (systemd, auto-restart, `toast` user)
 - **App root:** `/opt/toast/api/` · `/opt/toast/dashboard/` · `/opt/toast/.env` (chmod 600)
 - **TLS:** Let's Encrypt via certbot, auto-renews, expires 2026-08-07
-- **SSH key:** `Docs/ToastRevival/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem`
-- **Connect:** `ssh -i "Docs/ToastRevival/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem" ubuntu@54.82.103.160`
+- **SSH key:** `Docs/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem`
+- **Connect:** `ssh -i "Docs/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem" ubuntu@54.82.103.160`
 - **Logs:** `sudo journalctl -u toast-api -f`
 
 ### TOASTDATA1 — Database Server
@@ -84,8 +92,8 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 - **OS:** Ubuntu 22.04 LTS · AWS Lightsail 1 GB / 2 vCPU / 40 GB
 - **Stack:** PostgreSQL 16, database `toastrevival`, user `toast`
 - **Accepts connections from:** 172.26.0.161/32 (TOASTWEB1 private IP) only
-- **SSH key:** `Docs/ToastRevival/Assets/Toast_Data_1_LightsailDefaultKey-us-east-1.pem`
-- **Connect:** `ssh -i "Docs/ToastRevival/Assets/Toast_Data_1_LightsailDefaultKey-us-east-1.pem" ubuntu@100.52.96.67`
+- **SSH key:** `Docs/Assets/Toast_Data_1_LightsailDefaultKey-us-east-1.pem`
+- **Connect:** `ssh -i "Docs/Assets/Toast_Data_1_LightsailDefaultKey-us-east-1.pem" ubuntu@100.52.96.67`
 
 ### Decommissioned
 - **AWS Windows VM 52.21.249.120** — was Codex's self-hosted CI runner. CI moved to GitHub-hosted `windows-latest` (commit `1c41d3e`). Terminate this instance.

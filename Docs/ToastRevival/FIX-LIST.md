@@ -2,6 +2,17 @@
 
 ## Open Issues
 
+### FIX-PROD-001 — **RESOLVED 2026-05-09** (Production blank-page blocker)
+
+**Filed:** 2026-05-09 (Keith reported `/register` shows a blank white page on production).
+**Surface:** `src/ToastRevival.Dashboard/vite.config.ts` (build config) + nginx `/etc/nginx/sites-enabled/toast` on TOASTWEB1 (config not changed).
+**Symptom:** Every dashboard route on https://toastnotification.com (including `/register`, `/login`, `/`) rendered a blank white page in the browser. View-source showed the SPA shell HTML with `<div id="root"></div>` and a `<script src="/assets/index-DelPZakl.js">`. The script returned 404, so React never bootstrapped.
+**Root cause:** Path collision between nginx's `location /assets/ { proxy_pass http://localhost:5216; }` block (added in M5.C for the asset library API to serve user-uploaded hero/logo files from `wwwroot/assets/{tenantId}/{file}`) and Vite's default build output directory (`dist/assets/index-*.js`). Every SPA bundle request was proxied to ASP.NET, which had no route → 404, so the SPA never bootstrapped.
+**Fix applied:** Added `assetsDir: 'static'` to `vite.config.ts` `build` config. Vite now emits `dist/static/index-*.js` and the generated `index.html` references `/static/...`. nginx's `try_files $uri $uri/ /index.html` SPA fallback in the catch-all `location /` block serves `/static/*` from `/opt/toast/dashboard/static/` directly. Asset library URL pattern `/assets/{tenantId}/{file}` is unchanged — still proxies to ASP.NET.
+**Verification:** `curl https://toastnotification.com/static/index-B04HT6PW.js` → 200, 718 KB. Playwright loaded `/register` and `/login` cleanly with zero console errors. See `EVIDENCE/2026-05-09-fix-prod-001-static-assets-dir.md`.
+**Standing rule:** If nginx has any `location /<prefix>/ { proxy_pass ... }` blocks, the Vite/build static output prefix MUST NOT match any of them. Default `assets` is unsafe in this project — `/assets/` is owned by the asset library API. Code Sweep Step 4 now cross-references `vite.config.ts build.assetsDir` (or analogous build config) against `/etc/nginx/sites-enabled/*` `location` directives before declaring a deploy clean.
+**Blocking:** YES — was blocking every customer signup until resolved. Now resolved.
+
 ### FIX-CI-002 — **RESOLVED 2026-05-09**
 
 **Filed:** 2026-05-09 (immediately after FIX-CI-001 unblocked the WiX install).

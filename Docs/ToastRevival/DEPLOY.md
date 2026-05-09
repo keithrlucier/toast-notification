@@ -448,7 +448,7 @@ cd src/ToastRevival.Dashboard && npm ci && npm run build && cd ../..
 cd publish/api && tar -czf ../api.tar.gz . && cd ../..
 cd src/ToastRevival.Dashboard/dist && tar -czf ../../../publish/dashboard.tar.gz . && cd ../../..
 
-$KEY = "Docs/ToastRevival/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem"
+$KEY = "Docs/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem"
 scp -i $KEY publish/api.tar.gz ubuntu@54.82.103.160:/tmp/
 scp -i $KEY publish/dashboard.tar.gz ubuntu@54.82.103.160:/tmp/
 

@@ -2,7 +2,9 @@
 
 ## Current Reality
 
-Project status: **M0A through M6 ALL COMPLETE. M7.A COMPLETE 2026-05-09 (marketing site DESIGN-SPEC + onboarding SVG swap closing INFO-M6-004). Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt.** Next: **M7.B — Build Mode marketing site core pages (Home / Pricing / How We Built It).**
+Project status: **M0A through M6 ALL COMPLETE. M7.A COMPLETE 2026-05-09 (marketing site DESIGN-SPEC + onboarding SVG swap closing INFO-M6-004). M7.B PAUSED 2026-05-09 — visual rendering came out flat against locked spec; revisit with real product screenshots and tighter visual brief. WIP stashed (`git stash list`).** Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt. **FIX-PROD-001 RESOLVED 2026-05-09** — Vite `assetsDir: 'static'` fixed the blank-page blocker on `/register` and every other route. **First-time admin signup at https://toastnotification.com/register.**
+
+Next decision: customer-journey end-to-end smoke test (register → onboard → install agent → send notification → verify delivery → verify billing) before committing to more marketing work.
 
 ## Keith
 

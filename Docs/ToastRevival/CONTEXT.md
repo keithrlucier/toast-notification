@@ -469,3 +469,19 @@ Key improvements over original:
 4. Content moderation pipeline — didn't exist in original
 5. RBAC with broadcast controls — didn't exist in original
 6. Live notification preview — didn't exist in original
+
+## Frontend Build / Static Asset URL Standing Rules
+
+### `/assets/` is owned by the API
+The nginx config on TOASTWEB1 routes `location /assets/` to ASP.NET (port 5216) for the M5.C asset library — uploaded hero/logo files at `wwwroot/assets/{tenantId}/{assetId}{ext}` served by `UseStaticFiles()`. **The Vite build output directory MUST NOT collide with this prefix.**
+
+Vite's default `assetsDir` is `assets` — UNSAFE in this project. `vite.config.ts` MUST set `build.assetsDir = 'static'` so dashboard bundles emit to `dist/static/index-*.js` and load via `/static/*`. The nginx `location /` SPA fallback (`try_files $uri $uri/ /index.html`) serves `/static/*` from disk.
+
+### Code Sweep Step 4 check (every dashboard deploy)
+Before declaring a frontend deploy clean, verify:
+1. `vite.config.ts` `build.assetsDir` does NOT match any nginx `location /<prefix>/ { proxy_pass ... }` block.
+2. The deployed `index.html` references the same prefix the build produced (curl the JS URL it emits — must return 200, not 404).
+3. Existing static-file URL prefixes in nginx that proxy to the API (currently `/assets/`, `/api/`, `/hubs/`) are not shadowed by anything the build emits.
+
+### Lesson (FIX-PROD-001, 2026-05-09)
+Production blank-page blocker shipped because the M5.C asset library introduced `/assets/` as an API prefix without anyone re-validating Vite's default output dir against the nginx routing table. The deploy passed every existing check (HTML 200, build 0 errors, files-on-disk verify) but no check covered "does the URL the SPA emits actually resolve to the file the SPA emits." Add to deploy verification: a single `curl --max-time 10 https://toastnotification.com<emitted-script-src>` per deploy, expecting 200 with bytes > 0.

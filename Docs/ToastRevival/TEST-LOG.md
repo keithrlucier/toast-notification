@@ -1,5 +1,19 @@
 # ToastRevival - Test Log
 
+## 2026-05-09 (FIX-CI-002 — XML comment double-dash in wxs)
+
+### Problem
+After FIX-CI-001 pinned WiX 5.0.2 successfully, the next CI run still failed at "Build unsigned MSI" — different error this time: `error WIX0104: Not a valid source file; detail: An XML comment cannot contain '--', and '-' cannot be the last character. Line 78, position 16.`
+
+### Root cause
+Two XML comments in `installer/ToastRevival.Agent.Setup.wxs` (lines 78 and 132) documented the agent's `--setup-bootstrap` CLI mode by writing the literal flag inside the comment body. XML 1.0 forbids the literal sequence `--` inside comments. The flag appearing inside the `ExeCommand` attribute on the `WriteBootstrapJson` custom action (line 145) is fine — XML attribute parsing has no such restriction. Latent since commit `ecf79ce` (M2.C); never surfaced because Keith had not re-run `build-msi.ps1` after M2.C and the previous (now-decommissioned) CI runner pre-dated those comments.
+
+### Fix
+Rephrased both comments to use prose like "in setup-bootstrap mode" / "agent's own setup-bootstrap mode" instead of the literal CLI flag. Added an inline note in the second comment explaining the XML constraint to future maintainers. Functional behavior of the MSI is unchanged — the actual `--setup-bootstrap` invocation in the deferred custom action's `ExeCommand` attribute is intact.
+
+### Standing rule
+Documentation prose inside XML comments may NOT contain the literal `--` sequence. Rephrase or move the doc to a sibling .md. Code Sweep grep for `<!--[\s\S]*--[^>][\s\S]*-->` (multiline) on any session that touches `.wxs`, `.csproj`, or `.appxmanifest` files.
+
 ## 2026-05-09 (FIX-CI-001 — pin WiX to 5.0.2)
 
 ### Problem

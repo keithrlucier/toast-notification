@@ -85,7 +85,7 @@ export default function Onboarding() {
             />
           )}
           {step === 'Install Agent' && (
-            <InstallStep tenantId={tenantId} onDone={() => navigate('/')} />
+            <InstallStep tenantId={tenantId} onDone={() => navigate('/dashboard')} />
           )}
         </div>
       </div>

@@ -2,6 +2,15 @@
 
 ## Open Issues
 
+### FIX-CI-002 — **RESOLVED 2026-05-09**
+
+**Filed:** 2026-05-09 (immediately after FIX-CI-001 unblocked the WiX install).
+**Surface:** `installer/ToastRevival.Agent.Setup.wxs` (lines 78 and 132 — XML comment bodies).
+**Symptom:** After FIX-CI-001 pinned WiX to 5.0.2 and the runner installed cleanly, the next "Build unsigned MSI" run failed with `error WIX0104: Not a valid source file; detail: An XML comment cannot contain '--', and '-' cannot be the last character. Line 78, position 16.`
+**Root cause:** Two XML comments in the WiX source documented the agent's `--setup-bootstrap` CLI mode by writing the literal flag inside `<!-- ... -->`. XML 1.0 forbids the sequence `--` inside comment bodies. The flag itself appearing in the `ExeCommand` attribute (line 145) is fine — attribute parsing has no such restriction. Latent since M2.C (commit `ecf79ce`, the M2.C MSI bootstrap property wiring); the local `build-msi.ps1` script had not been re-run after the M2.C edits, so the violation never surfaced until CI built it on `windows-latest`.
+**Fix applied (commit pending):** Rephrased both comment bodies to drop the literal double-dash. Functional behavior unchanged — the actual `--setup-bootstrap` invocation in the deferred `WriteBootstrapJson` custom action remains intact at line 145. Added an inline note in the second comment acknowledging the XML constraint so a future maintainer doesn't reintroduce the literal flag. Standing rule: documentation prose inside XML comments may NOT contain the literal `--` sequence; rephrase or move the doc to a sibling .md file.
+**Blocking:** No — only the CI MSI artifact pipeline. Local Keith builds work because Keith hadn't run the script post-M2.C; he would have hit the same error on his next manual rebuild had we not caught it first.
+
 ### FIX-CI-001 — **RESOLVED 2026-05-09**
 
 **Filed:** 2026-05-09 (Keith forwarded a recurring "Agent MSI Build" failure email after the M7.A push).

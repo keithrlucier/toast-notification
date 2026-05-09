@@ -75,7 +75,7 @@
         msiexec /i ToastNotification.Agent.msi /qn CLIENTID=<tenant-guid> SERVERURL=https://api.example.com
 
       When both are provided, the WriteBootstrapJson custom action calls the agent
-      exe with --setup-bootstrap to write %ProgramFiles%\Toast Notification\bootstrap.json.
+      exe in setup-bootstrap mode to write %ProgramFiles%\Toast Notification\bootstrap.json.
       The agent reads bootstrap.json on first launch to register with the backend without
       requiring environment variables on the endpoint.
 
@@ -129,11 +129,12 @@
                   Return="ignore" />
 
     <!--
-      D9: Write bootstrap.json next to the exe using the agent's own --setup-bootstrap
-      mode. Runs before InstallScheduledTask so the task fires into a pre-configured
-      agent at first logon. Conditioned on both CLIENTID and SERVERURL being provided;
-      if either is empty the step is skipped and the MSP must drop bootstrap.json
-      through another channel.
+      D9: Write bootstrap.json next to the exe using the agent's own setup-bootstrap
+      mode (XML comments cannot contain the literal CLI double-dash; the actual flag
+      is on the ExeCommand attribute below). Runs before InstallScheduledTask so the
+      task fires into a pre-configured agent at first logon. Conditioned on both
+      CLIENTID and SERVERURL being provided; if either is empty the step is skipped
+      and the MSP must drop bootstrap.json through another channel.
 
       [CLIENTID] and [SERVERURL] are resolved from MSI properties in the immediate
       phase when the install script is built — deferred CAs see the expanded values

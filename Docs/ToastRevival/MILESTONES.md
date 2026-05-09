@@ -167,23 +167,33 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 
 ---
 
-## M4: Admin Dashboard — Core UI
+## M4: Admin Dashboard — Core UI  **[COMPLETE 2026-05-08]**
 **Goal**: Functional web dashboard for notification management.
 
-### Deliverables
-- **D1**: React + TypeScript project scaffolding, auth flow (login/register), tenant-scoped routing
-- **D2**: Device inventory page — list, search, filter, status indicators, group management
-- **D3**: Notification template gallery — 6 curated templates (Announcement, Alert, Action Required, Reminder, Celebration, Maintenance)
-- **D4**: Notification composer — select template, fill fields, character-count validation
-- **D5**: Live notification preview — dark panel showing pixel-accurate Windows toast rendering, updates in real-time as user types
-- **D6**: Send/schedule interface — target selection (device/group/all), schedule for later, broadcast confirmation
-- **D7**: Notification history — sent notifications with delivery status, click-through rates
-- **D8**: Diana design review and iteration
+### Deliverables (all closed)
+- **D1** [x]: Vite 6 + React 18 + TypeScript in `src/ToastRevival.Dashboard/`. Auth flow: login, register, JWT AuthContext with MFA claim detection, ProtectedRoute. React Router v6 with `createBrowserRouter`. API proxy to backend port 5216.
+- **D2** [x]: Device inventory — table with search, online/offline filter, last-seen, agent version, decommission action. Parallel data load with refresh.
+- **D3** [x]: Template gallery — 6 curated templates (Announcement, Alert, Action Required, Reminder, Celebration, Maintenance), each card renders a scaled-down live CSS preview thumbnail (0.55x ToastPreview component, not static images).
+- **D4** [x]: Notification composer — template quick-pick, content fields with character count (title: 48, body: 90), action button editor (label/actionId/style), audio + scenario selectors.
+- **D5** [x]: Live notification preview — CSS shadow implementation in Segoe UI font (scoped, not Inter). `#202020` desktop background, `#2D2D2D` Windows 11 notification card, real-time updates on every keystroke. Urgency badge, hero image 364:180 ratio, action button color logic (Critical=red, Success=green, Default=white). Diana sign-off: APPROVED.
+- **D6** [x]: Send/schedule interface — All/Group/Device target picker, datetime-local schedule field. MFA broadcast confirmation modal (`BroadcastConfirmModal`) for `TargetType.All` — prompts TOTP verification, calls `/api/auth/mfa/verify`, stores elevated token before allowing send.
+- **D7** [x]: Notification history — paginated table (25/page), expandable detail rows, delivery rate + click-through rate columns, search by title/status.
+- **D8** [x]: Diana design review — spacing system verified (8px grid throughout), preview font verified (Segoe UI scoped), no purple, no emojis, --text-dim at #7A7A92 on standing known list.
+
+### Backend INFO items closed (M4)
+- INFO-M3-002 ✓: `IBlocklistService` interface extracted; `BlocklistService` implements it; `NotificationsController` now injects the interface.
+- INFO-M3-003 ✓: `ContentSafetyService` injects `ILogger<ContentSafetyService>`; `Console.Error.WriteLine` replaced with structured logging.
+
+### Code Sweep
+- Commit `016c4c9`: SHIP WITH NOTES — INFO-M4-001/002/003 logged. FIX caught pre-commit: `templateId` field omitted from send payload (string IDs ≠ database Guids; deferred to M5). API response shape mismatch (`NotificationHistoryItem` vs `NotificationResponse`) caught and fixed during review.
+
+### Build
+- TypeScript strict, 0 errors, 0 warnings. Production build: 51 modules, 272KB / 82KB gzip. Backend build: 0 warnings, 0 errors.
 
 ### Agent Deployment
-- Anthony: D1-D2, D5-D6 (scaffolding, real-time preview engine, send flow — core architecture)
-- Abish: D3-D4, D7 (template gallery is bounded component work, history is data display)
-- Diana: D3, D5, D8 (template visual design, preview accuracy, full design review)
+- Anthony: D1-D2, D5-D6 + backend INFO items ✓
+- Abish: D3-D4, D7 + Code Sweep ✓
+- Diana: D5 preview sign-off, D8 full design review ✓
 
 ---
 

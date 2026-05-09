@@ -1,5 +1,28 @@
 # ToastRevival - Test Log
 
+## 2026-05-08 (M4 Admin Dashboard)
+
+### Build Checks
+
+- `npx tsc -p tsconfig.app.json --noEmit` (strict): 0 errors, 0 warnings.
+- `npm run build` (Vite 6 production): 51 modules transformed, 272KB / 82KB gzip. Build succeeded.
+- `dotnet build src/ToastRevival.Api/ToastRevival.Api.csproj` (post INFO-M3-002/003 fixes): 0 warnings, 0 errors.
+- Git commit `016c4c9` pushed to GitHub main.
+
+### Code Sweep Results
+
+- **INFO-M4-001** (pre-commit catch): `templateId` string slug ≠ backend `Guid?`. Fixed by omitting field from send payload.
+- **INFO-M4-002**: `/api/devicegroups` returns 404; Dashboard degrades gracefully. Deferred to M5.
+- **INFO-M4-003**: `GET /api/notifications` ignores pagination params; hard-caps at 100. Deferred to M5.
+- API response shape mismatch caught during review: `NotificationHistoryItem` (from list) uses `targetDeviceCount` + `clickedCount`, not `deviceCount` + `interactionCount`. Fixed before commit.
+
+### Boundaries
+
+- Dashboard TypeScript types verified against actual backend DTO shapes.
+- Live preview CSS implementation reviewed against Windows 11 toast anatomy (Diana sign-off).
+- MFA broadcast flow logic verified (BroadcastConfirmModal → mfa/verify → elevated token → send).
+- No browser UI testing yet (requires running backend + populated DB).
+
 ## 2026-05-07
 
 ### Environment Checks

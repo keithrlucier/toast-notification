@@ -300,6 +300,30 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Document Postgres minimum-version (13+) in M9 deployment infra.
 **Blocking:** No.
 
+### INFO-M4-001 (M5 — template gallery wiring) — templateId field omitted from send payload
+
+**Filed:** 2026-05-08 (M4 Code Sweep — Abish caught)
+**Surface:** `src/ToastRevival.Dashboard/src/pages/Compose.tsx`
+**Issue:** Frontend template IDs are string slugs (`'announcement'`, `'alert'`, etc.), not database Guids. The backend's `SendNotificationRequest.TemplateId` is `Guid?`. Sending the string would cause a server-side JSON parse error.
+**Fix applied (pre-commit):** `templateId` omitted from `buildRequest()` return. Wire at M5 when database-backed templates are seeded.
+**Blocking:** No (fixed before commit).
+
+### INFO-M4-002 (M5 — device groups API) — /api/devicegroups returns 404
+
+**Filed:** 2026-05-08 (M4 Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Dashboard/src/api/devices.ts::listGroups`
+**Issue:** No `DeviceGroupsController` exists in the API. `GET /api/devicegroups` returns 404. Dashboard catches the error silently (`catch(() => {})`), Group target mode degrades to "No device groups configured." Correct behavior for M4.
+**Fix:** Add `DeviceGroupsController` at M5 alongside device group management UI.
+**Blocking:** No. Graceful degradation confirmed.
+
+### INFO-M4-003 (M5 — notification list pagination) — GET /api/notifications ignores pagination params
+
+**Filed:** 2026-05-08 (M4 Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Api/Controllers/NotificationsController.cs::History`
+**Issue:** `GET /api/notifications` accepts no `page`/`pageSize` query params and hard-caps at 100 items. Frontend sends pagination params that are silently ignored. Functionally correct at current scale.
+**Fix:** Add proper server-side pagination to the `History()` endpoint at M5.
+**Blocking:** No.
+
 ## Resolved
 
 - **FIX-MSIX-004** (medium) - 2026-05-08, commit `6e3495c`. Packaged MSIX install did not fire toasts because `<com:ExeServer>` was missing `Arguments="----AppNotificationActivated:"`. Patched, signed, installed; visible toast verified on Win11 lab with button-click routing through `NotificationInvoked`. See entry above for full root-cause detail.

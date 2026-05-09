@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE 2026-05-08. M2 (A/B/C/D) ALL COMPLETE. M3 COMPLETE 2026-05-08 (commit 362f9d3).** Content moderation pipeline, MFA TOTP, tenant blocklists, admin approval queue, broadcast gate, DPAPI agent encryption, Authenticode verify, all M2 INFO items closed. Next: **M4 — Admin Dashboard Core UI** (React + TypeScript, Diana active).
+Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMPLETE. M3 COMPLETE. M4 COMPLETE 2026-05-08 (commit 016c4c9).** Admin dashboard: Vite 6/React 18/TypeScript, auth flow, device inventory, 6-template gallery with live CSS preview thumbnails, notification composer with real-time Windows toast preview (Segoe UI, Diana sign-off), send/schedule interface with MFA broadcast modal, history, moderation queue. Next: **M5 — Admin Dashboard Advanced Features**.
 
 ## Keith
 

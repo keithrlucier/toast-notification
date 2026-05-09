@@ -133,7 +133,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationQueueS
 
 // M3 security services
 builder.Services.AddSingleton<IContentModerationService, ContentSafetyService>();
-builder.Services.AddScoped<BlocklistService>();
+builder.Services.AddScoped<IBlocklistService, BlocklistService>();
 builder.Services.AddSingleton<MfaService>();
 
 // CORS — dev allows any origin; production should lock this down via config

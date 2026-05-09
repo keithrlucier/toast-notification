@@ -26,7 +26,7 @@ public class NotificationsController : ControllerBase
     private readonly IAuditService _audit;
     private readonly IHubContext<NotificationHub> _hub;
     private readonly IContentModerationService _moderation;
-    private readonly BlocklistService _blocklist;
+    private readonly IBlocklistService _blocklist;
 
     public NotificationsController(
         AppDbContext db,
@@ -34,7 +34,7 @@ public class NotificationsController : ControllerBase
         IAuditService audit,
         IHubContext<NotificationHub> hub,
         IContentModerationService moderation,
-        BlocklistService blocklist)
+        IBlocklistService blocklist)
     {
         _db = db;
         _queue = queue;

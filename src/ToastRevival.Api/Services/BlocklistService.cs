@@ -9,7 +9,7 @@ namespace ToastRevival.Api.Services;
 /// Called before Azure Content Safety — a blocklist hit short-circuits and
 /// returns Block without paying for an external scan.
 /// </summary>
-public class BlocklistService
+public class BlocklistService : IBlocklistService
 {
     private readonly AppDbContext _db;
 

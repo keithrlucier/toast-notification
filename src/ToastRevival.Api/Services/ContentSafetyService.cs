@@ -1,5 +1,6 @@
 using Azure;
 using Azure.AI.ContentSafety;
+using Microsoft.Extensions.Logging;
 using ToastRevival.Api.Models;
 
 namespace ToastRevival.Api.Services;
@@ -20,9 +21,11 @@ namespace ToastRevival.Api.Services;
 public class ContentSafetyService : IContentModerationService
 {
     private readonly ContentSafetyClient? _client;
+    private readonly ILogger<ContentSafetyService> _logger;
 
-    public ContentSafetyService(IConfiguration config)
+    public ContentSafetyService(IConfiguration config, ILogger<ContentSafetyService> logger)
     {
+        _logger = logger;
         var endpoint = config["ContentSafety:Endpoint"];
         var key      = config["ContentSafety:Key"];
 
@@ -51,7 +54,7 @@ public class ContentSafetyService : IContentModerationService
         {
             // Log but degrade to Pass — a transient Azure outage should not block every send
             // TODO: wire to structured logging (ILogger) at M4 when DI logging is configured
-            Console.Error.WriteLine($"[ContentSafety] text scan failed: {ex.GetType().Name}: {ex.Message}");
+            _logger.LogError(ex, "[ContentSafety] text scan failed: {ExType}", ex.GetType().Name);
             return Pass();
         }
     }
@@ -72,7 +75,7 @@ public class ContentSafetyService : IContentModerationService
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ContentSafety] image scan failed: {ex.GetType().Name}: {ex.Message}");
+            _logger.LogError(ex, "[ContentSafety] image scan failed: {ExType}", ex.GetType().Name);
             return Pass();
         }
     }

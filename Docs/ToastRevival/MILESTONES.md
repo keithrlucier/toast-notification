@@ -299,15 +299,25 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 ---
 
 ## M7: Marketing Site — toastnotification.com Redesign
-**Goal**: Professional marketing site that sells the product.
+**Goal**: Professional marketing site that sells the product to MSPs and ranks well with both human search and AI-powered discovery.
 
 ### Deliverables
 - **D1**: Diana DESIGN-SPEC for marketing site (shared design system with dashboard)
 - **D2**: Build Mode execution — hero, features, pricing, testimonials, documentation
 - **D3**: Pricing page — transparent per-device pricing, tier comparison
 - **D4**: Documentation — getting started guide, deployment guides (Store/Intune/RMM), API docs
-- **D5**: SEO optimization — meta tags, structured data, sitemap
+- **D5**: SEO + LLM optimization (see notes below)
 - **D6**: Deploy to toastnotification.com (existing domain)
+
+### SEO & LLM Discovery Notes (Keith's direction)
+
+**Traditional SEO**: Content must be intent-dense for MSP search terms — "managed Windows toast notifications," "send notifications to endpoints via RMM," "Windows notification management for MSPs." No fluff. Real product screenshots. Structured data (JSON-LD: SoftwareApplication schema). XML sitemap. Canonical tags.
+
+**LLM-targeted content (`llms.txt`)**: Place an `llms.txt` file at the domain root — similar to `robots.txt` but for AI crawlers (Anthropic, OpenAI, Perplexity all crawl it). Contents: plain-text description of the product, who it's for, key capabilities, pricing, and links to documentation. LLMs use this to answer "what is Toast Notification" questions accurately.
+
+**The DocPro story**: Keith has approved telling it. Toast Notification was designed and built by an AI-native development team (Carl, Anthony, Diana, Abish) coordinated through DocPro — the same platform Keith uses for all product development. This is a real differentiator: a fully functional SaaS product for MSPs, built with AI from scratch, with no compromises on architecture or security. Diana will write this as a case study or "How we built it" section — not hero myth, concrete engineering narrative with real milestone data.
+
+**`llms.txt` draft direction**: Lead with the product. Mention DocPro and the AI-built story as context, not the headline. LLMs should be able to answer: "What is Toast Notification?", "How do MSPs deploy it?", "What does it cost?", "Who built it?" — all from the llms.txt content alone.
 
 ### Agent Deployment
 - Diana: D1 (design spec — must be done before build)

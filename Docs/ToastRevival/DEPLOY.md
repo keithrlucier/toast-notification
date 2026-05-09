@@ -4,6 +4,53 @@
 
 ---
 
+## Lightsail Console — Provision Both Boxes
+
+Do this before the deployment session. Takes 5 minutes.
+
+### Box 2 — Data (provision first so private IP is known before Box 1 config)
+
+1. Lightsail → **Create instance**
+2. Platform: **Linux/Unix**
+3. Blueprint: **OS Only → Ubuntu 22.04 LTS**
+4. Instance plan: **$10/mo (2 vCPU, 1 GB RAM, 40 GB SSD)**
+5. Instance name: `toast-data`
+6. **Launch** — note the private IP from the Networking tab once running (format: `172.26.x.x`)
+7. Firewall (Networking tab):
+   - Delete the default HTTP (80) rule
+   - Keep SSH (22) — restrict source to your IP
+   - Do NOT add any other rules — PostgreSQL stays off the public internet
+
+### Box 1 — Web/App
+
+1. Lightsail → **Create instance**
+2. Platform: **Linux/Unix**
+3. Blueprint: **OS Only → Ubuntu 22.04 LTS**
+4. Instance plan: **$12/mo (2 vCPU, 2 GB RAM, 60 GB SSD)**
+5. Instance name: `toast-web`
+6. **Launch** — note the **public IP** from the Networking tab
+7. Firewall (Networking tab):
+   - SSH (22) — restrict source to your IP
+   - HTTP (80) — source: Any
+   - HTTPS (443) — source: Any
+
+### Static IP (Box 1 only)
+
+Attach a Lightsail static IP to `toast-web`. Without this, the public IP changes on stop/start and your DNS breaks.
+
+Lightsail → **Networking** → **Create static IP** → attach to `toast-web`.
+
+### SSH Key
+
+Lightsail → **Account** → **SSH keys** — download the default key or use the one you already have from DocPro. Same key works for both boxes.
+
+### Snapshots
+
+After go-live, enable automated snapshots on both instances:
+Lightsail → instance → **Snapshots** → **Enable automatic snapshots** → daily, retain 7.
+
+---
+
 ## Architecture
 
 ```
@@ -51,6 +98,10 @@ Box 1 is the only public-facing machine. Box 2 listens only on the private Light
 | `www.toastnotification.com` | CNAME | `toastnotification.com` |
 
 The React dashboard and API live on the same domain (`/api/...` paths). No subdomain split needed.
+
+**Before changing DNS**: lower the TTL on the A record to 300 (5 minutes) at least an hour before the cutover. This limits propagation lag to 5 minutes instead of potentially hours.
+
+**DNS cutover order**: point the A record → get Let's Encrypt cert → reload nginx → verify HTTPS → done.
 
 ---
 

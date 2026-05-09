@@ -30,7 +30,10 @@ public class DevicesController : ControllerBase
     /// <summary>
     /// Called by the agent on first run. No authentication required.
     /// TenantId comes from the MSI property set by the MSP during deployment.
-    /// M3 will add a pre-shared enrollment key to harden this surface.
+    ///
+    /// Enrollment key gating (INFO-M1-003): when a tenant has an EnrollmentKey
+    /// set, the request must include the matching key or registration is rejected
+    /// with 403. Tenants without an EnrollmentKey allow open registration.
     /// </summary>
     [HttpPost("register")]
     [EnableRateLimiting("device-per-hour")]
@@ -39,6 +42,17 @@ public class DevicesController : ControllerBase
         var tenant = await _db.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == req.TenantId);
         if (tenant is null) return NotFound("Tenant not found.");
+
+        if (!string.IsNullOrWhiteSpace(tenant.EnrollmentKey))
+        {
+            if (string.IsNullOrWhiteSpace(req.EnrollmentKey) ||
+                !CryptographicOperations.FixedTimeEquals(
+                    System.Text.Encoding.UTF8.GetBytes(req.EnrollmentKey),
+                    System.Text.Encoding.UTF8.GetBytes(tenant.EnrollmentKey)))
+            {
+                return StatusCode(403, "Invalid enrollment key.");
+            }
+        }
 
         var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
         var tokenHash = HashToken(rawToken);

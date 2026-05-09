@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.Win32;
 using Velopack;
 
@@ -107,6 +109,15 @@ internal static class UpdateService
             return false;
         }
 
+        // INFO-M2D-005: verify the managed binary is signed by Toast2IT, LLC
+        // before launching. Prevents a local-user attacker from planting a
+        // higher-versioned malicious binary at the Velopack managed path.
+        if (!IsSignedByToast2IT(managedExe))
+        {
+            DiagLog.Write($"UpdateService: managed copy at '{managedExe}' failed Authenticode verification — redirect aborted.");
+            return false;
+        }
+
         DiagLog.Write($"UpdateService: redirecting to managed v{managedVer} at '{managedExe}'");
         try
         {
@@ -194,5 +205,114 @@ internal static class UpdateService
         DiagLog.Write($"UpdateService: applying v{_pendingUpdate.TargetFullRelease.Version} and restarting.");
         var mgr = new UpdateManager(GetFeedUrl());
         mgr.ApplyUpdatesAndRestart(_pendingUpdate.TargetFullRelease);
+    }
+
+    /// <summary>
+    /// Verifies that <paramref name="filePath"/> carries a valid Authenticode
+    /// signature issued by Toast2IT, LLC using WinVerifyTrust + cert subject check.
+    /// Returns false on any failure so callers default to safe/no-redirect.
+    /// </summary>
+    private static bool IsSignedByToast2IT(string filePath)
+    {
+        const string expectedSubject = "Toast2IT, LLC";
+        try
+        {
+            // Step 1: cert subject check (fast, no network) — rejects unsigned binaries
+            using var cert = X509Certificate2.CreateFromSignedFile(filePath);
+            if (!cert.Subject.Contains(expectedSubject, StringComparison.OrdinalIgnoreCase))
+            {
+                DiagLog.Write($"UpdateService: cert subject mismatch — expected '{expectedSubject}', got '{cert.Subject}'.");
+                return false;
+            }
+
+            // Step 2: full chain + signature validation via WinVerifyTrust
+            return WinVerifyTrustResult(filePath) == 0; // 0 = valid
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"UpdateService: Authenticode check failed: {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static uint WinVerifyTrustResult(string filePath)
+    {
+        var actionId = new Guid("00AAC56B-CD44-11d0-8CC2-00C04FC295EE"); // WINTRUST_ACTION_GENERIC_VERIFY_V2
+
+        var fileInfo = new WINTRUST_FILE_INFO
+        {
+            cbStruct = (uint)Marshal.SizeOf<WINTRUST_FILE_INFO>(),
+            pcwszFilePath = filePath,
+            hFile = IntPtr.Zero,
+            pgKnownSubject = IntPtr.Zero,
+        };
+
+        var fileInfoPtr = Marshal.AllocHGlobal(Marshal.SizeOf<WINTRUST_FILE_INFO>());
+        Marshal.StructureToPtr(fileInfo, fileInfoPtr, false);
+
+        var trustData = new WINTRUST_DATA
+        {
+            cbStruct            = (uint)Marshal.SizeOf<WINTRUST_DATA>(),
+            pPolicyCallbackData = IntPtr.Zero,
+            pSIPClientData      = IntPtr.Zero,
+            dwUIChoice          = 2,  // WTD_UI_NONE
+            fdwRevocationChecks = 0,  // WTD_REVOKE_NONE
+            dwUnionChoice       = 1,  // WTD_CHOICE_FILE
+            pFile               = fileInfoPtr,
+            dwStateAction       = 1,  // WTD_STATEACTION_VERIFY
+            hWVTStateData       = IntPtr.Zero,
+            pwszURLReference    = null,
+            dwUIContext         = 0,
+        };
+
+        var trustDataPtr = Marshal.AllocHGlobal(Marshal.SizeOf<WINTRUST_DATA>());
+        Marshal.StructureToPtr(trustData, trustDataPtr, false);
+
+        uint result;
+        try
+        {
+            result = WinVerifyTrust(IntPtr.Zero, ref actionId, trustDataPtr);
+
+            // Close the state action to release resources
+            trustData.dwStateAction = 2; // WTD_STATEACTION_CLOSE
+            Marshal.StructureToPtr(trustData, trustDataPtr, false);
+            WinVerifyTrust(IntPtr.Zero, ref actionId, trustDataPtr);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(fileInfoPtr);
+            Marshal.FreeHGlobal(trustDataPtr);
+        }
+
+        return result;
+    }
+
+    [DllImport("wintrust.dll", ExactSpelling = true, SetLastError = false, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.U4)]
+    private static extern uint WinVerifyTrust(IntPtr hwnd, ref Guid pgActionID, IntPtr pWVTData);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WINTRUST_FILE_INFO
+    {
+        public uint   cbStruct;
+        public string pcwszFilePath;
+        public IntPtr hFile;
+        public IntPtr pgKnownSubject;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WINTRUST_DATA
+    {
+        public uint   cbStruct;
+        public IntPtr pPolicyCallbackData;
+        public IntPtr pSIPClientData;
+        public uint   dwUIChoice;
+        public uint   fdwRevocationChecks;
+        public uint   dwUnionChoice;
+        public IntPtr pFile;
+        public uint   dwStateAction;
+        public IntPtr hWVTStateData;
+        public string? pwszURLReference;
+        public uint   dwUIContext;
     }
 }

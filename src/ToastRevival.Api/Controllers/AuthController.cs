@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,12 +18,14 @@ public class AuthController : ControllerBase
     private readonly UserManager<AppUser> _userManager;
     private readonly AppDbContext _db;
     private readonly ITokenService _tokens;
+    private readonly MfaService _mfa;
 
-    public AuthController(UserManager<AppUser> userManager, AppDbContext db, ITokenService tokens)
+    public AuthController(UserManager<AppUser> userManager, AppDbContext db, ITokenService tokens, MfaService mfa)
     {
         _userManager = userManager;
         _db = db;
         _tokens = tokens;
+        _mfa = mfa;
     }
 
     [HttpPost("register")]
@@ -85,5 +89,58 @@ public class AuthController : ControllerBase
         var expiresAt = DateTime.UtcNow.AddMinutes(60);
 
         return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Role.ToString()));
+    }
+
+    /// <summary>
+    /// Generates a TOTP secret for the calling user and returns the base32
+    /// secret + an otpauth:// URI suitable for QR code display.
+    /// The secret is saved to AppUser.MfaSecret — existing TOTP sessions on
+    /// other devices are invalidated. Admin+ only (no Technician self-enrollment).
+    /// </summary>
+    [HttpPost("mfa/enroll")]
+    [Authorize]
+    public async Task<ActionResult<MfaEnrollResponse>> MfaEnroll()
+    {
+        var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
+
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
+        if (user is null) return Unauthorized();
+
+        if (user.Role == UserRole.Technician)
+            return Forbid();
+
+        var (secret, qrUri) = _mfa.GenerateEnrollment(user.Email!);
+        user.MfaSecret = secret;
+        await _db.SaveChangesAsync();
+
+        return Ok(new MfaEnrollResponse(secret, qrUri));
+    }
+
+    /// <summary>
+    /// Verifies a TOTP code against the calling user's enrolled secret.
+    /// Returns a short-lived MFA-elevated JWT (15 min, mfa=true claim).
+    /// Required before calling broadcast-to-all or other Super Admin actions.
+    /// </summary>
+    [HttpPost("mfa/verify")]
+    [Authorize]
+    public async Task<ActionResult<MfaVerifyResponse>> MfaVerify([FromBody] MfaVerifyRequest req)
+    {
+        var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
+
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
+        if (user is null) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(user.MfaSecret))
+            return BadRequest("MFA is not enrolled. Call POST /api/auth/mfa/enroll first.");
+
+        if (!_mfa.Verify(user.MfaSecret, req.Code))
+            return Unauthorized("Invalid or expired TOTP code.");
+
+        var expiresAt = DateTime.UtcNow.AddMinutes(15);
+        var mfaToken  = _tokens.CreateMfaToken(user);
+
+        return Ok(new MfaVerifyResponse(mfaToken, expiresAt));
     }
 }

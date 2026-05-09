@@ -7,7 +7,8 @@ public record RegisterDeviceRequest(
     [Required] string DeviceName,
     [Required] string Username,
     string? OsVersion = null,
-    string? AgentVersion = null);
+    string? AgentVersion = null,
+    string? EnrollmentKey = null);
 
 public record DeviceResponse(
     Guid DeviceId,

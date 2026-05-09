@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -17,17 +19,19 @@ internal sealed record DeviceConfig(
 
 /// <summary>
 /// Bootstrap config dropped next to the exe by the MSI/MSIX installer (D9).
-/// Contains the values needed to register: tenant + server URL.
+/// Contains the values needed to register: tenant, server URL, and optional
+/// enrollment key (required when the tenant has EnrollmentKey gating enabled).
 /// </summary>
 internal sealed record BootstrapConfig(
-    [property: JsonPropertyName("tenantId")]  Guid   TenantId,
-    [property: JsonPropertyName("serverUrl")] string ServerUrl);
+    [property: JsonPropertyName("tenantId")]     Guid   TenantId,
+    [property: JsonPropertyName("serverUrl")]    string ServerUrl,
+    [property: JsonPropertyName("enrollmentKey")] string? EnrollmentKey = null);
 
 internal static class ConfigStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        WriteIndented = true,
+        WriteIndented = false,
     };
 
     public static string GetConfigDirectory()
@@ -57,7 +61,8 @@ internal static class ConfigStore
 
         try
         {
-            var json = File.ReadAllText(path);
+            var raw  = File.ReadAllBytes(path);
+            var json = Unprotect(raw);
             return JsonSerializer.Deserialize<DeviceConfig>(json);
         }
         catch (Exception ex)
@@ -73,13 +78,27 @@ internal static class ConfigStore
         Directory.CreateDirectory(dir);
 
         var path = Path.Combine(dir, "config.json");
-        var json = JsonSerializer.Serialize(config, JsonOptions);
+        var json = JsonSerializer.SerializeToUtf8Bytes(config, JsonOptions);
+        var cipherBytes = Protect(json);
 
         // Write to a temp file then move atomically to prevent half-written config
-        // surviving a crash mid-write.
+        // surviving a crash mid-write (INFO-M2A-002 — DPAPI CurrentUser scope).
         var temp = path + ".tmp";
-        File.WriteAllText(temp, json);
+        File.WriteAllBytes(temp, cipherBytes);
         File.Move(temp, path, overwrite: true);
+    }
+
+    // DPAPI CurrentUser scope: only the OS user account that wrote the config can
+    // read it. An attacker with admin credentials on the endpoint can still read
+    // SYSTEM-scope data, but not per-user CurrentUser-scope data without the user's
+    // credentials. Entropy null uses the machine+user key material only.
+    private static byte[] Protect(byte[] plaintext) =>
+        ProtectedData.Protect(plaintext, null, DataProtectionScope.CurrentUser);
+
+    private static string Unprotect(byte[] cipherBytes)
+    {
+        var plaintext = ProtectedData.Unprotect(cipherBytes, null, DataProtectionScope.CurrentUser);
+        return Encoding.UTF8.GetString(plaintext);
     }
 
     public static BootstrapConfig? TryLoadBootstrap()

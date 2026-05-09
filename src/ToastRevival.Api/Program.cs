@@ -99,6 +99,23 @@ builder.Services.AddRateLimiter(opts =>
         });
     });
 
+    // INFO-M2B-005: dedicated higher-budget policy for catch-up so a
+    // flaky-network reconnect storm doesn't exhaust the shared device-per-hour
+    // budget. 60/hr vs 10/hr for ReportInteraction.
+    opts.AddPolicy("device-catchup-per-hour", ctx =>
+    {
+        var partitionKey = ctx.User.FindFirst("deviceId")?.Value
+            ?? ctx.Connection.RemoteIpAddress?.ToString()
+            ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 60,
+            Window = TimeSpan.FromHours(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0,
+        });
+    });
+
     opts.RejectionStatusCode = 429;
 });
 
@@ -113,6 +130,11 @@ builder.Services.AddSingleton<IAuditService, AuditService>();
 builder.Services.AddSingleton<NotificationQueueService>();
 builder.Services.AddSingleton<INotificationQueueService>(sp => sp.GetRequiredService<NotificationQueueService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationQueueService>());
+
+// M3 security services
+builder.Services.AddSingleton<IContentModerationService, ContentSafetyService>();
+builder.Services.AddScoped<BlocklistService>();
+builder.Services.AddSingleton<MfaService>();
 
 // CORS — dev allows any origin; production should lock this down via config
 builder.Services.AddCors(opts =>

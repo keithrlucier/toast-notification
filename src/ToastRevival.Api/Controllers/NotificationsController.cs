@@ -11,6 +11,8 @@ using ToastRevival.Api.Hubs;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
 
+// Severity thresholds (D3): 0-1=Pass, 2-4=Review, 5-6=Block.
+
 namespace ToastRevival.Api.Controllers;
 
 [ApiController]
@@ -23,17 +25,23 @@ public class NotificationsController : ControllerBase
     private readonly INotificationQueueService _queue;
     private readonly IAuditService _audit;
     private readonly IHubContext<NotificationHub> _hub;
+    private readonly IContentModerationService _moderation;
+    private readonly BlocklistService _blocklist;
 
     public NotificationsController(
         AppDbContext db,
         INotificationQueueService queue,
         IAuditService audit,
-        IHubContext<NotificationHub> hub)
+        IHubContext<NotificationHub> hub,
+        IContentModerationService moderation,
+        BlocklistService blocklist)
     {
         _db = db;
         _queue = queue;
         _audit = audit;
         _hub = hub;
+        _moderation = moderation;
+        _blocklist = blocklist;
     }
 
     [HttpPost]
@@ -41,11 +49,75 @@ public class NotificationsController : ControllerBase
     {
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var senderId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var role     = Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
 
         // Expand targets to device IDs
         var deviceIds = await ResolveTargetDeviceIds(req, tenantId);
         if (deviceIds.Count == 0 && req.TargetType != TargetType.All)
             return BadRequest("No devices matched the specified targets.");
+
+        // D5 Broadcast gate: >100 devices requires Admin+
+        if (deviceIds.Count > 100 && role < UserRole.Admin)
+            return StatusCode(403, new { error = "insufficient_role", message = "Sending to >100 devices requires Admin role." });
+
+        // D5/D6: Broadcast-to-all requires an MFA-elevated JWT (mfa=true claim)
+        if (req.TargetType == TargetType.All)
+        {
+            if (User.FindFirstValue("mfa") != "true")
+                return StatusCode(403, new
+                {
+                    error = "mfa_required",
+                    message = "Broadcasting to all devices requires MFA verification. Call POST /api/auth/mfa/verify first."
+                });
+        }
+
+        // D7 Blocklist check — fast, in-process, happens before any external call
+        var blocklistHit = await _blocklist.CheckAsync(req.Title, req.BodyLine1, req.BodyLine2);
+
+        ModerationResult moderationResult;
+        if (blocklistHit is not null)
+        {
+            moderationResult = blocklistHit;
+        }
+        else
+        {
+            // D1/D2 Azure Content Safety scan
+            var textResult = await _moderation.ModerateTextAsync(req.Title, req.BodyLine1, req.BodyLine2);
+
+            // Image scan only for ad-hoc URLs (skip library assets — no AssetLibrary lookup yet, M5)
+            var imageResult = !string.IsNullOrWhiteSpace(req.HeroImageUrl)
+                ? await _moderation.ModerateImageUrlAsync(req.HeroImageUrl)
+                : new ModerationResult(ModerationDecision.Pass, null, null, null);
+
+            // D3 Aggregate: take the worst decision
+            moderationResult = AggregateModerationResults(textResult, imageResult);
+        }
+
+        // Short-circuit on Block — do not persist, return 422
+        if (moderationResult.Decision == ModerationDecision.Block)
+        {
+            return UnprocessableEntity(new
+            {
+                error = "content_blocked",
+                message = blocklistHit is not null
+                    ? $"Content blocked by tenant blocklist (matched term: '{blocklistHit.BlocklistTerm}')."
+                    : "Content blocked by moderation policy.",
+                scores = moderationResult.TextScores,
+            });
+        }
+
+        var moderationJson = JsonSerializer.Serialize(new
+        {
+            decision = moderationResult.Decision.ToString(),
+            textScores = moderationResult.TextScores,
+            imageScores = moderationResult.ImageScores,
+            blocklistTerm = moderationResult.BlocklistTerm,
+        });
+
+        // PendingReview: save but do NOT enqueue; admin must approve via /api/moderation/{id}/approve
+        var initialStatus = moderationResult.Decision == ModerationDecision.Review
+            ? NotificationStatus.PendingReview
+            : NotificationStatus.Queued;
 
         var notification = new Notification
         {
@@ -66,6 +138,8 @@ public class NotificationsController : ControllerBase
                 ? JsonSerializer.Serialize(req.TargetIds) : null,
             TargetDeviceCount = deviceIds.Count,
             ScheduledAt = req.ScheduledAt,
+            ModerationResultJson = moderationJson,
+            Status = initialStatus,
         };
 
         _db.Notifications.Add(notification);
@@ -84,18 +158,30 @@ public class NotificationsController : ControllerBase
 
         await _audit.LogAsync(tenantId, senderId, "notification.send", "Notification",
             notification.Id.ToString(),
-            new { req.Title, req.TargetType, deviceCount = deviceIds.Count },
+            new { req.Title, req.TargetType, deviceCount = deviceIds.Count, moderation = moderationResult.Decision.ToString() },
             HttpContext.Connection.RemoteIpAddress?.ToString());
 
-        // Schedule immediately unless a future scheduledAt was requested
-        if (req.ScheduledAt is null || req.ScheduledAt <= DateTime.UtcNow)
+        // Only enqueue if content passed moderation and is not future-scheduled
+        if (initialStatus == NotificationStatus.Queued &&
+            (req.ScheduledAt is null || req.ScheduledAt <= DateTime.UtcNow))
+        {
             _queue.Enqueue(notification.Id);
+        }
 
         return Accepted(new NotificationResponse(
             notification.Id, notification.Title, notification.BodyLine1,
             notification.BodyLine2, notification.Status.ToString(),
             notification.TargetType, notification.TargetDeviceCount,
             notification.ScheduledAt, notification.SentAt, notification.CreatedAt));
+    }
+
+    private static ModerationResult AggregateModerationResults(ModerationResult text, ModerationResult image)
+    {
+        // Merge scores and take the worst decision
+        var mergedText  = text.TextScores;
+        var mergedImage = image.ImageScores;
+        var worst = text.Decision >= image.Decision ? text.Decision : image.Decision;
+        return new ModerationResult(worst, mergedText, mergedImage, null);
     }
 
     [HttpGet]
@@ -146,7 +232,7 @@ public class NotificationsController : ControllerBase
     /// Rate limit overridden to device-per-hour.
     /// </summary>
     [HttpGet("pending")]
-    [EnableRateLimiting("device-per-hour")]
+    [EnableRateLimiting("device-catchup-per-hour")]
     public async Task<ActionResult<IEnumerable<PendingNotificationItem>>> GetPending([FromQuery] DateTime? since = null)
     {
         var typeClaim = User.FindFirstValue("type");

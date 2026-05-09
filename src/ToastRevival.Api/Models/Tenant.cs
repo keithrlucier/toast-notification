@@ -11,6 +11,12 @@ public class Tenant
     // payloads before rendering. Rotation is M3 work.
     public string SigningKey { get; set; } = null!;
 
+    // Optional pre-shared key required for device registration (INFO-M1-003).
+    // When null, device registration is open — any caller that knows the TenantId
+    // may register. When set, the agent must include the matching key in its
+    // RegisterDeviceRequest or registration is rejected.
+    public string? EnrollmentKey { get; set; }
+
     public int LicenseCount { get; set; } = 10;
     public int ConsumedCount { get; set; }
     public DateTime? LicenseStart { get; set; }

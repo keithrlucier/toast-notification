@@ -251,17 +251,18 @@ namespace ToastRevival.Agent
         {
             DiagLog.Write($"SetupMode: args=[{string.Join(' ', args)}]; baseDir={AppContext.BaseDirectory}");
 
-            // Expect: --setup-bootstrap <tenantId> <serverUrl>
+            // Expect: --setup-bootstrap <tenantId> <serverUrl> [enrollmentKey]
             var idx = Array.IndexOf(args, "--setup-bootstrap");
             if (idx < 0 || idx + 2 >= args.Length)
             {
-                DiagLog.Write("SetupMode EXIT 1: usage: --setup-bootstrap <tenantId> <serverUrl>");
-                Console.Error.WriteLine("Usage: ToastNotification.Agent --setup-bootstrap <tenantId> <serverUrl>");
+                DiagLog.Write("SetupMode EXIT 1: usage: --setup-bootstrap <tenantId> <serverUrl> [enrollmentKey]");
+                Console.Error.WriteLine("Usage: ToastNotification.Agent --setup-bootstrap <tenantId> <serverUrl> [enrollmentKey]");
                 return Task.FromResult(1);
             }
 
-            var tenantIdStr = args[idx + 1];
-            var serverUrl   = args[idx + 2];
+            var tenantIdStr   = args[idx + 1];
+            var serverUrl     = args[idx + 2];
+            var enrollmentKey = idx + 3 < args.Length ? args[idx + 3] : null;
 
             if (!Guid.TryParse(tenantIdStr, out var tenantId))
             {
@@ -277,7 +278,11 @@ namespace ToastRevival.Agent
                 return Task.FromResult(1);
             }
 
-            var bootstrap = new BootstrapConfig(tenantId, serverUrl);
+            // Treat an empty string enrollment key (WiX passes empty string when
+            // ENROLLMENTKEY property is not set) as absent.
+            if (string.IsNullOrWhiteSpace(enrollmentKey)) enrollmentKey = null;
+
+            var bootstrap = new BootstrapConfig(tenantId, serverUrl, enrollmentKey);
             var options   = new JsonSerializerOptions { WriteIndented = true };
             var path      = Path.Combine(AppContext.BaseDirectory, "bootstrap.json");
 

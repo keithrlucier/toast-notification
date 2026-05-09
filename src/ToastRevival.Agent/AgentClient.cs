@@ -29,11 +29,12 @@ internal static class RegistrationService
 
         var request = new
         {
-            tenantId    = bootstrap.TenantId,
-            deviceName  = Environment.MachineName,
-            username    = Environment.UserName,
-            osVersion   = Environment.OSVersion.VersionString,
-            agentVersion = ThisAssembly.Version,
+            tenantId      = bootstrap.TenantId,
+            deviceName    = Environment.MachineName,
+            username      = Environment.UserName,
+            osVersion     = Environment.OSVersion.VersionString,
+            agentVersion  = ThisAssembly.Version,
+            enrollmentKey = bootstrap.EnrollmentKey,
         };
 
         try
@@ -102,7 +103,8 @@ internal sealed class AgentHubClient : IAsyncDisposable
     private readonly DeviceConfig _config;
     private readonly HubConnection _hub;
     private readonly HttpClient _http;
-    private readonly MemoryCache _renderedCache = new(new MemoryCacheOptions());
+    // INFO-M2B-004: bounded dedup cache. 50k entries × ~100 bytes ≈ 5MB ceiling.
+    private readonly MemoryCache _renderedCache = new(new MemoryCacheOptions { SizeLimit = 50_000 });
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _pingLoop;
 
@@ -355,6 +357,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
         _renderedCache.Set(payload.NotificationId, (byte)1, new MemoryCacheEntryOptions
         {
             SlidingExpiration = DedupWindow,
+            Size = 1,
         });
 
         try

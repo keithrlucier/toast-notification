@@ -51,6 +51,22 @@ public class TokenService : ITokenService
         return Convert.ToBase64String(bytes);
     }
 
+    public string CreateMfaToken(AppUser user)
+    {
+        var claims = new[]
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(JwtRegisteredClaimNames.Email, user.Email!),
+            new Claim("tenantId", user.TenantId.ToString()),
+            new Claim("role", user.Role.ToString()),
+            new Claim("type", "user"),
+            new Claim("mfa", "true"),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+        };
+
+        return BuildToken(claims, DateTime.UtcNow.AddMinutes(15));
+    }
+
     private string BuildToken(Claim[] claims, DateTime expires)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));

@@ -25,6 +25,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
     public DbSet<AssetLibrary> AssetLibrary => Set<AssetLibrary>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<TenantBlocklistEntry> TenantBlocklistEntries => Set<TenantBlocklistEntry>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -104,6 +105,8 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
              .HasForeignKey(d => d.DeviceId)
              .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(d => new { d.NotificationId, d.DeviceId }).IsUnique();
+            // INFO-M2B-003: composite index for the catch-up query (DeviceId, Status, CreatedAt)
+            e.HasIndex(d => new { d.DeviceId, d.Status, d.CreatedAt });
             e.HasQueryFilter(d => d.TenantId == _tenantProvider.TenantId);
         });
 
@@ -120,6 +123,17 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
         builder.Entity<AuditLog>(e =>
         {
             e.HasIndex(a => new { a.TenantId, a.Timestamp });
+        });
+
+        builder.Entity<TenantBlocklistEntry>(e =>
+        {
+            e.HasOne(b => b.Tenant)
+             .WithMany()
+             .HasForeignKey(b => b.TenantId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.Property(b => b.Term).HasMaxLength(500);
+            e.HasIndex(b => new { b.TenantId, b.Term }).IsUnique();
+            e.HasQueryFilter(b => b.TenantId == _tenantProvider.TenantId);
         });
     }
 

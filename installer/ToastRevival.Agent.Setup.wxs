@@ -12,6 +12,19 @@
 
     <SummaryInformation Description="Toast Notification Agent installer" />
 
+    <!--
+      INFO-M2C-002: OS floor enforcement. Windows 10 build 19041 (2004, May 2020)
+      is the minimum supported version — WinUI 3 and AppNotificationManager require
+      it. VersionNT64 is the 64-bit OS version in MMNN format; 19041 decimal.
+      This prevents the agent from being silently installed on unsupported OS
+      versions and exiting at runtime with code 2.
+    -->
+    <!--
+      VersionNT64 is major*100+minor: Windows 10/11 = 1000. This catches pre-Win10
+      (7=601, 8.1=603). Precise build-19041 floor is enforced at runtime by Program.cs.
+    -->
+    <Launch Condition="VersionNT64 &gt;= 1000" Message="Toast Notification Agent requires Windows 10 or later." />
+
     <MediaTemplate EmbedCab="yes" />
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
@@ -71,6 +84,12 @@
     -->
     <Property Id="CLIENTID" />
     <Property Id="SERVERURL" />
+    <!--
+      Optional pre-shared enrollment key (INFO-M1-003). When the backend tenant
+      has an EnrollmentKey set, this must match or device registration is rejected.
+      Pass via: msiexec /i ... /qn CLIENTID=... SERVERURL=... ENROLLMENTKEY=...
+    -->
+    <Property Id="ENROLLMENTKEY" />
 
     <Feature Id="Main" Title="Toast Notification Agent" Level="1">
       <ComponentGroupRef Id="AgentFiles" />
@@ -122,7 +141,7 @@
     -->
     <CustomAction Id="WriteBootstrapJson"
                   Directory="INSTALLFOLDER"
-                  ExeCommand="&quot;[INSTALLFOLDER]ToastNotification.Agent.exe&quot; --setup-bootstrap [CLIENTID] &quot;[SERVERURL]&quot;"
+                  ExeCommand="&quot;[INSTALLFOLDER]ToastNotification.Agent.exe&quot; --setup-bootstrap [CLIENTID] &quot;[SERVERURL]&quot; [ENROLLMENTKEY]"
                   Execute="deferred"
                   Impersonate="no"
                   Return="check" />

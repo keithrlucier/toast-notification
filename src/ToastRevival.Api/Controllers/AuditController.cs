@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
+using ToastRevival.Api.Utilities;
 
 namespace ToastRevival.Api.Controllers;
 
@@ -114,19 +115,15 @@ public class AuditController : ControllerBase
         foreach (var l in logs)
         {
             sb.AppendLine(string.Join(",",
-                CsvCell(l.Timestamp.ToString("o")),
-                CsvCell(l.Action),
-                CsvCell(l.ResourceType),
-                CsvCell(l.ResourceId ?? ""),
-                CsvCell(l.UserId?.ToString() ?? ""),
-                CsvCell(l.IpAddress ?? "")));
+                CsvHelper.Cell(l.Timestamp.ToString("o")),
+                CsvHelper.Cell(l.Action),
+                CsvHelper.Cell(l.ResourceType),
+                CsvHelper.Cell(l.ResourceId ?? ""),
+                CsvHelper.Cell(l.UserId?.ToString() ?? ""),
+                CsvHelper.Cell(l.IpAddress ?? "")));
         }
 
         return sb.ToString();
     }
 
-    private static string CsvCell(string value) =>
-        value.Contains(',') || value.Contains('"') || value.Contains('\n')
-            ? $"\"{value.Replace("\"", "\"\"")}\""
-            : value;
 }

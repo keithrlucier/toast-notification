@@ -120,10 +120,19 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.HasQueryFilter(a => a.TenantId == _tenantProvider.TenantId);
         });
 
-        // AuditLog intentionally has no global filter — admins can query across tenants
+        // AuditLog intentionally has no global filter — admins can query across tenants.
+        // INFO-M5D-002: index on Timestamp for export/range queries.
         builder.Entity<AuditLog>(e =>
         {
             e.HasIndex(a => new { a.TenantId, a.Timestamp });
+            e.HasIndex(a => a.Timestamp);
+        });
+
+        // INFO-M5C-002: partial index on (Status, ScheduledAt) for scheduler sweep
+        builder.Entity<Notification>(e =>
+        {
+            e.HasIndex(n => new { n.Status, n.ScheduledAt })
+             .HasFilter("scheduled_at IS NOT NULL");
         });
 
         builder.Entity<TenantBlocklistEntry>(e =>

@@ -47,7 +47,7 @@ Three-component product with shared .NET 8 ecosystem:
 ## Deployment Channels
 
 ### 1. Microsoft Store (Primary)
-- Existing listing: app ID 9P5L0MRMFRRF, TOAST2IT LLC account
+- Live listing: app ID **9PFD6004DVTN** (confirmed live 2026-05-09 — https://apps.microsoft.com/detail/9PFD6004DVTN). NOTE: earlier docs referenced 9P5L0MRMFRRF — 9PFD6004DVTN is the correct ID. TOAST2IT LLC account.
 - Microsoft signs the package — no SmartScreen issues
 - Intune Store integration — MSPs search and assign
 - Auto-updates via Store

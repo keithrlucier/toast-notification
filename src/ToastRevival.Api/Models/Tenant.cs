@@ -23,6 +23,11 @@ public class Tenant
     public DateTime? LicenseEnd { get; set; }
     public SubscriptionTier SubscriptionTier { get; set; } = SubscriptionTier.Free;
     public BillingStatus BillingStatus { get; set; } = BillingStatus.Active;
+    // Stripe billing (M6)
+    public string? StripeCustomerId { get; set; }
+    public string? StripeSubscriptionId { get; set; }
+    public DateTime? PastDueAt { get; set; }
+
     // Branding & notification defaults (M5.B D3)
     public string? LogoUrl { get; set; }
     public string? PrimaryColor { get; set; }

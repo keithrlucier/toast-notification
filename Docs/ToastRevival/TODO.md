@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMPLETE. M3 COMPLETE. M4 COMPLETE 2026-05-08. M5.A COMPLETE 2026-05-09 (commit 437dce4). M5.B COMPLETE 2026-05-09 (commit aabe739). M5.C COMPLETE 2026-05-09.** M5.C delivered: AssetsController (upload/list/delete), ModerateImageBytesAsync on IContentModerationService, UseStaticFiles() for asset serving, NotificationQueueService scheduler loop (startup backfill + PeriodicTimer 60s), Assets.tsx page, api/assets.ts, Compose.tsx UTC fix. Next: **M5.D — Export (D7): audit logs + delivery reports (CSV/PDF)**.
+Project status: **M0A through M5.D ALL COMPLETE. Production live at https://toastnotification.com (2026-05-09) — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt.** Next: **M6 — Licensing & Subscription System (Stripe).**
 
 ## Keith
 
@@ -14,8 +14,9 @@ Project status: **M0A → M0 D5 ALL COMPLETE. M1 COMPLETE. M2 (A/B/C/D) ALL COMP
 - [x] Validate install of signed M0 D2 MSIX on Win11 lab. 0.2.0.1 installed but did not fire toasts (FIX-MSIX-004); 0.2.0.3 patched + signed + installed 2026-05-08, visible toast fires, NotificationInvoked routes cleanly.
 - [x] Confirm Microsoft Partner Center access (Keith signed in 2026-05-07). Verifying app ID `9PFD6004DVTN` is reachable from this account is M0 D5 work.
 - [ ] Accept the updated App Developer Agreement in Partner Center if prompted (only when M0 D5 actually flights a build).
-- [ ] Confirm domain/DNS control for `toastnotification.com` (gates M7).
-- [ ] Confirm Stripe account status later, after deployment spike is proven (gates M6).
+- [x] Confirm domain/DNS control for `toastnotification.com` — DNS pointed 2026-05-09. Live at https://toastnotification.com.
+- [ ] Confirm Stripe account status — needed for M6 billing integration.
+- [ ] Terminate AWS Windows VM (52.21.249.120) — CI moved to GitHub Actions, VM has no remaining purpose.
 
 ## Engineering - M0A (closed)
 

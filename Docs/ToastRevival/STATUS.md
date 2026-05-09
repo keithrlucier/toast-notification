@@ -2,7 +2,7 @@
 
 > Repo / project codename: **ToastRevival** (internal). Product / user-facing brand: **Toast Notification** (toastnotification.com).
 
-Last updated: 2026-05-09 (M5.D)
+Last updated: 2026-05-09 (Production live)
 
 ## Project State
 
@@ -14,7 +14,7 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **M0 D3: COMPLETE (2026-05-08).** Signed `ToastNotification.Agent-0.3.0.0.msi` installed cleanly on Win11 lab. `Get-ScheduledTask -TaskPath '\Toast2IT\' -TaskName 'ToastNotificationAgentLogon'` returned `State=Ready` with `MSFT_TaskLogonTrigger` and `MSFT_TaskExecAction`. Alert toast fired at next user logon — Critical-scenario banner with hero/logo/Acknowledge/Report buttons all rendered correctly. Per-machine MSI now uses a logon-triggered Scheduled Task in the BUILTIN\Users group context (`S-1-5-32-545` at `LeastPrivilege`) instead of M0A's all-users Startup-folder shortcut. Better GPO/Intune story for the MSI/RMM channel. Standing rules in CONTEXT.md "Scheduled Task primitive (M0 D3 standing rules)" production-validated. See `EVIDENCE/2026-05-08-m0-d3-msi-build-with-scheduled-task.md` and `EVIDENCE/2026-05-08-m0-d3-task-fires-at-logon.md`.
 
-**Codex provisioned the build server pipeline (2026-05-07).** GitHub Actions self-hosted runner on 52.21.249.120 as Windows service `actions.runner.keithrlucier-toast.EC2AMAZ-A5EU435-toast-build`. Workflow `.github/workflows/agent-build.yml` (commit `9363764`) verified end-to-end on unsigned MSI builds. Codex's evidence note committed 2026-05-08 (commit `3c702fc`).
+**CI: GitHub Actions on github-hosted runner (2026-05-09, commit `1c41d3e`).** Workflow `.github/workflows/agent-build.yml` switched from self-hosted `toast-build` runner (on the now-decommissioned Windows VM 52.21.249.120) to `windows-latest` GitHub-hosted runner. Installs WiX via `dotnet tool install -g wix`. Builds unsigned MSI on every push to main and uploads as artifact. No self-hosted runner dependency remains.
 
 **M0 D4: COMPLETE (2026-05-08).** MSI 0.3.1.0 signed and installed on Win11 lab; task State=Ready; toast fires; second local user account also received toast (BUILTIN\Users confirmed); uninstall removed task cleanly. FIX-MSIX-002 applied (manifest MinVersion 17763→19041). GPO/Intune testing deferred: behavior documented in CONTEXT.md, carry to M8 beta. See `EVIDENCE/2026-05-08-m0-d4-matrix-results.md`.
 
@@ -36,9 +36,11 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **M5.C: COMPLETE 2026-05-09 (commit 6bd5cc7).** Asset Library (AssetsController, multipart upload, Azure Content Safety byte scan, UseStaticFiles), Notification Scheduling (PeriodicTimer 60s loop, startup backfill, ProcessAsync non-Queued guard).
 
-**M5.D: COMPLETE 2026-05-09 (commit pending).** Export (D7) — AuditController (list + CSV/PDF export, admin-only), NotificationsController delivery report per-notification (CSV/PDF), PdfExportService (QuestPDF Community, A4 landscape audit + A4 portrait delivery), AuditLog.tsx admin page, History.tsx export button. Next: **M6 — Licensing &amp; Subscription System.**
+**M5.D: COMPLETE 2026-05-09.** Export (D7) — AuditController (list + CSV/PDF export, admin-only), NotificationsController delivery report per-notification (CSV/PDF), PdfExportService (QuestPDF Community, A4 landscape audit + A4 portrait delivery), AuditLog.tsx admin page, History.tsx export button.
 
-Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
+**PRODUCTION LIVE 2026-05-09.** https://toastnotification.com deployed to AWS Lightsail 2-box setup. HTTPS via Let's Encrypt (auto-renews). React dashboard + ASP.NET Core 8 API on TOASTWEB1 (54.82.103.160). PostgreSQL 16 on TOASTDATA1 (172.26.3.164 private). EF migrations ran clean on first startup. SSH keys at `Docs/ToastRevival/Assets/`.
+
+**Next: M6 — Licensing & Subscription System (Stripe).**
 
 ## M0A Deliverables - All Closed
 
@@ -62,19 +64,31 @@ Codex is also working on this project. Coordinate before running commands on the
 - **`artifacts/installer/ToastNotification.Agent-0.3.0.0.msi` - 50.61 MB. Signed by Keith 2026-05-08, installed cleanly on Win11 lab; scheduled task created (State=Ready); toast fires at logon. Canonical M0 D3 build.**
 - **`artifacts/installer/msix/ToastNotification.Agent-0.2.1.0.msix` - 63.82 MB. UNSIGNED. M0 D5 build. Three extensions: `windows.comServer`, `windows.toastNotificationActivation`, `windows.startupTask`. Manifest: MinVersion=10.0.19041.0, MaxVersionTested=10.0.22621.0. Awaiting Keith sign + Store flight.**
 
-## Server (52.21.249.120)
+## Production Infrastructure (live 2026-05-09)
 
-See `CONTEXT.md` -> Server Infrastructure for full details.
+### TOASTWEB1 — Web / App Server
+- **Public IP (static):** 54.82.103.160
+- **Private IP:** 172.26.0.161
+- **OS:** Ubuntu 22.04 LTS · AWS Lightsail 2 GB / 2 vCPU / 60 GB
+- **Stack:** nginx 1.24 + ASP.NET Core 8 Kestrel (:5216) + React static files
+- **Service:** `toast-api.service` (systemd, auto-restart, `toast` user)
+- **App root:** `/opt/toast/api/` · `/opt/toast/dashboard/` · `/opt/toast/.env` (chmod 600)
+- **TLS:** Let's Encrypt via certbot, auto-renews, expires 2026-08-07
+- **SSH key:** `Docs/ToastRevival/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem`
+- **Connect:** `ssh -i "Docs/ToastRevival/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem" ubuntu@54.82.103.160`
+- **Logs:** `sudo journalctl -u toast-api -f`
 
-- Windows Server 2022 Datacenter, hostname `EC2AMAZ-A5EU435`.
-- SSH port 22 and RDP port 3389 reachable.
-- Key-based SSH configured from this workstation.
-- .NET SDK `8.0.420` and Git `2.53.0.windows.2` installed.
-- Repo cloned to `C:\toast`, remote: `https://github.com/keithrlucier/toast`.
-- Visual Studio Build Tools / Windows SDK installation still needs verification (Codex owns).
-- `signtool.exe` and `makeappx.exe` not available on the server yet (Codex owns).
-- WinRM blocked; use SSH.
-- PATH is not reliable in SSH sessions; use full binary paths.
+### TOASTDATA1 — Database Server
+- **Private IP:** 172.26.3.164 (no public access — DB port closed at Lightsail firewall)
+- **Public IP (SSH only):** 100.52.96.67
+- **OS:** Ubuntu 22.04 LTS · AWS Lightsail 1 GB / 2 vCPU / 40 GB
+- **Stack:** PostgreSQL 16, database `toastrevival`, user `toast`
+- **Accepts connections from:** 172.26.0.161/32 (TOASTWEB1 private IP) only
+- **SSH key:** `Docs/ToastRevival/Assets/Toast_Data_1_LightsailDefaultKey-us-east-1.pem`
+- **Connect:** `ssh -i "Docs/ToastRevival/Assets/Toast_Data_1_LightsailDefaultKey-us-east-1.pem" ubuntu@100.52.96.67`
+
+### Decommissioned
+- **AWS Windows VM 52.21.249.120** — was Codex's self-hosted CI runner. CI moved to GitHub-hosted `windows-latest` (commit `1c41d3e`). Terminate this instance.
 
 ## Local Environment Notes
 

@@ -401,34 +401,63 @@ Option B is simpler for initial deployment. Option A is safer for future deploys
 
 ---
 
-## Go-Live Checklist
+## Go-Live Checklist — COMPLETE 2026-05-09
 
 **Pre-session (Keith)**
-- [ ] Confirm domain DNS control for `toastnotification.com`
-- [ ] Provision Box 1 (2 GB Lightsail, Ubuntu 22.04)
-- [ ] Provision Box 2 (1 GB Lightsail, Ubuntu 22.04)
-- [ ] Note both private IPs from Lightsail console (for Box 2 PostgreSQL binding)
-- [ ] Generate `Jwt__Key`: `openssl rand -base64 48`
-- [ ] Decide on Azure Content Safety (leave blank = degrades to Pass, which is fine for launch)
+- [x] Confirm domain DNS control for `toastnotification.com`
+- [x] Provision Box 1 — TOASTWEB1, 2 GB Lightsail, Ubuntu 22.04, static IP 54.82.103.160
+- [x] Provision Box 2 — TOASTDATA1, 1 GB Lightsail, Ubuntu 22.04, private IP 172.26.3.164
+- [x] Private IPs noted (TOASTWEB1: 172.26.0.161, TOASTDATA1: 172.26.3.164)
+- [x] `Jwt__Key` generated via `openssl rand -base64 48`
+- [x] Azure Content Safety — blank (degrades to Pass); configure before M9 GA
 
-**Deployment session (team)**
-- [ ] Box 2: install PostgreSQL, create DB + user, configure `pg_hba.conf` + `postgresql.conf`
-- [ ] Box 1: install .NET 8 runtime, nginx, Node 20, git
-- [ ] Box 1: create `toast` user, `/opt/toast/` directory layout
-- [ ] Box 1: write `/opt/toast/.env` with all production values
-- [ ] Box 1: dotnet publish API → rsync to `/opt/toast/api/`
-- [ ] Box 1: npm run build dashboard → rsync to `/opt/toast/dashboard/`
-- [ ] Box 1: install systemd unit, start `toast-api` service
-- [ ] Box 1: verify `journalctl -u toast-api` shows migrations applied, service listening on :5216
-- [ ] Box 1: configure nginx, obtain Let's Encrypt cert, reload
-- [ ] Box 1: verify `https://toastnotification.com` loads React dashboard
-- [ ] Box 1: verify `https://toastnotification.com/api/health` (or register endpoint) responds
-- [ ] Register first tenant via dashboard (`/register`)
-- [ ] Register a test Windows Agent (MSI deploy with SERVERURL=https://toastnotification.com)
-- [ ] Send a test notification — verify it arrives on the endpoint
+**Deployment session (team — 2026-05-09)**
+- [x] Box 2: PostgreSQL 16 installed, `toastrevival` DB + `toast` user created, `pg_hba.conf` allows 172.26.0.161/32, `postgresql.conf` listens on 172.26.3.164
+- [x] Box 1: ASP.NET Core 8.0.26 runtime, nginx 1.24, Node 20.20.2, certbot installed
+- [x] Box 1: `toast` user created, `/opt/toast/api/`, `/opt/toast/dashboard/`, `/opt/toast/api/wwwroot/assets/` created
+- [x] Box 1: `/opt/toast/.env` written (chmod 600, owned by toast)
+- [x] Box 1: API published (`dotnet publish --runtime linux-x64 --no-self-contained`) and deployed via scp+tar
+- [x] Box 1: Dashboard built (`npm run build`) and deployed via scp+tar
+- [x] Box 1: `toast-api.service` systemd unit installed, enabled, started — active
+- [x] Box 1: migrations ran clean on first startup (all 5 migrations applied)
+- [x] Box 1: nginx configured with API proxy + SignalR WebSocket + SPA fallback
+- [x] Box 1: Let's Encrypt cert issued for toastnotification.com + www — HTTP→HTTPS redirect active
+- [x] `https://toastnotification.com` — React dashboard loads (200 ✓)
+- [x] `https://toastnotification.com/api/auth/login` — API responds (401 on bad creds ✓)
+- [ ] Register first tenant via `/register`
+- [ ] Register a test Windows Agent (MSI deploy with `SERVERURL=https://toastnotification.com`)
+- [ ] Send a test notification end-to-end
 - [ ] Check delivery tracking in dashboard history
-- [ ] Shut down AWS Windows VM (52.21.249.120) — CI is now on GitHub Actions
+- [ ] Terminate AWS Windows VM (52.21.249.120) — CI is now on GitHub Actions
 
 **Post-launch**
 - [ ] Set up Lightsail automated snapshots on both boxes (daily, 7-day retention)
-- [ ] Set up Lightsail alarms: CPU > 80%, disk > 80% on Box 2
+- [ ] Set up Lightsail alarms: CPU > 80% on TOASTWEB1, disk > 80% on TOASTDATA1
+- [ ] Configure Azure Content Safety endpoint + key before onboarding real MSP tenants
+
+## Redeploy Procedure
+
+When code changes need to go to production (run from dev machine):
+
+```powershell
+# 1. Build
+dotnet publish src/ToastRevival.Api --configuration Release --runtime linux-x64 --no-self-contained --output ./publish/api
+cd src/ToastRevival.Dashboard && npm ci && npm run build && cd ../..
+
+# 2. Pack and upload
+cd publish/api && tar -czf ../api.tar.gz . && cd ../..
+cd src/ToastRevival.Dashboard/dist && tar -czf ../../../publish/dashboard.tar.gz . && cd ../../..
+
+$KEY = "Docs/ToastRevival/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem"
+scp -i $KEY publish/api.tar.gz ubuntu@54.82.103.160:/tmp/
+scp -i $KEY publish/dashboard.tar.gz ubuntu@54.82.103.160:/tmp/
+
+# 3. Extract and restart
+ssh -i $KEY ubuntu@54.82.103.160 "
+  sudo tar -xzf /tmp/api.tar.gz -C /opt/toast/api/ && sudo chown -R toast:toast /opt/toast/api
+  sudo tar -xzf /tmp/dashboard.tar.gz -C /opt/toast/dashboard/ && sudo chown -R toast:toast /opt/toast/dashboard
+  rm /tmp/api.tar.gz /tmp/dashboard.tar.gz
+  sudo systemctl restart toast-api
+  sleep 3 && sudo systemctl is-active toast-api
+"
+```

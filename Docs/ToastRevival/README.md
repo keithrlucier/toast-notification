@@ -8,13 +8,13 @@ Full commercial revival of the Toast Notification platform — an enterprise pus
 
 ## Current Status
 
-**M0A complete (2026-05-07).** Signed MSI installs cleanly on Win11 lab machine, agent runs in user context, toast survives login and reboot. Up next: **M0 (Foundation & Deployment Validation)**, starting with M0 D2 (signed MSIX package for Store + Intune LOB).
+**Production live at https://toastnotification.com (2026-05-09).** Backend API + React dashboard deployed to AWS Lightsail (2-box: TOASTWEB1 54.82.103.160 / TOASTDATA1 172.26.3.164 private). HTTPS via Let's Encrypt. PostgreSQL 16. All milestones M0A through M5.D complete. Next: **M6 — Licensing & Subscription System (Stripe).**
 
-See `STATUS.md` for the current project state.
+See `STATUS.md` for full milestone history and current project state.
 
 ## Origin
 
-Originally built ~2020-2021 by Keith Lucier (toast2IT, LLC) with developer Anmol Rehan. Published to Microsoft Store (app ID: 9P5L0MRMFRRF). UWP client + ASP.NET Core backend + Azure AD B2C auth. Standalone product discontinued; Store listing still active.
+Originally built ~2020-2021 by Keith Lucier (toast2IT, LLC) with developer Anmol Rehan. Published to Microsoft Store (app ID: 9PFD6004DVTN). UWP client + ASP.NET Core backend + Azure AD B2C auth. Standalone product discontinued; Store listing still active.
 
 ## Revival Scope
 
@@ -44,5 +44,5 @@ PAT stored in: `docs/ToastRevival/.env` (gitignored — never commit credentials
 - Original source: `docs/toast/ToastNotification Source/ToastNotification.zip`
 - Original DB backup: `docs/toast/ToastNotification Source/Notification.bak`
 - Original install scripts: `docs/toast/ToastNotification Source/Beta Installation Files/`
-- Microsoft Store: https://apps.microsoft.com/detail/9P5L0MRMFRRF
+- Microsoft Store: https://apps.microsoft.com/detail/9PFD6004DVTN
 - Website: www.toastnotification.com

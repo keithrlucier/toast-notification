@@ -16,10 +16,13 @@ import Analytics from './pages/Analytics';
 import TenantSettings from './pages/TenantSettings';
 import Assets from './pages/Assets';
 import AuditLog from './pages/AuditLog';
+import Billing from './pages/Billing';
+import Onboarding from './pages/Onboarding';
 
 const router = createBrowserRouter([
-  { path: '/login',    element: <Login /> },
-  { path: '/register', element: <Register /> },
+  { path: '/login',      element: <Login /> },
+  { path: '/register',   element: <Register /> },
+  { path: '/onboarding', element: <ProtectedRoute><Onboarding /></ProtectedRoute> },
   {
     element: (
       <ProtectedRoute>
@@ -71,6 +74,14 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute requireAdmin>
             <AuditLog />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/billing',
+        element: (
+          <ProtectedRoute requireAdmin>
+            <Billing />
           </ProtectedRoute>
         ),
       },

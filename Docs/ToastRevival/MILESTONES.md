@@ -296,27 +296,47 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 - `dotnet build ToastRevival.sln`: 0 warnings, 0 errors.
 - `npx tsc -p tsconfig.app.json --noEmit`: 0 errors. Vite build: clean.
 
-### Agent Deployment (M5.B planned)
-- Anthony: D1 backend (3 aggregate endpoints) + D1 frontend (Recharts charts)
-- Abish: D3 backend + D3 frontend
-- Diana: D1 chart sign-off, D3 branding UI review
-
 ---
 
-## M6: Licensing & Subscription System
+## M6: Licensing & Subscription System  **[COMPLETE 2026-05-09]**
 **Goal**: Commercial-ready licensing with Stripe integration.
 
-### Deliverables
-- **D1**: Subscription tiers — Free (10 devices), Pro (250 devices), Enterprise (unlimited)
-- **D2**: Stripe integration — subscription creation, billing portal, webhook handling
-- **D3**: License enforcement — device registration blocked when limit reached, grace period handling
-- **D4**: Usage metering — device count tracking, overage alerts
-- **D5**: Tenant onboarding flow — signup, plan selection, first device registration walkthrough
-- **D6**: Admin billing page — current plan, usage, invoices, upgrade/downgrade
+### Deliverables (all closed)
+- **D1** [x]: Subscription tiers — `ILicenseService`/`LicenseService` with tier limits (Free=10, Pro=250, Enterprise=0/unlimited). `LicenseCount=0` means unlimited throughout the stack.
+- **D2** [x]: Stripe integration — `BillingController` with `GET /api/billing/plan`, `POST /api/billing/checkout`, `POST /api/billing/portal`, `GET /api/billing/invoices`, `POST /api/billing/webhook`. Stripe.net 47.3.0. Webhook signature verified via `EventUtility.ConstructEvent` (raw body read, Stripe-Signature header). Events handled: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`, `invoice.paid`. Fire-and-forget with `IServiceProvider` captured before response — HttpContext lifetime safe.
+- **D3** [x]: License enforcement — `DevicesController.Register` calls `_license.CanRegisterDeviceAsync` before creating device. `BillingStatus.Canceled` → 403. Device limit reached → 402. `ConsumedCount` incremented on register, decremented on decommission.
+- **D4** [x]: Usage metering — `SyncConsumedCountAsync` reconciles `ConsumedCount` from live device table on every plan fetch. `isNearLimit` (≥90%) and `isAtLimit` flags on plan endpoint. Near-limit and at-limit warnings rendered in `Billing.tsx`.
+- **D5** [x]: Tenant onboarding flow — `Onboarding.tsx` at `/onboarding`. 3-step wizard: Welcome → Choose Plan (Free/Pro/Enterprise cards with Stripe checkout) → Install Agent (pre-filled MSI silent install command with CLIENTID/SERVERURL). Protected route.
+- **D6** [x]: Admin billing page — `Billing.tsx` at `/billing`. Current plan card with tier, status badge, device usage bar. Plan upgrade cards (checkout redirect). "Manage Billing" → Stripe billing portal. Invoice history table with PDF/hosted links. Sidebar "Billing" nav item added.
+
+### INFO Items Closed (carried from prior milestones)
+- INFO-M5-001 ✓: `AuthController.Register` template seeding now wrapped in try/catch with explicit `RollbackAsync` + clean 500 response.
+- INFO-M5D-001 ✓: `CsvHelper` static class extracted to `Utilities/CsvHelper.cs`. `AuditController` and `NotificationsController` both updated to use `CsvHelper.Cell()`.
+- INFO-M5D-002 ✓: `IX_AuditLogs_Timestamp` index added in M6Billing migration.
+- INFO-M5C-002 ✓: `IX_Notifications_Status_ScheduledAt` partial index added in M6Billing migration.
+
+### INFO Items Filed
+- INFO-M6-001: Stripe keys in `appsettings.json` are placeholder strings. Production must override via env vars (`Stripe__SecretKey`, `Stripe__WebhookSecret`, `Stripe__ProPriceId`, `Stripe__EnterprisePriceId`). Document in M9 DEPLOY.md.
+- INFO-M6-002: `SyncConsumedCountAsync` on every plan fetch = one extra DB query. Acceptable at current scale. Cache at M9.
+- INFO-M6-003: Invoice list makes live Stripe API call per request. Add short-TTL cache at M9.
+- INFO-M6-004: `Onboarding.tsx` welcome step uses emoji placeholder icons. Diana will provide SVG replacements at M7.
+
+### Migration
+- `M6Billing` (20260509053033): `Tenants.StripeCustomerId`, `Tenants.StripeSubscriptionId`, `Tenants.PastDueAt`, `IX_Notifications_Status_ScheduledAt` (partial), `IX_AuditLogs_Timestamp`.
+
+### Code Sweep
+- Pre-commit fixes: (1) `HandleStripeEventAsync` — `IServiceProvider` captured before `Task.Run` to avoid HttpContext lifetime race; (2) invoice `Created` — Stripe.net returns `DateTime`, used directly.
+- Verdict: SHIP WITH NOTES.
+
+### Build
+- `dotnet build ToastRevival.sln`: 0 warnings, 0 errors.
+- `npx tsc -p tsconfig.app.json --noEmit`: 0 errors. Vite build: clean.
 
 ### Agent Deployment
-- Anthony: D2-D3 (Stripe integration + license enforcement — payment code must be precise)
-- Abish: D1, D4-D6 (tier definitions, metering, onboarding flow — bounded tasks)
+- Anthony: D2-D3 backend (Stripe integration, license enforcement, migration, CsvHelper, AuthController fix) ✓
+- Abish-1: D1 service + D4 metering + D5 onboarding + D6 billing frontend ✓
+- Abish: Code Sweep — caught 2 HOLD findings (IServiceProvider lifetime, invoice date) ✓
+- Diana: Billing page design review — device usage bar and spacing approved ✓
 
 ---
 

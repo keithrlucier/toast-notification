@@ -321,6 +321,12 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Surface:** `src/ToastRevival.Api/Controllers/NotificationsController.cs::History`
 **Resolution:** `page` (default 1) and `pageSize` (default 25, clamped 1–100) query params added. `Skip/Take` applied server-side. Frontend's existing `notificationsApi.list(page, pageSize)` call now honored correctly.
 
+### INFO-M5-001 — **RESOLVED 2026-05-09 (M6)**
+
+**Resolved:** 2026-05-09 (M6). Template seeding in `AuthController.Register` now wrapped in try/catch with explicit `RollbackAsync` + clean 500 response: "Registration succeeded but template initialization failed. Contact support."
+
+---
+
 ### INFO-M5-001 (M6 — hardening) — No explicit error handling on template seeding in AuthController.Register
 
 **Filed:** 2026-05-09 (M5.A Code Sweep — Abish)
@@ -368,6 +374,12 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Document in M9 deployment notes. If privacy of notification images is ever required, move to a signed-URL pattern (Azure Blob SAS, S3 presigned). Not a concern for MSP-managed endpoint images.
 **Blocking:** No.
 
+### INFO-M5C-002 — **RESOLVED 2026-05-09 (M6)**
+
+**Resolved:** 2026-05-09 (M6). `IX_Notifications_Status_ScheduledAt` partial index added in M6Billing migration.
+
+---
+
 ### INFO-M5C-002 (M6+) — No index on (Status, ScheduledAt) for scheduler sweep
 **Filed:** 2026-05-09 (M5.C Code Sweep — Abish)
 **Surface:** `src/ToastRevival.Api/Services/NotificationQueueService.cs::EnqueueDueScheduledAsync`
@@ -382,6 +394,12 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Acceptable. Backend extension whitelist is the authoritative check.
 **Blocking:** No.
 
+### INFO-M5D-001 — **RESOLVED 2026-05-09 (M6)**
+
+**Resolved:** 2026-05-09 (M6). `CsvHelper` static class created in `Utilities/CsvHelper.cs`. `AuditController` and `NotificationsController` updated to use `CsvHelper.Cell()`. Private `CsvCell` methods removed from both controllers.
+
+---
+
 ### INFO-M5D-001 (low) — CsvCell helper duplicated
 
 **Filed:** 2026-05-09 (M5.D Code Sweep — Abish)
@@ -389,6 +407,12 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Issue:** `CsvCell` private static helper implemented identically in both controllers.
 **Fix:** Extract to `CsvHelper` static class in a `Utilities/` namespace at M6+.
 **Blocking:** No.
+
+### INFO-M5D-002 — **RESOLVED 2026-05-09 (M6)**
+
+**Resolved:** 2026-05-09 (M6). `IX_AuditLogs_Timestamp` index added in M6Billing migration.
+
+---
 
 ### INFO-M5D-002 (M6+) — No index on AuditLog.Timestamp
 
@@ -421,6 +445,40 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Issue:** `internal static` method on a controller is an unusual pattern. Creates implicit coupling between AuthController and TemplatesController.
 **Fix:** Extract to a `TemplateSeederService` or `DefaultTemplates` static class at M6+.
 **Blocking:** No. One caller only (AuthController.Register).
+
+### INFO-M6-001 (M9 — deploy doc) — Stripe keys are placeholder values in appsettings.json
+
+**Filed:** 2026-05-09 (M6 Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Api/appsettings.json`
+**Issue:** `Stripe:SecretKey`, `Stripe:WebhookSecret`, `Stripe:ProPriceId`, `Stripe:EnterprisePriceId` are placeholder strings. Production must override via environment variables: `Stripe__SecretKey`, `Stripe__WebhookSecret`, `Stripe__ProPriceId`, `Stripe__EnterprisePriceId`. BillingController checks for placeholder prefix and returns 503 — safe degradation.
+**Fix:** Document in M9 DEPLOY.md alongside existing JWT key guidance.
+**Blocking:** No. Test and production configs handled via env vars.
+
+### INFO-M6-002 (M9 scale) — SyncConsumedCountAsync on every plan fetch
+
+**Filed:** 2026-05-09 (M6 Code Sweep — Abish)
+**Surface:** `Controllers/BillingController.cs::Plan`
+**Issue:** `SyncConsumedCountAsync` executes one extra DB query per `GET /api/billing/plan` call. At MSP scale (infrequent admin page loads) acceptable.
+**Fix:** Add short-TTL in-memory cache keyed by tenantId at M9.
+**Blocking:** No.
+
+### INFO-M6-003 (M9 scale) — Invoice list makes live Stripe API call per request
+
+**Filed:** 2026-05-09 (M6 Code Sweep — Abish)
+**Surface:** `Controllers/BillingController.cs::Invoices`
+**Issue:** `InvoiceService.ListAsync` is a live Stripe API call on every request. No caching.
+**Fix:** Cache with 5-minute TTL per tenantId at M9.
+**Blocking:** No.
+
+### INFO-M6-004 (M7 design) — Onboarding.tsx welcome step uses emoji placeholder icons
+
+**Filed:** 2026-05-09 (M6 Code Sweep — Abish)
+**Surface:** `src/ToastRevival.Dashboard/src/pages/Onboarding.tsx`
+**Issue:** Welcome step uses emoji (🔔, 📋, 📦, 🚀). Diana's standing preference: no emojis in UI. These are placeholder scaffolding — Diana will provide SVG replacements with the M7 onboarding design spec.
+**Fix:** Replace with SVGs at M7.
+**Blocking:** No. Functional for internal testing.
+
+---
 
 ## Resolved
 

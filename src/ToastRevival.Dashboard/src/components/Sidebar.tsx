@@ -15,6 +15,7 @@ const ADMIN_ITEMS = [
   { to: '/moderation',        label: 'Moderation', icon: ModerationIcon },
   { to: '/users',             label: 'Users',      icon: UsersIcon },
   { to: '/audit',             label: 'Audit Log',  icon: AuditIcon },
+  { to: '/billing',           label: 'Billing',    icon: BillingIcon },
   { to: '/settings/api-keys', label: 'API Keys',   icon: ApiKeysIcon },
   { to: '/settings/tenant',   label: 'Settings',   icon: SettingsIcon },
 ];
@@ -256,6 +257,16 @@ function AuditIcon() {
       <path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <circle cx="13" cy="13" r="2.5" fill="currentColor" fillOpacity="0" stroke="currentColor" strokeWidth="1.5" />
       <path d="M12 13h2M13 12v2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function BillingIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="3.5" width="14" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M1 7h14" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="3" y="9.5" width="4" height="1.5" rx="0.75" fill="currentColor" />
     </svg>
   );
 }

@@ -62,10 +62,19 @@ public class AuthController : ControllerBase
             return BadRequest(result.Errors.Select(e => e.Description));
         }
 
-        // Seed 6 default notification templates for this tenant
-        foreach (var template in TemplatesController.BuildDefaultTemplates(tenant.Id))
-            _db.NotificationTemplates.Add(template);
-        await _db.SaveChangesAsync();
+        // Seed 6 default notification templates for this tenant.
+        // INFO-M5-001: if seeding fails the transaction rolls back cleanly.
+        try
+        {
+            foreach (var template in TemplatesController.BuildDefaultTemplates(tenant.Id))
+                _db.NotificationTemplates.Add(template);
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception)
+        {
+            await tx.RollbackAsync();
+            return StatusCode(500, "Registration succeeded but template initialization failed. Contact support.");
+        }
 
         await tx.CommitAsync();
 

@@ -11,6 +11,7 @@ using ToastRevival.Api.DTOs;
 using ToastRevival.Api.Hubs;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
+using ToastRevival.Api.Utilities;
 
 // Severity thresholds (D3): 0-1=Pass, 2-4=Review, 5-6=Block.
 
@@ -379,24 +380,19 @@ public class NotificationsController : ControllerBase
         foreach (var d in deliveries)
         {
             sb.AppendLine(string.Join(",",
-                CsvCell(d.Device?.DeviceName ?? ""),
-                CsvCell(d.DeviceId.ToString()),
-                CsvCell(d.Status.ToString()),
-                CsvCell(d.DeliveredAt?.ToString("o") ?? ""),
-                CsvCell(d.InteractedAt?.ToString("o") ?? ""),
-                CsvCell(d.Action ?? ""),
-                CsvCell(d.ErrorMessage ?? "")));
+                CsvHelper.Cell(d.Device?.DeviceName ?? ""),
+                CsvHelper.Cell(d.DeviceId.ToString()),
+                CsvHelper.Cell(d.Status.ToString()),
+                CsvHelper.Cell(d.DeliveredAt?.ToString("o") ?? ""),
+                CsvHelper.Cell(d.InteractedAt?.ToString("o") ?? ""),
+                CsvHelper.Cell(d.Action ?? ""),
+                CsvHelper.Cell(d.ErrorMessage ?? "")));
         }
 
         return sb.ToString();
     }
 
     private static string EscapeCsvTitle(string value) => value.Replace("\"", "\"\"");
-
-    private static string CsvCell(string value) =>
-        value.Contains(',') || value.Contains('"') || value.Contains('\n')
-            ? $"\"{value.Replace("\"", "\"\"")}\""
-            : value;
 
     private async Task<List<Guid>> ResolveTargetDeviceIds(SendNotificationRequest req, Guid tenantId)
     {

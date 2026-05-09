@@ -70,7 +70,7 @@ Build output: 0 errors, 1 cosmetic mspdbcmf warning (FIX-MSIX-003, pre-existing)
 
 3. **Flight to Store:**
    - Go to [partner.microsoft.com/dashboard](https://partner.microsoft.com/dashboard)
-   - Navigate to App ID `9P5L0MRMFRRF`
+   - Navigate to App ID `9PFD6004DVTN`
    - Start a new submission
    - Upload `ToastNotification.Agent-0.2.1.0.msix` (signed)
    - Set visibility to **Private** / hidden flight

@@ -144,6 +144,9 @@ builder.Services.AddSingleton<MfaService>();
 // M5.D export
 builder.Services.AddSingleton<IPdfExportService, PdfExportService>();
 
+// M6 licensing
+builder.Services.AddScoped<ILicenseService, LicenseService>();
+
 // CORS — dev allows any origin; production should lock this down via config
 builder.Services.AddCors(opts =>
     opts.AddDefaultPolicy(p =>

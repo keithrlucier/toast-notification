@@ -15,6 +15,7 @@ import Users from './pages/Users';
 import Analytics from './pages/Analytics';
 import TenantSettings from './pages/TenantSettings';
 import Assets from './pages/Assets';
+import AuditLog from './pages/AuditLog';
 
 const router = createBrowserRouter([
   { path: '/login',    element: <Login /> },
@@ -62,6 +63,14 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute requireAdmin>
             <Users />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/audit',
+        element: (
+          <ProtectedRoute requireAdmin>
+            <AuditLog />
           </ProtectedRoute>
         ),
       },

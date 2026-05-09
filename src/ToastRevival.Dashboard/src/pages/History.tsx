@@ -1,7 +1,72 @@
 import { Fragment, useEffect, useState } from 'react';
 import { notificationsApi, type NotificationHistoryItem } from '../api/notifications';
+import { auditApi } from '../api/audit';
 import StatusBadge from '../components/StatusBadge';
 import { ApiError } from '../api/client';
+
+function DeliveryExportMenu({
+  busy,
+  onExport,
+}: {
+  busy: boolean;
+  onExport: (fmt: 'csv' | 'pdf') => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        className="btn btn-ghost"
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        disabled={busy}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+      >
+        {busy ? (
+          <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
+        ) : (
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M7 1v8M4 6l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M2 11h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        )}
+        Export Report
+      </button>
+
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 10 }} onClick={() => setOpen(false)} />
+          <div style={{
+            position: 'absolute', right: 0, top: '100%', marginTop: 4,
+            background: 'var(--bg-tertiary)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 6,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            zIndex: 20,
+            minWidth: 140,
+            overflow: 'hidden',
+          }}>
+            {(['csv', 'pdf'] as const).map(fmt => (
+              <button
+                key={fmt}
+                onClick={() => { setOpen(false); onExport(fmt); }}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: '10px 14px', fontSize: 13, fontWeight: 500,
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-secondary)',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                {fmt === 'csv' ? 'Download CSV' : 'Download PDF'}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-US', {
@@ -22,11 +87,12 @@ function interactionPct(n: NotificationHistoryItem): string {
 
 export default function History() {
   const [notifications, setNotifications] = useState<NotificationHistoryItem[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState('');
-  const [page, setPage]         = useState(1);
-  const [search, setSearch]     = useState('');
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState('');
+  const [page, setPage]             = useState(1);
+  const [search, setSearch]         = useState('');
+  const [expanded, setExpanded]     = useState<string | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
 
   const PAGE_SIZE = 25;
 
@@ -143,21 +209,31 @@ export default function History() {
                   {expanded === n.id && (
                     <tr style={{ background: 'rgba(255,255,255,0.01)' }}>
                       <td colSpan={6} style={{ padding: '16px 24px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-                          <div>
-                            <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notification ID</div>
-                            <code style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{n.id}</code>
-                          </div>
-                          {n.sentAt && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, flex: 1 }}>
                             <div>
-                              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sent at</div>
-                              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{formatDateTime(n.sentAt)}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notification ID</div>
+                              <code style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{n.id}</code>
                             </div>
-                          )}
-                          <div>
-                            <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Target devices</div>
-                            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{n.targetDeviceCount}</div>
+                            {n.sentAt && (
+                              <div>
+                                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sent at</div>
+                                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{formatDateTime(n.sentAt)}</div>
+                              </div>
+                            )}
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Target devices</div>
+                              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{n.targetDeviceCount}</div>
+                            </div>
                           </div>
+                          <DeliveryExportMenu
+                            busy={exportingId === n.id}
+                            onExport={async fmt => {
+                              setExportingId(n.id);
+                              try { await auditApi.exportDeliveryReport(n.id, fmt); }
+                              finally { setExportingId(null); }
+                            }}
+                          />
                         </div>
                       </td>
                     </tr>

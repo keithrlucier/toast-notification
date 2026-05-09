@@ -5,10 +5,15 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using QuestPDF.Infrastructure;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.Hubs;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
+
+// Community license — free for organizations under $1M ARR. Upgrade to
+// Professional when billing warrants it.
+QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -135,6 +140,9 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationQueueS
 builder.Services.AddSingleton<IContentModerationService, ContentSafetyService>();
 builder.Services.AddScoped<IBlocklistService, BlocklistService>();
 builder.Services.AddSingleton<MfaService>();
+
+// M5.D export
+builder.Services.AddSingleton<IPdfExportService, PdfExportService>();
 
 // CORS — dev allows any origin; production should lock this down via config
 builder.Services.AddCors(opts =>

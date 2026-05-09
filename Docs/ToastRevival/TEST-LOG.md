@@ -1,5 +1,41 @@
 # ToastRevival - Test Log
 
+## 2026-05-09 (M5.D — Export)
+
+### Build Checks
+
+- `dotnet build ToastRevival.sln`: **0 warnings, 0 errors** (post M5.D — QuestPDF 2025.1.0 resolves and compiles clean).
+- `npx tsc -p tsconfig.app.json --noEmit` (strict): **0 errors** after pre-commit TS fix (removed unused `notificationId` prop from `DeliveryExportMenu`).
+- Vite production build: **clean** (708 modules, pre-existing Recharts chunk size warning unchanged).
+
+### Pre-Commit Fix
+- `PdfExportService.cs`: `log.UserId?.ToString()[..8] + "…" ?? "—"` — C# range indexer `[..8]` is not null-propagating. Patched to `log.UserId.HasValue ? log.UserId.Value.ToString()[..8] + "…" : "—"` before commit. NullReferenceException would have occurred at PDF generation time for any audit log entry where `UserId` is null (unauthenticated or background-service-generated entries).
+
+### New Backend Files
+- `Controllers/AuditController.cs` — `GET /api/audit` (paginated list, admin-only), `GET /api/audit/export?format=csv|pdf&days=N` (admin-only, no cap).
+- `Services/PdfExportService.cs` — QuestPDF Community document generation: A4 landscape audit log (teal header stripe, alternating white/#F5F7F9 rows) + A4 portrait delivery report (summary metrics + delivery table).
+- `ToastRevival.Api.csproj` — `QuestPDF 2025.1.0` added.
+- `Program.cs` — `QuestPDF.Settings.License = LicenseType.Community` (pre-builder), `IPdfExportService` singleton registered.
+- `Controllers/NotificationsController.cs` — `GET /api/notifications/{id}/report?format=csv|pdf` delivery report endpoint; `IPdfExportService` injected.
+
+### New Frontend Files
+- `api/audit.ts` — `auditApi.list()`, `auditApi.exportFile()`, `auditApi.exportDeliveryReport()`. All file downloads use fetch + `URL.createObjectURL` blob pattern (Authorization header preserved; no token in URL).
+- `pages/AuditLog.tsx` — Audit Log admin page. Time range selector (7/30/90d), paginated table (50/page), export dropdown (CSV/PDF), error handling.
+- `App.tsx` — `/audit` route added under `ProtectedRoute requireAdmin`.
+- `Sidebar.tsx` — `AuditIcon` + `{ to: '/audit', label: 'Audit Log' }` in `ADMIN_ITEMS`.
+- `pages/History.tsx` — `DeliveryExportMenu` component added in expanded row (CSV/PDF dropdown, blob download, per-row loading state).
+
+### Code Sweep Results (M5.D — Abish, SHIP WITH NOTES)
+
+**Pre-commit verifications:**
+- Tenant isolation on AuditController: global query filter on `AuditLogs` via `ITenantProvider` ✓.
+- Admin gate (`IsAdmin()` → Forbid 403) on both `List` and `Export` ✓.
+- Delivery report tenant isolation: `Notifications.FindAsync` returns NotFound for cross-tenant IDs (global filter) → deliveries never queried ✓.
+- QuestPDF license set before any document generation (program-level, before `builder.Build()`) ✓.
+- NullRef patched pre-commit (see above) ✓.
+
+**INFO items filed:** INFO-M5D-001 (CsvCell duplication), INFO-M5D-002 (AuditLog.Timestamp index), INFO-M5D-003 (CSV injection), INFO-M5D-004 (synchronous PDF generation).
+
 ## 2026-05-09 (M5.C — Asset Library + Notification Scheduling)
 
 ### Build Checks

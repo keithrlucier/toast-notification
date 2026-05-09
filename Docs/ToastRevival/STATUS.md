@@ -2,7 +2,7 @@
 
 > Repo / project codename: **ToastRevival** (internal). Product / user-facing brand: **Toast Notification** (toastnotification.com).
 
-Last updated: 2026-05-08 (M2.D)
+Last updated: 2026-05-09 (M5.D)
 
 ## Project State
 
@@ -18,13 +18,25 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **M0 D4: COMPLETE (2026-05-08).** MSI 0.3.1.0 signed and installed on Win11 lab; task State=Ready; toast fires; second local user account also received toast (BUILTIN\Users confirmed); uninstall removed task cleanly. FIX-MSIX-002 applied (manifest MinVersion 17763→19041). GPO/Intune testing deferred: behavior documented in CONTEXT.md, carry to M8 beta. See `EVIDENCE/2026-05-08-m0-d4-matrix-results.md`.
 
-**M0 D5: BUILD COMPLETE 2026-05-08 (pending Keith sign + Store submission).** MSIX `ToastNotification.Agent-0.2.1.0.msix` (63.82 MB, unsigned) built and verified. Three code changes shipped: (1) `uap5:StartupTask` extension added to manifest (MSIX/Store logon-launch parity with MSI Scheduled Task channel); (2) `TargetPlatformVersion=10.0.22621.0` baked into `build-msix.ps1` via command-line flag (FIX-MSIX-001 resolved — csproj PropertyGroup approach silently failed due to TFM override in late .targets import); (3) CONTEXT.md standing rules updated with discovery. Produced manifest verified: `MinVersion=10.0.19041.0`, `MaxVersionTested=10.0.22621.0`, all three extensions present. **Keith handoff:** sign the MSIX with Thales token, then flight to Partner Center listing 9P5L0MRMFRRF. Accept Developer Agreement if prompted.
+**M0 D5: BUILD COMPLETE 2026-05-08 (pending Keith sign + Store submission).** MSIX `ToastNotification.Agent-0.2.1.0.msix` (63.82 MB, unsigned) built and verified. Three code changes shipped: (1) `uap5:StartupTask` extension added to manifest (MSIX/Store logon-launch parity with MSI Scheduled Task channel); (2) `TargetPlatformVersion=10.0.22621.0` baked into `build-msix.ps1` via command-line flag (FIX-MSIX-001 resolved — csproj PropertyGroup approach silently failed due to TFM override in late .targets import); (3) CONTEXT.md standing rules updated with discovery. Produced manifest verified: `MinVersion=10.0.19041.0`, `MaxVersionTested=10.0.22621.0`, all three extensions present. **Keith handoff:** sign the MSIX with Thales token, then flight to Partner Center listing 9PFD6004DVTN. Accept Developer Agreement if prompted.
 
 **M1: COMPLETE 2026-05-08.** `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 8 / Npgsql / ASP.NET Identity / SignalR. All 8 deliverables shipped: scaffolding, multi-tenant data model with global query filters, JWT auth with user+device tokens, device registration API, notification send API with queue background service, SignalR hub with tenant/device groups, rate limiting, audit logging. `InitialCreate` migration generated. Build: 0 warnings, 0 errors. INFO-M1-001 through INFO-M1-006 logged (see FIX-LIST.md).
 
 **M2.A: COMPLETE 2026-05-09.** Agent ↔ Backend pipeline + HMAC. Carl sliced M2 at orientation. M2.A delivered D1 SignalR client + auto-reconnect `[0,2,5,10,30]`s, D2 toast rendering from backend payload (`ToastTemplateBuilder.BuildFromPayload` extends the M0A argv builder — no fork), D3 first-run device registration + atomic-write `DeviceConfig` storage + 30-min REST heartbeat ping, D4 HMAC-SHA256 payload verification (`Tenant.SigningKey` + `CryptographicOperations.FixedTimeEquals` constant-time compare), D5 `ReportDelivery` + `ReportInteraction` over the hub, plus INFO-D5-001 (session-local named mutex `Local\Toast2IT.ToastNotification.PrimaryWorker`) and INFO-MSIX-004-D (activation-handler short-circuit before SignalR + REST `/api/notifications/{id}/interactions` fallback endpoint). Agent grew 3 new files (`AgentClient.cs`, `DeviceConfig.cs`, `ToastPayload.cs`) and refactored `Program.cs` to a 3-mode entry (Activation / Diagnostic / Primary). Backend gained `Tenant.SigningKey` column + `AddTenantSigningKey` migration with backfill, payload signing in `NotificationQueueService.BuildSignedPayload`, and the new REST interaction endpoint. **Code Sweep returned SHIP WITH NOTES; FIX-M2A-001 patched pre-commit** (mutex prefix `Global\` → `Local\` to prevent multi-user-session collision regressing M0 D4 verification). 4 INFO items deferred (INFO-M2A-002 → M3, INFO-M2A-003/004 → M2.B, INFO-M2A-005 → M9). Build clean: 0 warnings + 0 errors solution-wide; MSIX smoke check intact (all M0 D5 manifest standing checks pass). See `EVIDENCE/2026-05-09-m2-a-agent-backend-pipeline.md`.
 
-**M2.B: COMPLETE 2026-05-09.** Missed catch-up + orphan recovery + agent dedup. **M2.C: COMPLETE 2026-05-08.** System tray icon (WinForms STA thread, 5 states, Diana spec colors) + MSI CLIENTID/SERVERURL properties → bootstrap.json via SetupMode. **M2.D: COMPLETE 2026-05-08.** Velopack 0.0.1298 auto-update integration — TrySelfRedirect pattern, 24h background check loop, registry enterprise toggle, tray Update Available menu item, build-release.ps1 pipeline. **All of M2 is complete.** Next: **M3 Security Hardening.**
+**M2.B: COMPLETE 2026-05-09.** Missed catch-up + orphan recovery + agent dedup. **M2.C: COMPLETE 2026-05-08.** System tray icon (WinForms STA thread, 5 states, Diana spec colors) + MSI CLIENTID/SERVERURL properties → bootstrap.json via SetupMode. **M2.D: COMPLETE 2026-05-08.** Velopack 0.0.1298 auto-update integration — TrySelfRedirect pattern, 24h background check loop, registry enterprise toggle, tray Update Available menu item, build-release.ps1 pipeline. **All of M2 is complete.**
+
+**M3: COMPLETE 2026-05-08 (commit 362f9d3).** Security hardening — Azure Content Safety text+image moderation pipeline, admin approval queue, broadcast gates (TargetType.All requires MFA-elevated JWT), TOTP MFA (OtpNet), tenant blocklists, DPAPI config encryption, WinVerifyTrust Authenticode check in TrySelfRedirect, EF migration M3SecurityHardening.
+
+**M4: COMPLETE 2026-05-08 (commit 016c4c9).** Admin Dashboard — Vite 6 + React 18 + TypeScript, full auth flow, device inventory, template gallery, notification composer, live Segoe UI preview panel, send/schedule UI with broadcast confirm modal, notification history.
+
+**M5.A: COMPLETE 2026-05-09 (commit 437dce4).** Template API, DeviceGroups API, history pagination fix, User Management page, API Keys page, analytics chart spec from Diana.
+
+**M5.B: COMPLETE 2026-05-09 (commit aabe739).** Delivery analytics (AnalyticsController + 3 aggregate endpoints + Recharts charts), Tenant Settings page (branding + notification defaults).
+
+**M5.C: COMPLETE 2026-05-09 (commit 6bd5cc7).** Asset Library (AssetsController, multipart upload, Azure Content Safety byte scan, UseStaticFiles), Notification Scheduling (PeriodicTimer 60s loop, startup backfill, ProcessAsync non-Queued guard).
+
+**M5.D: COMPLETE 2026-05-09 (commit pending).** Export (D7) — AuditController (list + CSV/PDF export, admin-only), NotificationsController delivery report per-notification (CSV/PDF), PdfExportService (QuestPDF Community, A4 landscape audit + A4 portrait delivery), AuditLog.tsx admin page, History.tsx export button. Next: **M6 — Licensing &amp; Subscription System.**
 
 Codex is also working on this project. Coordinate before running commands on the server during active installer windows.
 
@@ -76,7 +88,7 @@ See `CONTEXT.md` -> Server Infrastructure for full details.
 
 - M0 D2 (Win10 1809 install validation): no Win10 1809 lab machine on hand; deferred to M0 D4 GPO matrix.
 - M0 D4: GPO / domain / Intune / multi-user matrix. Apply `FIX-MSIX-002` first. Roll uninstall idempotency + 0.3.x → 0.3.y major-upgrade race validation into this matrix.
-- M0 D5: Build complete; **Keith signs + flights to 9P5L0MRMFRRF**. Diana curated tile assets needed before public expansion.
+- M0 D5: Build complete; **Keith signs + flights to 9PFD6004DVTN**. Diana curated tile assets needed before public expansion.
 - M0 D6: Document deployment findings + fallback mechanisms. Diana tile assets delivery.
 - M2 follow-up: detect `----AppNotificationActivated:` arg in `AgentOptions.Parse` and route to one-shot activation handler instead of falling through to a default Plain template re-send (INFO-MSIX-004-D).
 - M2 follow-up: HMAC payload verification, SignalR reconnect, missed notification catch-up.

@@ -271,8 +271,30 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 - Abish-1: D4+D6 frontend ✓
 - Abish: Code Sweep ✓
 
-### M5.D (Future)
-- **D7**: Export — audit logs, delivery reports (CSV/PDF)
+### M5.D: Export  **[COMPLETE 2026-05-09]**
+
+#### Deliverables (all closed)
+- **D7** [x]: Export — audit logs + delivery reports (CSV/PDF).
+  - Backend: `AuditController` — `GET /api/audit` (paginated list, admin-only) + `GET /api/audit/export?format=csv|pdf&days=7|30|90` (full-period download, admin-only).
+  - Backend: `NotificationsController` `GET /api/notifications/{id}/report?format=csv|pdf` — per-notification delivery report (all authenticated users).
+  - Backend: `PdfExportService` (QuestPDF Community) — audit log A4 landscape PDF + delivery report A4 portrait PDF. White background, teal header stripe, alternating rows.
+  - Frontend: `AuditLog.tsx` — paginated table, time-range selector (7/30/90d), export dropdown. Admin-only route `/audit`.
+  - Frontend: `History.tsx` — "Export Report" dropdown (CSV/PDF) in expanded notification row, blob download.
+  - `Sidebar.tsx` + `App.tsx` — Audit Log nav item added (admin section).
+
+#### INFO Items Filed
+- INFO-M5D-001: `CsvCell` helper duplicated in AuditController + NotificationsController. Extract to shared utility at M6+.
+- INFO-M5D-002: No index on `AuditLog.Timestamp`. Acceptable at MVP; add migration at M6+.
+- INFO-M5D-003: CSV injection risk in audit action strings — acceptable for admin-only MSP export. Sanitize at M9 if needed.
+- INFO-M5D-004: `PdfExportService.GeneratePdf()` synchronous — acceptable for infrequent admin export. Wrap in `Task.Run()` at M9 scale.
+
+#### Code Sweep
+- Pre-commit fix: `PdfExportService.cs` — `log.UserId?.ToString()[..8]` range indexer not null-safe; patched to ternary.
+- Verdict: SHIP WITH NOTES.
+
+#### Build
+- `dotnet build ToastRevival.sln`: 0 warnings, 0 errors.
+- `npx tsc -p tsconfig.app.json --noEmit`: 0 errors. Vite build: clean.
 
 ### Agent Deployment (M5.B planned)
 - Anthony: D1 backend (3 aggregate endpoints) + D1 frontend (Recharts charts)

@@ -382,6 +382,38 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Acceptable. Backend extension whitelist is the authoritative check.
 **Blocking:** No.
 
+### INFO-M5D-001 (low) — CsvCell helper duplicated
+
+**Filed:** 2026-05-09 (M5.D Code Sweep — Abish)
+**Surface:** `Controllers/AuditController.cs`, `Controllers/NotificationsController.cs`
+**Issue:** `CsvCell` private static helper implemented identically in both controllers.
+**Fix:** Extract to `CsvHelper` static class in a `Utilities/` namespace at M6+.
+**Blocking:** No.
+
+### INFO-M5D-002 (M6+) — No index on AuditLog.Timestamp
+
+**Filed:** 2026-05-09 (M5.D Code Sweep — Abish)
+**Surface:** `Data/AppDbContext.cs` — `AuditLog` entity model
+**Issue:** `GET /api/audit/export?days=90` does a full-table scan on `AuditLogs`. At MVP scale (thousands of entries) acceptable; at production scale (millions of rows across many tenants) this becomes a concern.
+**Fix:** Add `e.HasIndex(l => l.Timestamp)` in `OnModelCreating` + generate migration at M6+.
+**Blocking:** No.
+
+### INFO-M5D-003 (acceptable) — CSV injection risk in audit export
+
+**Filed:** 2026-05-09 (M5.D Code Sweep — Abish)
+**Surface:** `Controllers/AuditController.cs::BuildAuditCsv`
+**Issue:** Audit log action strings (e.g. `notification.send`) are server-generated and safe. However, if an attacker can control an `AuditLog.Action` value, they could inject formula characters (`=CMD()`). The export is admin-only, limiting blast radius.
+**Fix:** Acceptable for current scope. If user-supplied content ever reaches `Action` fields, prefix each cell with a tab character to neutralize formula injection. M9 review item.
+**Blocking:** No.
+
+### INFO-M5D-004 (M9 scale) — PdfExportService.GeneratePdf() is synchronous
+
+**Filed:** 2026-05-09 (M5.D Code Sweep — Abish)
+**Surface:** `Services/PdfExportService.cs` — both `GenerateAuditLogPdf` and `GenerateDeliveryReportPdf`
+**Issue:** QuestPDF's `.GeneratePdf()` is a synchronous call that blocks the ASP.NET request thread. For an MSP admin exporting a 90-day audit log of 10K+ entries, this could block for >500ms. Acceptable for infrequent admin export; would become a concern under concurrent export load.
+**Fix:** Wrap in `await Task.Run(() => _pdf.GenerateXxxPdf(...))` at the controller call site at M9 scale.
+**Blocking:** No.
+
 ### INFO-M5-003 (low) — TemplatesController.BuildDefaultTemplates couples Auth and Templates
 
 **Filed:** 2026-05-09 (M5.A Code Sweep — Abish)

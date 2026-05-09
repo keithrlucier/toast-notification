@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,6 +28,7 @@ public class NotificationsController : ControllerBase
     private readonly IHubContext<NotificationHub> _hub;
     private readonly IContentModerationService _moderation;
     private readonly IBlocklistService _blocklist;
+    private readonly IPdfExportService _pdf;
 
     public NotificationsController(
         AppDbContext db,
@@ -34,7 +36,8 @@ public class NotificationsController : ControllerBase
         IAuditService audit,
         IHubContext<NotificationHub> hub,
         IContentModerationService moderation,
-        IBlocklistService blocklist)
+        IBlocklistService blocklist,
+        IPdfExportService pdf)
     {
         _db = db;
         _queue = queue;
@@ -42,6 +45,7 @@ public class NotificationsController : ControllerBase
         _hub = hub;
         _moderation = moderation;
         _blocklist = blocklist;
+        _pdf = pdf;
     }
 
     [HttpPost]
@@ -326,6 +330,73 @@ public class NotificationsController : ControllerBase
 
         return NoContent();
     }
+
+    /// <summary>
+    /// GET /api/notifications/{id}/report?format=csv|pdf
+    /// Downloads a per-notification delivery report — one row per target device.
+    /// Available to all authenticated tenant users (not admin-only; standard MSP workflow).
+    /// </summary>
+    [HttpGet("{id:guid}/report")]
+    public async Task<IActionResult> DeliveryReport(Guid id, [FromQuery] string format = "csv")
+    {
+        var notification = await _db.Notifications.FindAsync(id);
+        if (notification is null) return NotFound();
+
+        var deliveries = await _db.NotificationDeliveries
+            .Include(d => d.Device)
+            .Where(d => d.NotificationId == id)
+            .OrderBy(d => d.DeliveredAt ?? d.CreatedAt)
+            .ToListAsync();
+
+        var tenantId   = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var tenantName = await _db.Tenants
+            .Where(t => t.Id == tenantId)
+            .Select(t => t.Name)
+            .FirstOrDefaultAsync() ?? "Unknown";
+
+        var shortId = id.ToString()[..8];
+
+        if (format.Equals("pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            var pdfBytes = _pdf.GenerateDeliveryReportPdf(notification, deliveries, tenantName);
+            return File(pdfBytes, "application/pdf", $"delivery-{shortId}.pdf");
+        }
+
+        var csv      = BuildDeliveryCsv(notification, deliveries);
+        var csvBytes = Encoding.UTF8.GetBytes(csv);
+        return File(csvBytes, "text/csv", $"delivery-{shortId}.csv");
+    }
+
+    private static string BuildDeliveryCsv(Notification notification, IList<NotificationDelivery> deliveries)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"# Delivery Report — {EscapeCsvTitle(notification.Title)}");
+        sb.AppendLine($"# Notification ID: {notification.Id}");
+        sb.AppendLine($"# Sent: {notification.SentAt?.ToString("o") ?? "N/A"}");
+        sb.AppendLine();
+        sb.AppendLine("DeviceName,DeviceId,Status,DeliveredAt,InteractedAt,Action,Error");
+
+        foreach (var d in deliveries)
+        {
+            sb.AppendLine(string.Join(",",
+                CsvCell(d.Device?.DeviceName ?? ""),
+                CsvCell(d.DeviceId.ToString()),
+                CsvCell(d.Status.ToString()),
+                CsvCell(d.DeliveredAt?.ToString("o") ?? ""),
+                CsvCell(d.InteractedAt?.ToString("o") ?? ""),
+                CsvCell(d.Action ?? ""),
+                CsvCell(d.ErrorMessage ?? "")));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string EscapeCsvTitle(string value) => value.Replace("\"", "\"\"");
+
+    private static string CsvCell(string value) =>
+        value.Contains(',') || value.Contains('"') || value.Contains('\n')
+            ? $"\"{value.Replace("\"", "\"\"")}\""
+            : value;
 
     private async Task<List<Guid>> ResolveTargetDeviceIds(SendNotificationRequest req, Guid tenantId)
     {

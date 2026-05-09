@@ -241,6 +241,7 @@ Submit Notification
 - Every notification: sender, content, targets, moderation scores, delivery status
 - 90-day minimum retention (configurable)
 - Exportable for compliance/incident response
+- **Tenant scoping rule (M8.C)**: `AuditLog` has no global query filter — the PlatformAdmin `SystemController` needs the cross-tenant view. Every per-tenant controller that reads `AuditLog` must scope by `User.tenantId` claim explicitly. FIX-M8C-001 (2026-05-09) caught the missing filter on `AuditController.List` and `AuditController.Export`. Composite `(TenantId, Timestamp)` index supports the predicate efficiently. Standing sweep check: "Does every entity without a global query filter have an explicit tenantId predicate at every per-tenant controller read site?"
 
 ## Agent Architecture (Windows)
 

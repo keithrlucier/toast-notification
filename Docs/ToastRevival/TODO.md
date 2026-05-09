@@ -2,11 +2,13 @@
 
 ## Current Reality
 
-Project status: **M0A through M8.B ALL COMPLETE. M8.B COMPLETE 2026-05-09 — Load harness + fixture refactor shipped.** New `tests/ToastRevival.Api.Tests` files at M8.B: `LoadFixture.cs` (collection-scoped shared `ApiTestFactory` + `Respawner` snapshot — closes INFO-M8A-002), `LoadHarness.cs` (DB-scope tenant/device seeding + concurrent SignalR fanout runner with p50/p95/p99 reporter), `LoadTests.cs` (default 100-device CI-fast scenario asserts p95 < 5s; opt-in 1,000-device gated on `TOAST_TEST_RUN_LOAD_1K=1`; sustained-burst saturation drain). `PostgresFixture` gained a friendly Docker pre-flight (closes INFO-M8A-001). `EndToEndNotificationTests` refactored to consume the shared `LoadFixture`. M8.A (backend test foundation, `tests/ToastRevival.Api.Tests` xUnit + WebApplicationFactory + Testcontainers PostgreSQL) closed earlier same day. Production code is unchanged — M8.B is test-infrastructure only.
+Project status: **M0A through M8.C ALL COMPLETE. M8.C COMPLETE 2026-05-09 — Security pen-test + WebSocket variant + reg-path load shipped.** Four new test files: `SecurityHarness.cs` (seed + JWT forge), `SecurityTests.cs` (20 [Fact] probes across tenant-isolation, auth-bypass, content-injection, privilege-escalation), `WebSocketTransportTests.cs` (closes INFO-M8A-003 via `factory.Server.CreateWebSocketClient` + `SkipNegotiation=true`), `RegistrationLoadTests.cs` (closes INFO-M8B-002 via env-gated `TOAST_TEST_RUN_REGISTRATION_LOAD=1`, 8 concurrent registrations against fresh factory). **FIX-M8C-001 caught in-milestone**: AuditController.List + Export were not scoping audit log queries by caller's tenantId, leaking cross-tenant audit rows to any tenant admin. Patched in same commit — both endpoints now filter by `User.tenantId` claim before timestamp range. Pre-commit cleanup commit (`8ff8e59`) consolidated 16 stray screenshot PNGs from prior milestones into `Docs/ToastRevival/EVIDENCE/screenshots-2026-05-09/` and gitignored `.playwright-mcp/`.
+
+M8.B (load harness + fixture refactor + Docker pre-flight + EndToEndNotificationTests refactor to shared LoadFixture) and M8.A (backend test foundation, xUnit + WebApplicationFactory + Testcontainers PostgreSQL + first E2E scenario) both closed earlier same day.
 
 M7.D earlier same day shipped SEO + LLM-discovery layer (`llms.txt`, `robots.txt`, `sitemap.xml`, per-page JSON-LD via the new `useSeo` hook, favicon set, 1200×630 OG card). M7.A/B/C earlier shipped marketing site rebuilt corporate-grade + public docs hub. Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt.
 
-**Next milestone: M8.C** — security pen-test surface (D5: tenant-isolation probes, auth-bypass attempts, content-injection, privilege escalation) plus the WebSocket-transport hub variant test (closes INFO-M8A-003) plus the env-gated registration-path load scenario (INFO-M8B-002). Then M8.D (beta program coordination — D6/D7). D1/D2/D3 (Store / MSI / Intune Windows-side E2E) wait on Keith's lab + signed-package flight.
+**Next milestone: M8.D** — beta program coordination (D6: invite 3-5 MSP partners; D7: bug fix cycle from beta feedback). Keith-driven outreach. D1/D2/D3 (Store / MSI / Intune Windows-side E2E) wait on Keith's lab + signed-package flight.
 
 **Codex handoff tracks closed 2026-05-09:**
 - Pricing v2 shipped: single Standard plan, $0.22/device/month, 100-device monthly floor ($22), 14-day Stripe trial, no Free/Pro/Enterprise plan picker.
@@ -188,13 +190,14 @@ All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 
 - [x] `EndToEndNotificationTests` refactored to consume the shared `LoadFixture` — both test classes amortize startup.
 - [x] Latency capture from POST `/api/notifications` dispatch to per-device `ReceiveNotification` arrival; ReportDelivery loop at scale deferred to M8.C.
 
-### M8.C — Security pen-test + transport variant (next session)
-- [ ] D5: tenant-isolation probes (cross-tenant device read/write, hub group leakage, audit log fence).
-- [ ] D5: auth bypass attempts (expired JWT, swapped tenantId claim, malformed device JWT, missing-MFA broadcast).
-- [ ] D5: content injection (XSS in notification body, oversized payload, unicode boundary cases).
-- [ ] D5: privilege escalation (Technician self-grant Admin, Admin self-grant SuperAdmin, BYO-platformAdmin claim).
-- [ ] WebSocket-transport hub variant test (closes INFO-M8A-003) using `factory.Server.CreateWebSocketClient()` to exercise the `Program.cs:65-75 OnMessageReceived` query-string JWT path.
-- [ ] Env-gated registration-path load scenario (INFO-M8B-002) for completeness.
+### M8.C — Security pen-test + transport variant — **COMPLETE 2026-05-09**
+- [x] D5: tenant-isolation probes — 6 [Fact]s: device list/byId, notification send target resolution, pending catch-up scope, audit list (FIX-M8C-001 regression test), hub group event isolation.
+- [x] D5: auth bypass attempts — 5 [Fact]s: expired JWT, wrong-key-signed forged platformAdmin claim, missing-deviceId device JWT, user JWT on device-only endpoint, missing-MFA broadcast.
+- [x] D5: content injection — 4 [Fact]s: XSS-in-body persists raw, oversized title rejected by `[MaxLength(64)]`, unicode boundary round-trips clean, `</script>` body delivers intact via hub fanout.
+- [x] D5: privilege escalation — 5 [Fact]s: technician invite returns 403, admin own-role returns 400, admin cross-tenant user returns 404, technician >100-device broadcast returns 403, admin without platformAdmin claim returns 403 on SystemController.
+- [x] WebSocket-transport hub variant test — closes INFO-M8A-003 via `factory.Server.CreateWebSocketClient()` + `SkipNegotiation=true` exercising the `Program.cs:65-75 OnMessageReceived` query-string JWT path.
+- [x] Env-gated registration-path load scenario — closes INFO-M8B-002 via `TOAST_TEST_RUN_REGISTRATION_LOAD=1`, 8 concurrent registrations on fresh factory with ConsumedCount + DeviceId-uniqueness assertions.
+- [x] FIX-M8C-001 caught in-milestone — AuditController.List + Export now scope by caller's tenantId claim, closing cross-tenant audit log leak.
 
 ### M8.D — Beta program (Keith-driven)
 - [ ] D6: invite 3–5 MSP partners — Keith identifies and contacts.

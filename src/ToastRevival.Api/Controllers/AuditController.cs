@@ -38,12 +38,16 @@ public class AuditController : ControllerBase
     {
         if (!IsAdmin()) return Forbid();
 
+        // FIX-M8C-001: AuditLog has no global query filter (PlatformAdmin
+        // SystemController needs the cross-tenant view). Per-tenant audit
+        // endpoints must scope to the caller's tenantId explicitly.
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
         var p    = Math.Max(1, page);
         var size = Math.Clamp(pageSize, 1, 100);
 
         var logs = await _db.AuditLogs
-            .Where(l => l.Timestamp >= since)
+            .Where(l => l.TenantId == tenantId && l.Timestamp >= since)
             .OrderByDescending(l => l.Timestamp)
             .Skip((p - 1) * size)
             .Take(size)
@@ -73,14 +77,17 @@ public class AuditController : ControllerBase
     {
         if (!IsAdmin()) return Forbid();
 
+        // FIX-M8C-001: scope export to caller's tenantId (AuditLog has no
+        // global query filter; PlatformAdmin SystemController is the only
+        // cross-tenant audit view).
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
 
         var logs = await _db.AuditLogs
-            .Where(l => l.Timestamp >= since)
+            .Where(l => l.TenantId == tenantId && l.Timestamp >= since)
             .OrderByDescending(l => l.Timestamp)
             .ToListAsync();
 
-        var tenantId   = Guid.Parse(User.FindFirstValue("tenantId")!);
         var tenantName = await _db.Tenants
             .Where(t => t.Id == tenantId)
             .Select(t => t.Name)

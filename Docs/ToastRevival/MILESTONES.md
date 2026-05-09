@@ -418,7 +418,7 @@ Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplica
 - **D2**: End-to-end test: MSI/RMM install → same flow (Keith-lab)
 - **D3**: End-to-end test: Intune LOB deploy → same flow (Keith-lab)
 - **D4** [x **COMPLETE 2026-05-09 (M8.B)**]: Load harness — concurrent SignalR clients, single-tenant fanout latency percentiles (p50/p95/p99), queue saturation drain. Default 100-device CI-fast scenario asserts every device receives a signed payload within a 5s p95 budget; opt-in 1,000-device variant gated on `TOAST_TEST_RUN_LOAD_1K=1` for local measurement. Sustained-burst scenario verifies the unbounded `Channel<Guid>` in `NotificationQueueService` drains cleanly across 5×30 = 150 deliveries with no `Failed`/`PartialFailure` rows. Closes M8.A carry-forward INFO items: INFO-M8A-001 (PostgresFixture Docker pre-flight) and INFO-M8A-002 (ApiTestFactory class-scoped fixture share). See `EVIDENCE/2026-05-09-m8b-load-harness.md`.
-- **D5**: Security penetration testing — tenant isolation, auth bypass, content injection, privilege escalation. WebSocket-transport hub variant test (closes INFO-M8A-003) lands here.
+- **D5** [x **COMPLETE 2026-05-09 (M8.C)**]: Security penetration testing — tenant isolation, auth bypass, content injection, privilege escalation. WebSocket-transport hub variant test (closes INFO-M8A-003) and env-gated registration-path load scenario (closes INFO-M8B-002) shipped alongside. FIX-M8C-001 (cross-tenant audit log leak) caught in-milestone and patched. See `EVIDENCE/2026-05-09-m8c-pen-test.md`.
 - **D6**: Beta program — invite 3-5 MSP partners for real-world testing
 - **D7**: Bug fix cycle based on beta feedback
 
@@ -469,9 +469,34 @@ Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplica
 - Diana: not engaged (backend-only milestone).
 - Carl: scope-slicing decision (D4 lands first, D5 holds for M8.C with WebSocket-transport variant), test-sizing call (default 100, opt-in 1,000), pre-seed-vs-register-endpoint call.
 
+### M8.C Closure (2026-05-09) — Security Pen-Test + WebSocket Variant + Reg-Path Load
+
+- 22 new test [Fact]s shipped across 4 new test files. Three deliverables retired in one slice: D5 security pen-test, INFO-M8A-003 (WebSocket-transport hub variant), INFO-M8B-002 (registration-path load scenario).
+- **FIX-M8C-001 caught in-milestone and patched.** AuditController.List + AuditController.Export had no `tenantId` filter — `AuditLog` is the one entity intentionally without a global query filter (PlatformAdmin SystemController needs the cross-tenant view), and the per-tenant audit endpoints were leaking other tenants' audit rows to any authenticated tenant admin. Both endpoints now extract `tenantId` from the JWT claim and add `.Where(l => l.TenantId == tenantId)` before the timestamp range filter. Composite `(TenantId, Timestamp)` index already exists at AppDbContext line 127. Single regression test (`TenantIsolation_AuditList_DoesNotLeakOtherTenantsRows`) seeds two tenants' audit rows and asserts only own-tenant data returns.
+- New `SecurityHarness` static helper exposes `SeedTenantAsync(factory, role, deviceCount, isPlatformAdmin)` returning a `SeededPenTenant` record (Tenant + Admin user + tokens + devices). Distinct from `LoadHarness` in two ways: role is configurable (Technician/Admin/SuperAdmin probes) and the seeded `Tenant` + `AppUser` rows are exposed for tests that need to mutate state. Plus `ForgeUserJwt(factory, claims, expiresAt, signingKeyOverride, issuerOverride, audienceOverride)` for negative paths (expired tokens, wrong-key forgeries, missing claims) — the production `TokenService` reads `IsPlatformAdmin` from the DB row so it cannot mint forged tokens for negative tests.
+- New `SecurityTests` class (20 [Fact]s, organized by lane via `// ─── X ───` regions):
+  - **Tenant Isolation (6)**: `DeviceList_FiltersToOwnTenant`, `DeviceGetById_ReturnsNotFoundForOtherTenant`, `NotificationSendTargetingOtherTenantsDevices_ResolvesToZero`, `PendingEndpoint_DeviceFromOtherTenantSeesNothing`, `AuditList_DoesNotLeakOtherTenantsRows` (FIX-M8C-001 regression test), `HubDeviceConnectedEvent_DoesNotLeakAcrossTenantGroups`.
+  - **Auth Bypass (5)**: `ExpiredUserJwt_Returns401`, `JwtSignedWithWrongKey_Returns401`, `DeviceJwtMissingDeviceIdClaim_ReturnsUnauthorized_OnPending`, `UserJwtOnDevicePendingEndpoint_ReturnsUnauthorized`, `BroadcastToAllWithoutMfaClaim_Returns403`.
+  - **Content Injection (4)**: `XssInBody_PersistsRawAndSurvivesSigning`, `OversizedTitle_RejectedByModelValidation` (10 KB title vs `[MaxLength(64)]`), `UnicodeBoundary_RoundTripsClean` (emoji + RTL + ZWJ + replacement char), `ScriptCloseTagInBody_PersistsRawAndDeliversIntactOverHub` (exercises production payload-building via hub fanout, JSON parses cleanly).
+  - **Privilege Escalation (5)**: `TechnicianInviteUser_Returns403`, `AdminChangingOwnRole_Returns400`, `AdminTargetingOtherTenantUser_Returns404` (cross-tenant user role change masked by Users query filter), `TechnicianBroadcastOver100Devices_Returns403`, `AdminWithoutPlatformAdminClaim_Returns403_OnSystemTenants`.
+- New `WebSocketTransportTests` (1 [Fact]): `WebSocket_HubAuthenticatesViaQueryStringAccessToken_AndReceivesNotification`. Uses `factory.Server.CreateWebSocketClient()` + `SkipNegotiation = true` + `Transports = HttpTransportType.WebSockets` to hit the hub URL directly with a WebSocket upgrade and no Authorization header. The only auth channel is the `access_token` query string — exactly the path `JwtBearerEvents.OnMessageReceived` at `Program.cs:65-75` reads. Validates a notification round-trips the WebSocket transport with HMAC verify. **Closes INFO-M8A-003.**
+- New `RegistrationLoadTests` (1 [Fact], env-gated `TOAST_TEST_RUN_REGISTRATION_LOAD=1`): `Registration_ConcurrentBurst_AllSucceed_NoCollisions_ConsumedCountAccurate`. Stands up its own `ApiTestFactory` against the shared `PostgresFixture` for a fresh rate-limit window — the `device-per-hour` policy partitions on `RemoteIpAddress?.ToString() ?? "anon"` for unauthenticated registrations, so a shared factory would leak budget from other tests. Issues 8 concurrent `POST /api/devices/register` calls (sized below the 10/hr `"anon"` partition cap with retry headroom), asserts all 200 OK with unique DeviceIds, and verifies `Tenant.ConsumedCount == 8` to catch any concurrent-write loss in the licensing path. **Closes INFO-M8B-002.**
+- Pre-M8.C cleanup commit (`8ff8e59`): consolidated 16 stray screenshot artifacts from prior milestones (M5 smoke, M7.B preview, M7.C/M7.D prod verification, Track A) at the repo root into `Docs/ToastRevival/EVIDENCE/screenshots-2026-05-09/`, added `.playwright-mcp/` to `.gitignore`, and committed the Codex-track admin/platform/billing closeout note that had been sitting unstaged in EVIDENCE/. Diff hygiene before pen-test work, not after.
+- Build: `dotnet build` on the API + tests projects clean (0 warnings, 0 errors) once the M8.B Defender workaround is applied (`-p:_MvcTestingTasksAssembly=/tmp/m8c-tasks/Microsoft.AspNetCore.Mvc.Testing.Tasks.dll`). CI runner (Linux Ubuntu) is the verification gate (M8.A/M8.B precedent — INFO-M8B-003 stands).
+- Banned-terms grep clean across all four new test files (zero hits on customer-facing prohibited terms or team-name leaks).
+- New M8.C standing sweep check (Carl): **"Does every entity without a global query filter have an explicit tenantId predicate at every per-tenant controller read site?"** `AuditLog` is the canonical "read by both PlatformAdmin and tenant admins" table and it bit us. Future tables of the same shape (audit-log style, cross-tenant analytics, etc.) need this check applied at controller review.
+- INFO items:
+  - **INFO-M8C-001** (open, M9 polish): `TenantIsolation_HubDeviceConnectedEvent_DoesNotLeakAcrossTenantGroups` uses a 500ms `Task.Delay` for cross-connection event propagation. Could flake on a slow CI runner. M9 candidate: convert to predicate-poll with a 5s timeout instead.
+
+### Agent Deployment (M8.C)
+- Anthony: full implementation (4 new test files, AuditController patch) — single-author shape consistent with M8.A and M8.B.
+- Abish: significant-scope Code Sweep across 5 files. SHIP WITH NOTES verdict, 1 INFO carry-forward, 0 HOLD.
+- Diana: not engaged (backend-only milestone).
+- Carl: scope-slicing decision (cleanup commit before pen-test work, FIX-M8C-001 caught and patched same milestone instead of deferred), AuditLog query-filter design call (PlatformAdmin needs cross-tenant; per-tenant controllers must filter explicitly), test-fixture-vs-shared-factory call on RegistrationLoadTests (own factory for rate-limit isolation).
+
 ### Agent Deployment (Future M8 Slices)
-- Anthony: D5 security probes + WebSocket-transport variant (M8.C), D1/D2/D3 end-to-end on Keith's lab once signed packages land
-- Abish: D5 / D6-D7 (security probes are scripted, beta coordination is process work) + Code Sweep all slices
+- Anthony: D1/D2/D3 end-to-end on Keith's lab once signed packages flight to Partner Center
+- Abish: D6/D7 (beta coordination is process work) + Code Sweep all slices
 
 ---
 

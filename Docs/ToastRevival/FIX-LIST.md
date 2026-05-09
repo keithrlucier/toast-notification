@@ -2,6 +2,18 @@
 
 ## Open Issues
 
+### FIX-M8C-001 — **RESOLVED 2026-05-09 (M8.C)** (Cross-tenant audit log leak)
+
+**Filed:** 2026-05-09 during M8.C orientation (Carl spotted the missing tenantId filter while mapping pen-test surfaces).
+**Surface:** `src/ToastRevival.Api/Controllers/AuditController.cs` (`List` endpoint at line 33–63, `Export` endpoint at line 70–101).
+**Symptom:** Both per-tenant audit endpoints queried `_db.AuditLogs.Where(l => l.Timestamp >= since)` with no tenantId predicate. The `AuditLog` entity has no global query filter — by design, the PlatformAdmin `SystemController` needs cross-tenant visibility for the platform-wide audit view (see `AppDbContext.cs:123-129` comment). Per-tenant controllers were therefore returning every tenant's audit rows to any authenticated tenant admin. Reproducible: seed two tenants, write one audit row per tenant via `_audit.LogAsync`, hit `/api/audit` as Tenant A's admin → Tenant B's row appears in the response.
+**Fix applied:** Both endpoints now extract `tenantId = Guid.Parse(User.FindFirstValue("tenantId")!)` from the JWT claim and add `.Where(l => l.TenantId == tenantId && l.Timestamp >= since)` before the timestamp range filter. Same extraction pattern already in use elsewhere in the controller (Export's tenantName lookup). Composite `(TenantId, Timestamp)` index already exists at `AppDbContext.cs:127`, so the added predicate sits cleanly on an indexed column.
+**Verification:** `tests/ToastRevival.Api.Tests/SecurityTests.cs::TenantIsolation_AuditList_DoesNotLeakOtherTenantsRows` seeds A + B audit rows and asserts Tenant A's response contains A's action string and not B's. Build clean (0 warnings, 0 errors).
+**New standing rule:** Code Sweep Step 5 now includes "Does every entity without a global query filter have an explicit tenantId predicate at every per-tenant controller read site?" `AuditLog` is the canonical "read by both PlatformAdmin and tenant admins" table; future tables of the same shape need this check applied at controller review.
+
+### INFO-M8C-001 (open, M9 polish)
+`tests/ToastRevival.Api.Tests/SecurityTests.cs::TenantIsolation_HubDeviceConnectedEvent_DoesNotLeakAcrossTenantGroups` uses a 500ms `Task.Delay` to give SignalR's `OnConnectedAsync` event fan-out a window before asserting Tenant A's connection didn't observe Tenant B's `DeviceConnected`. Could flake on a slow CI runner with high context-switch contention. M9 candidate: convert to a predicate-poll loop with a 5-second timeout, asserting `aReceived` stays empty for the full window — same shape `EndToEndNotificationTests.PollUntil` already uses for delivery-status assertions.
+
 ### INFO-M1-004 — **RESOLVED 2026-05-09 (M8.A)** (Zero automated tests in backend)
 
 **Filed:** 2026-05-08 during M1 close (carry-forward across M2–M7).
@@ -16,9 +28,9 @@
 
 **Resolution:** New `LoadFixture` (collection-scoped via `LoadCollection`) owns one `ApiTestFactory` instance plus a `Respawner` snapshot of the empty post-migration schema. Both `EndToEndNotificationTests` and the new `LoadTests` consume the shared fixture. Per-test isolation is preserved via `_load.ResetAsync()` calls at the top of every test method (truncates non-Identity tables back to the snapshot in milliseconds). The M8.A pattern of building a fresh factory per test is preserved for connection strings that don't support the Respawner DDL truncation path (Respawner stays null, `ResetAsync` becomes a no-op, tests still pass on fresh-GUID isolation).
 
-### INFO-M8A-003 (open, M8.C candidate)
+### INFO-M8A-003 — **RESOLVED 2026-05-09 (M8.C)**
 
-The M8.A E2E scenario and the M8.B load harness both force SignalR `LongPolling` transport because in-process TestServer does not speak WebSockets. Production agents use WebSockets via `Microsoft.AspNetCore.SignalR.Client` default negotiation. The query-string JWT path (`Program.cs:65-75 — JwtBearerEvents.OnMessageReceived` reading `Query["access_token"]` for `/hubs` paths) is therefore not exercised. Add a WebSocket-transport variant test in M8.C alongside the auth-bypass / tenant-isolation pen-test work using `factory.Server.CreateWebSocketClient()` to cover this seam.
+**Resolution:** New `tests/ToastRevival.Api.Tests/WebSocketTransportTests.cs` shipped at M8.C with `WebSocket_HubAuthenticatesViaQueryStringAccessToken_AndReceivesNotification`. Uses `factory.Server.CreateWebSocketClient()` plus `Transports = HttpTransportType.WebSockets` plus `SkipNegotiation = true` to drive the SignalR client straight at `/hubs/notifications` over a WebSocket upgrade with no Authorization header. The only authentication channel is the `access_token` query string — exactly the path `JwtBearerEvents.OnMessageReceived` (`Program.cs:65-75`) reads. Validates a notification round-trips the WebSocket transport with HMAC verify against the seeded tenant signing key.
 
 ### INFO-M8A-004 (open, no action)
 
@@ -32,9 +44,9 @@ The M8.A E2E scenario and the M8.B load harness both force SignalR `LongPolling`
 
 `tests/ToastRevival.Api.Tests/LoadTests.cs::Fanout_To_DefaultDeviceCount_DeliversWithinLatencyBudget` asserts `result.P95Ms < 5000` as a behavioral smoke. The threshold is a generous initial budget chosen without CI-runner data — it should be tightened (or replaced with a regression-tracking percentile) once the test has accumulated 10+ green runs on the GitHub-hosted Ubuntu runner. M8.C or M9 candidate: capture a rolling p95 baseline as a workflow-published artifact, then assert that new runs land within ±20% of the rolling median.
 
-### INFO-M8B-002 (open, M8.C candidate)
+### INFO-M8B-002 — **RESOLVED 2026-05-09 (M8.C)**
 
-The M8.B load harness pre-seeds devices via DB scope and JWT minting, skipping `POST /api/devices/register`. This is correct for fanout-path testing — the registration path is covered by M8.A's E2E test, and the rate-limited unauthenticated `device-per-hour` policy would cap an anon-IP burst at 10/hr (TestServer presents a single `RemoteIpAddress`-or-`anon` partition). M8.C should add a complementary load scenario that registers devices through the public endpoint at a sustainable pace (i.e. with `TOAST_TEST_RUN_REGISTRATION_LOAD=1` env-gated) to validate the registration-path under sustained load with real Stripe-quantity-sync calls disabled.
+**Resolution:** New `tests/ToastRevival.Api.Tests/RegistrationLoadTests.cs` shipped at M8.C with `Registration_ConcurrentBurst_AllSucceed_NoCollisions_ConsumedCountAccurate`. Stands up its own `ApiTestFactory` against the shared `PostgresFixture` for a fresh rate-limit window (the `device-per-hour` policy partitions on `RemoteIpAddress?.ToString() ?? "anon"` for unauthenticated registrations, so a shared factory would leak budget from prior tests). Issues 8 concurrent `POST /api/devices/register` calls (sized below the 10/hr `"anon"` partition cap with retry headroom), asserts all succeed with unique DeviceIds, and verifies `Tenant.ConsumedCount == 8` to catch any concurrent-write loss in the licensing path. Opt-in via `TOAST_TEST_RUN_REGISTRATION_LOAD=1` — same env-gating pattern M8.B established for the 1,000-device fanout variant.
 
 ### INFO-M8B-003 (open, no action — environmental)
 

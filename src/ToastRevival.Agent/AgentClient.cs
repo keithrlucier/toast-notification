@@ -7,6 +7,15 @@ using Microsoft.Windows.AppNotifications;
 
 namespace ToastRevival.Agent;
 
+internal enum AgentConnectionState
+{
+    Connecting,
+    Connected,
+    Reconnecting,
+    Disconnected,
+    Error,
+}
+
 /// <summary>
 /// First-run device registration via REST.
 /// </summary>
@@ -88,6 +97,8 @@ internal sealed class AgentHubClient : IAsyncDisposable
     /// </summary>
     private static readonly TimeSpan DedupWindow = TimeSpan.FromHours(1);
 
+    public event EventHandler<AgentConnectionState>? ConnectionStateChanged;
+
     private readonly DeviceConfig _config;
     private readonly HubConnection _hub;
     private readonly HttpClient _http;
@@ -142,11 +153,13 @@ internal sealed class AgentHubClient : IAsyncDisposable
         _hub.Reconnecting += ex =>
         {
             DiagLog.Write($"Hub reconnecting: {ex?.GetType().Name}: {ex?.Message}");
+            ConnectionStateChanged?.Invoke(this, AgentConnectionState.Reconnecting);
             return Task.CompletedTask;
         };
         _hub.Reconnected += async id =>
         {
             DiagLog.Write($"Hub reconnected: connectionId={id}");
+            ConnectionStateChanged?.Invoke(this, AgentConnectionState.Connected);
             // M2.B: drain anything sent while we were disconnected. Fire-and-forget
             // semantics — do not block the SignalR client's event pump.
             try
@@ -161,6 +174,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
         _hub.Closed += ex =>
         {
             DiagLog.Write($"Hub closed: {ex?.GetType().Name}: {ex?.Message}");
+            ConnectionStateChanged?.Invoke(this, AgentConnectionState.Disconnected);
             return Task.CompletedTask;
         };
 
@@ -170,8 +184,10 @@ internal sealed class AgentHubClient : IAsyncDisposable
     public async Task StartAsync(CancellationToken ct)
     {
         DiagLog.Write($"Hub starting: deviceId={_config.DeviceId}");
+        ConnectionStateChanged?.Invoke(this, AgentConnectionState.Connecting);
         await _hub.StartAsync(ct);
         DiagLog.Write($"Hub started: state={_hub.State}; connectionId={_hub.ConnectionId}");
+        ConnectionStateChanged?.Invoke(this, AgentConnectionState.Connected);
 
         _pingLoop = Task.Run(() => RunPingLoopAsync(_shutdown.Token));
 
@@ -186,6 +202,31 @@ internal sealed class AgentHubClient : IAsyncDisposable
         catch (Exception ex)
         {
             DiagLog.Write($"Catch-up after StartAsync failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Manual reconnect triggered from the tray icon context menu. Stops the hub
+    /// cleanly (fires Closed → Disconnected), re-enters Reconnecting state, restarts,
+    /// and runs a catch-up pass on success.
+    /// </summary>
+    public async Task ReconnectAsync()
+    {
+        try
+        {
+            DiagLog.Write("ReconnectAsync: manual reconnect initiated.");
+            await _hub.StopAsync(_shutdown.Token);
+            ConnectionStateChanged?.Invoke(this, AgentConnectionState.Reconnecting);
+            await _hub.StartAsync(_shutdown.Token);
+            DiagLog.Write("ReconnectAsync: hub restarted.");
+            ConnectionStateChanged?.Invoke(this, AgentConnectionState.Connected);
+            try { await RunCatchupAsync(_shutdown.Token).ConfigureAwait(false); }
+            catch (Exception ex) { DiagLog.Write($"ReconnectAsync catch-up: {ex.GetType().Name}: {ex.Message}"); }
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"ReconnectAsync failed: {ex.GetType().Name}: {ex.Message}");
+            ConnectionStateChanged?.Invoke(this, AgentConnectionState.Disconnected);
         }
     }
 

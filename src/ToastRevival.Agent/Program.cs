@@ -1,4 +1,5 @@
 using System.Security.Principal;
+using System.Text.Json;
 using Microsoft.Windows.AppNotifications;
 using ToastRevival.Agent;
 
@@ -45,6 +46,13 @@ namespace ToastRevival.Agent
                 Console.Error.WriteLine("Toast Notification agent requires Windows 10 2004 / build 19041 or later.");
                 DiagLog.Write("EXIT 2: runtime gate IsWindowsVersionAtLeast(10,0,19041) failed.");
                 return 2;
+            }
+
+            // Setup mode: invoked by the MSI installer (as SYSTEM) to write bootstrap.json.
+            // MUST be checked before the elevation guard — SYSTEM is elevated.
+            if (HasFlag(args, "--setup-bootstrap"))
+            {
+                return await SetupMode.RunAsync(args);
             }
 
             if (IsElevated())
@@ -210,6 +218,69 @@ namespace ToastRevival.Agent
     }
 
     /// <summary>
+    /// MSI installer hook — writes bootstrap.json next to the exe so the agent's
+    /// first-run registration can pick up CLIENTID and SERVERURL from the installer
+    /// properties without requiring the user to set environment variables.
+    ///
+    /// Called by the WriteBootstrapJson WiX custom action (Impersonate="no", runs as
+    /// SYSTEM). Detected BEFORE the elevation guard so SYSTEM context doesn't hit
+    /// exit-3. The only thing this mode does is write one JSON file and exit.
+    /// </summary>
+    internal static class SetupMode
+    {
+        public static Task<int> RunAsync(string[] args)
+        {
+            DiagLog.Write($"SetupMode: args=[{string.Join(' ', args)}]; baseDir={AppContext.BaseDirectory}");
+
+            // Expect: --setup-bootstrap <tenantId> <serverUrl>
+            var idx = Array.IndexOf(args, "--setup-bootstrap");
+            if (idx < 0 || idx + 2 >= args.Length)
+            {
+                DiagLog.Write("SetupMode EXIT 1: usage: --setup-bootstrap <tenantId> <serverUrl>");
+                Console.Error.WriteLine("Usage: ToastNotification.Agent --setup-bootstrap <tenantId> <serverUrl>");
+                return Task.FromResult(1);
+            }
+
+            var tenantIdStr = args[idx + 1];
+            var serverUrl   = args[idx + 2];
+
+            if (!Guid.TryParse(tenantIdStr, out var tenantId))
+            {
+                DiagLog.Write($"SetupMode EXIT 1: invalid tenantId '{tenantIdStr}'");
+                Console.Error.WriteLine($"Invalid tenantId: {tenantIdStr}");
+                return Task.FromResult(1);
+            }
+
+            if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out _))
+            {
+                DiagLog.Write($"SetupMode EXIT 1: invalid serverUrl '{serverUrl}'");
+                Console.Error.WriteLine($"Invalid serverUrl: {serverUrl}");
+                return Task.FromResult(1);
+            }
+
+            var bootstrap = new BootstrapConfig(tenantId, serverUrl);
+            var options   = new JsonSerializerOptions { WriteIndented = true };
+            var path      = Path.Combine(AppContext.BaseDirectory, "bootstrap.json");
+
+            try
+            {
+                var json = JsonSerializer.Serialize(bootstrap, options);
+                var temp = path + ".tmp";
+                File.WriteAllText(temp, json, System.Text.Encoding.UTF8);
+                File.Move(temp, path, overwrite: true);
+                DiagLog.Write($"SetupMode EXIT 0: wrote bootstrap.json at '{path}'; tenantId={tenantId}; serverUrl={serverUrl}");
+                return Task.FromResult(0);
+            }
+            catch (Exception ex)
+            {
+                DiagLog.Write($"SetupMode EXIT 1: write failed at '{path}': {ex.GetType().Name}: {ex.Message}");
+                Console.Error.WriteLine($"Failed to write bootstrap.json: {ex.Message}");
+                return Task.FromResult(1);
+            }
+        }
+    }
+
+    /// <summary>
     /// Legacy single-shot template render — the M0A behavior, retained for the MSI
     /// Scheduled Task channel and for direct lab/dev launches. Argv-driven, no hub.
     /// </summary>
@@ -303,12 +374,38 @@ namespace ToastRevival.Agent
             {
                 await using var client = new AgentHubClient(config);
 
-                // Ctrl+C / SIGTERM should shut down cleanly.
+                // Tray icon is visible from process start (Connecting state) so the
+                // user sees the agent in their tray at logon before the hub connects.
+                using var tray = new TrayIconService(config.ServerUrl);
+                client.ConnectionStateChanged += (_, state) => tray.UpdateState(state);
+
+                // Ctrl+C / SIGTERM and tray Quit both cancel shutdown.
                 using var shutdown = new CancellationTokenSource();
                 Console.CancelKeyPress += (_, e) =>
                 {
                     e.Cancel = true;
                     shutdown.Cancel();
+                };
+                tray.QuitRequested    += () => shutdown.Cancel();
+                tray.ReconnectRequested += async () =>
+                {
+                    try { await client.ReconnectAsync(); }
+                    catch (Exception ex) { DiagLog.Write($"ReconnectRequested: {ex.GetType().Name}: {ex.Message}"); }
+                };
+                tray.SendTestRequested += () =>
+                {
+                    try
+                    {
+                        var assets = new FileSystemToastAssets(AppContext.BaseDirectory);
+                        var tmpl   = ToastTemplateCatalog.All[ToastTemplateKey.Announcement];
+                        var note   = ToastTemplateBuilder.Build(tmpl, assets, "Test Notification", "Toast Notification agent is connected and working.");
+                        AppNotificationManager.Default.Show(note);
+                        DiagLog.Write("PrimaryMode: test notification sent from tray.");
+                    }
+                    catch (Exception ex)
+                    {
+                        DiagLog.Write($"PrimaryMode: test notification failed: {ex.GetType().Name}: {ex.Message}");
+                    }
                 };
 
                 await client.StartAsync(shutdown.Token);
@@ -449,12 +546,13 @@ namespace ToastRevival.Agent
         {
             Console.WriteLine("Usage: ToastNotification.Agent [options]");
             Console.WriteLine();
-            Console.WriteLine("  (no args)           connect to the backend hub and run as primary worker");
-            Console.WriteLine("  --template <name>   diagnostic single-shot render: plain | announcement | alert | action | reminder | celebration | maintenance");
-            Console.WriteLine("  --title <text>      override the template title");
-            Console.WriteLine("  --body <text>       override the first body line");
-            Console.WriteLine("  --wait <seconds>    seconds to wait for activation (default 10)");
-            Console.WriteLine("  --no-wait           do not wait after sending");
+            Console.WriteLine("  (no args)                           connect to the backend hub and run as primary worker");
+            Console.WriteLine("  --template <name>                   diagnostic single-shot render: plain | announcement | alert | action | reminder | celebration | maintenance");
+            Console.WriteLine("  --title <text>                      override the template title");
+            Console.WriteLine("  --body <text>                       override the first body line");
+            Console.WriteLine("  --wait <seconds>                    seconds to wait for activation (default 10)");
+            Console.WriteLine("  --no-wait                           do not wait after sending");
+            Console.WriteLine("  --setup-bootstrap <tenantId> <url>  MSI installer hook: write bootstrap.json (runs as SYSTEM)");
             Environment.Exit(0);
         }
     }

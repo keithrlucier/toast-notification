@@ -2,13 +2,14 @@
 
 ## Open Issues
 
-### INFO-SEC-006 (open, M9 polish) — nginx static SPA responses miss defensive headers
+### INFO-SEC-006 — **RESOLVED 2026-05-09** (nginx static SPA responses now carry defensive headers + HSTS)
 
-**Filed:** 2026-05-09 (production deploy verification of SEC-001).
-**Surface:** `/etc/nginx/sites-available/toast` on TOASTWEB1.
-**Issue:** SEC-001 added `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy` via ASP.NET middleware in `Program.cs`. Verified live on every `/api/*` response — both 401 challenges and authenticated traffic carry the headers. But `GET /` (marketing) and `GET /login` (React SPA HTML) are served directly by nginx's static-file handler from `/opt/toast/dashboard/`, bypassing the ASP.NET pipeline entirely. Those responses carry only nginx defaults (Server / Content-Type / Last-Modified / ETag / Accept-Ranges) — none of the defensive headers. The SPA HTML is therefore not protected against clickjacking or MIME confusion at the page-load level; only the XHR responses to `/api/*` get the protection.
-**Fix (M9 polish):** add `add_header ... always` directives to the nginx server block so static responses carry the same defensive set, plus `Strict-Transport-Security` (since nginx is the TLS terminator). Once nginx adds them, both API and SPA responses are uniformly protected. The `always` flag is required so the headers apply to non-2xx nginx responses too.
-**Blocking:** No — XHR-level protection is in place; this closes the page-load surface.
+**Filed:** 2026-05-09 (production verification of SEC-001).
+**Resolved:** 2026-05-09 (immediate follow-up).
+**Surface:** `/etc/nginx/sites-available/toast` on TOASTWEB1 → snapshotted to `infrastructure/nginx/toast.conf`.
+**Resolution:** Five `add_header ... always` directives added at server scope: `X-Content-Type-Options nosniff`, `X-Frame-Options DENY`, `Referrer-Policy strict-origin-when-cross-origin`, `Permissions-Policy camera=()/microphone=()/geolocation=()`, and `Strict-Transport-Security max-age=31536000; includeSubDomains`. Server-scope inherits to every location (none of `/api/`, `/hubs/`, `/assets/`, `/`-fallback override). `always` applies to non-2xx responses too (4xx/5xx error pages). `nginx -t` clean, `systemctl reload nginx` applied without service interruption.
+**Verification:** `curl -D -` against `https://toastnotification.com/login` (was missing all five) and `https://toastnotification.com/` (marketing) both now carry the full defensive set + HSTS. `/api/templates` carries duplicates from nginx + ASP.NET — defense-in-depth: a future nginx config drift (e.g., a Certbot renewal that rewrites the server block) still leaves API protected by its own middleware, and a middleware-pipeline regression leaves the API protected by nginx.
+**Repo snapshot:** `infrastructure/nginx/toast.conf` + `infrastructure/nginx/README.md` (sync workflow + Certbot-managed-line caveats). The repo snapshot is documentation-only; authoritative copy lives on TOASTWEB1.
 
 ### SEC-005 — **RESOLVED 2026-05-09** (TOTP code replay within ±1 step)
 

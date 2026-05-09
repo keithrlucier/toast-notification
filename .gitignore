@@ -50,3 +50,6 @@ Thumbs.db
 .DS_Store
 .docpro/
 .claude/
+
+# Playwright MCP browser cache
+.playwright-mcp/

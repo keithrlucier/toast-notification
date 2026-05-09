@@ -262,6 +262,18 @@ Regression coverage: `tests/ToastRevival.Api.Tests/SecurityTests.cs::SecurityDef
 - **Dependabot** (`.github/dependabot.yml`) — three ecosystems (nuget /, npm /src/ToastRevival.Dashboard, github-actions /). Weekly Monday version updates; security advisories surface immediately. Update groups (aspnet-core, ef-core, test-stack, react, vite, typescript) keep semver bumps batched per group.
 - **JWT key length guard** (`Program.cs`) — non-Development startup throws when `Jwt:Key.Length < 32`. Forces production override via `Jwt__Key` env var.
 
+### CSV Export Hardening (SEC-004, 2026-05-09)
+`Utilities/CsvHelper.Cell` now prefixes any value starting with `=`, `+`, `-`, `@`, `\t`, or `\r` with a single apostrophe before applying RFC 4180 quoting. The apostrophe is the documented "literal text" sentinel across Excel, LibreOffice Calc, and Google Sheets — strips on render, original value displays as plain text. Applies to both `AuditController.BuildAuditCsv` and `NotificationsController.BuildDeliveryCsv` since both route through `CsvHelper.Cell`.
+
+Regression coverage: `tests/ToastRevival.Api.Tests/CsvHelperTests.cs` (9 [Theory]/[Fact] cases including the both-defenses stacking case where the apostrophe goes inside the outer double quotes when the value also contains a comma).
+
+### TOTP Replay Rejection (SEC-005, 2026-05-09)
+`MfaService.Verify(AppUser user, string code)` captures the OtpNet-matched time-step via `out var matchedStep` and rejects when `user.LastTotpStep.HasValue && matchedStep <= user.LastTotpStep.Value`. Reject-on-equality (`<=` not `<`) blocks the "two requests in the same 30s step" replay case. On success the matched step writes back to `user.LastTotpStep`; `AuthController.MfaVerify` follows the verify with `_db.SaveChangesAsync()` so the floor persists across requests.
+
+Migration `20260509190000_M3MfaTotpReplay` adds `AspNetUsers.LastTotpStep bigint NULL` with no default. Existing users transparently start tracking on their next successful verify.
+
+Regression coverage: `tests/ToastRevival.Api.Tests/MfaServiceTests.cs` (6 [Fact] cases — fresh-accept, replay reject within step, older-step reject for skew/rewind, missing-secret, invalid-code, empty-code).
+
 ## Agent Architecture (Windows)
 
 ### Deployment Flow (MSI/RMM)

@@ -1,0 +1,12 @@
+[Unit]
+Description=Toast Notification — daily pg_dump of toastrevival
+Documentation=https://github.com/keithrlucier/toast/blob/main/Docs/ToastRevival/CONTEXT.md
+
+[Timer]
+OnCalendar=02:00 UTC
+RandomizedDelaySec=5min
+Persistent=true
+Unit=toast-pg-backup.service
+
+[Install]
+WantedBy=timers.target

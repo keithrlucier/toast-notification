@@ -267,6 +267,21 @@ Regression coverage: `tests/ToastRevival.Api.Tests/SecurityTests.cs::SecurityDef
 
 Regression coverage: `tests/ToastRevival.Api.Tests/CsvHelperTests.cs` (9 [Theory]/[Fact] cases including the both-defenses stacking case where the apostrophe goes inside the outer double quotes when the value also contains a comma).
 
+### Database Backups — TOASTDATA1 (2026-05-09)
+Daily `pg_dump --format=custom` of the `toastrevival` database via systemd timer (`toast-pg-backup.timer`). Schedule: `OnCalendar=02:00 UTC` with `RandomizedDelaySec=5min`, `Persistent=true` for missed-run catch-up. Retention 14 days. Every dump passes `pg_restore --list` TOC verification before atomic `.partial` → `.dump` rename — corrupt dumps never reach the visible inventory.
+
+Storage: `/opt/toast/backups/toastrevival-YYYYMMDD-HHMMSSZ.dump`, owned `postgres:postgres`, dir `0750`. ~5× compression on the binary custom format.
+
+Recovery posture:
+| Failure mode | Recovery path | RPO |
+|---|---|---|
+| Bad migration / DELETE / table corruption | `pg_restore` from `/opt/toast/backups/` | 24h |
+| Whole-box loss | Lightsail automatic snapshots | 7d |
+
+Off-box copy (S3 or TOASTWEB1 over the private network) is M9 polish — not required pre-revenue. Monthly restore drill is documented in `infrastructure/postgres/README.md`; a backup that's never restored is a backup you don't trust.
+
+Repo snapshot of script + units lives at `infrastructure/postgres/{toast-pg-backup.sh,toast-pg-backup.service,toast-pg-backup.timer,README.md}`. Authoritative copies live on TOASTDATA1; sync workflow documented.
+
 ### TOTP Replay Rejection (SEC-005, 2026-05-09)
 `MfaService.Verify(AppUser user, string code)` captures the OtpNet-matched time-step via `out var matchedStep` and rejects when `user.LastTotpStep.HasValue && matchedStep <= user.LastTotpStep.Value`. Reject-on-equality (`<=` not `<`) blocks the "two requests in the same 30s step" replay case. On success the matched step writes back to `user.LastTotpStep`; `AuthController.MfaVerify` follows the verify with `_db.SaveChangesAsync()` so the floor persists across requests.
 

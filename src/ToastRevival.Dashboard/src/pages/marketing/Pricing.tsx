@@ -1,0 +1,279 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronDown } from '../../components/marketing/FeatureIcons';
+
+const INCLUSIONS = [
+  {
+    heading: 'Notifications',
+    items: [
+      'Six pre-built templates (Announcement, Alert, Action Required, Reminder, Celebration, Maintenance)',
+      'Title, body, hero image, logo, action buttons, audio',
+      'Scenario routing — Default, Reminder, Alarm, IncomingCall, Urgent',
+      'Tenant-uploadable asset library with image moderation',
+      'Notification scheduling and recurring sends',
+    ],
+  },
+  {
+    heading: 'Targeting',
+    items: [
+      'Per-device, per-group, or whole-tenant broadcast',
+      'TOTP MFA enforcement on broadcast (TargetType=All) sends',
+      'Device groups with explicit membership management',
+      'Tenant blocklist for sender content',
+    ],
+  },
+  {
+    heading: 'Deployment',
+    items: [
+      'Code-signed MSI with embedded scheduled task',
+      'Code-signed MSIX through the Microsoft Store (listing 9PFD6004DVTN)',
+      'Intune LOB compatible',
+      'RMM silent install with CLIENTID and SERVERURL properties',
+      'Velopack auto-update with enterprise opt-out registry toggle',
+    ],
+  },
+  {
+    heading: 'Tracking & audit',
+    items: [
+      'Per-notification delivery and interaction reports',
+      'Aggregate delivery rate, interaction rate, fleet activity dashboards',
+      'Append-only tenant audit log',
+      'CSV and PDF export for incident review and ticket attachment',
+    ],
+  },
+  {
+    heading: 'Security',
+    items: [
+      'TLS 1.3, HSTS, Let’s Encrypt',
+      'JWT auth — 60-min user, 365-day device tokens',
+      'Per-tenant HMAC-SHA256 payload signing, verified by every endpoint',
+      'Azure Content Safety on every send',
+      'AES-256 at rest. DPAPI on agent config. Multi-tenant query-filter isolation.',
+      'Device enrollment keys for restricted registration',
+    ],
+  },
+  {
+    heading: 'Branding & ops',
+    items: [
+      'Tenant logo, primary color, and default audio/scenario',
+      'API keys with revocation',
+      'Stripe billing portal for self-serve plan and payment management',
+      'Email support, business-hours response',
+    ],
+  },
+];
+
+const FAQ = [
+  {
+    q: 'How is a "device" counted?',
+    a: 'A device is any Windows endpoint where the Toast Notification agent has been registered and is currently active. Decommissioning a device frees the slot; re-registering a machine after a clean install reuses it. Inactive devices that have not pinged in 30 days are not billed.',
+  },
+  {
+    q: 'What happens if I exceed my subscribed device count mid-month?',
+    a: 'New device registrations beyond your subscribed quantity return HTTP 402 (payment required) until you increase your seat count or decommission existing devices. Already-registered devices keep receiving notifications without interruption — the gate is on registration, not delivery. You can adjust seats live in the Stripe billing portal.',
+  },
+  {
+    q: 'Is there a contract or annual commitment?',
+    a: 'No. Billing is monthly. Cancel from the Stripe billing portal at any time; service continues through the end of the current period. Annual billing with a discount can be arranged for fleets above 1,000 devices — contact procurement.',
+  },
+  {
+    q: 'Do you offer volume pricing?',
+    a: 'Per-device pricing is uniform up to 5,000 devices. Above 5,000 devices, custom volume pricing and dedicated infrastructure options are available. Contact us for a tailored quote.',
+  },
+  {
+    q: 'How does the 14-day trial work?',
+    a: 'New tenants receive 14 days of full-feature access with no credit-card requirement. Add up to 100 devices during the trial. At the end, add a payment method to continue; otherwise the tenant moves to read-only and devices stop registering until billing is configured.',
+  },
+  {
+    q: 'What payment methods do you accept?',
+    a: 'Stripe handles billing — credit card and ACH for self-serve. NET-30 invoicing with a signed master service agreement is available for fleets above 1,000 devices.',
+  },
+  {
+    q: 'Where is data stored?',
+    a: 'PostgreSQL 16 on AWS US-East for the public production environment. Notification payloads are HMAC-signed per tenant. Asset uploads are scanned by Azure Content Safety before persistence. Dedicated regional infrastructure is available on request.',
+  },
+  {
+    q: 'Do you support SSO, SAML, or HIPAA BAAs?',
+    a: 'Single sign-on (SAML / OIDC) is on the public roadmap. HIPAA-friendly architecture is in place; a BAA path is available during procurement. SOC 2 Type II preparation is in progress.',
+  },
+];
+
+const COSTS = [
+  { devices: '100', monthly: '$22', annual: '$264', note: 'Subscription minimum.' },
+  { devices: '250', monthly: '$55', annual: '$660' },
+  { devices: '500', monthly: '$110', annual: '$1,320' },
+  { devices: '1,000', monthly: '$220', annual: '$2,640' },
+  { devices: '2,500', monthly: '$550', annual: '$6,600' },
+  { devices: '5,000', monthly: '$1,100', annual: '$13,200' },
+  { devices: '5,000+', monthly: 'Contact us', annual: 'Custom', note: 'Volume pricing.' },
+];
+
+export default function Pricing() {
+  const [openIdx, setOpenIdx] = useState<number | null>(0);
+
+  useEffect(() => {
+    document.title = 'Pricing — Toast Notification';
+    const description =
+      '$0.22 per managed device per month. 100-device subscription minimum. 14-day free trial. One plan, no tiers, no upsells.';
+    let meta = document.querySelector('meta[name="description"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'description');
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', description);
+  }, []);
+
+  return (
+    <>
+      {/* Plan card */}
+      <section className="m-section" aria-labelledby="pricing-cards-heading">
+        <div className="m-container">
+          <h1 id="pricing-cards-heading" className="m-section-heading is-centered">
+            Pricing.
+          </h1>
+          <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 600, marginInline: 'auto' }}>
+            One plan. Per-device pricing. No premium tiers, no feature paywalls, no contract minimums beyond the
+            monthly seat floor.
+          </p>
+
+          <div className="m-plan-card" aria-label="Standard plan">
+            <div className="m-plan-card-head">
+              <div>
+                <span className="m-plan-name">Standard</span>
+                <p className="m-plan-tagline">Every feature, every tenant.</p>
+              </div>
+              <div className="m-plan-price-block">
+                <span className="m-plan-price">$0.22</span>
+                <span className="m-plan-price-unit">per device / month</span>
+                <span className="m-plan-price-floor">100-device subscription minimum · $22 / month entry</span>
+              </div>
+            </div>
+
+            <div className="m-plan-card-cta">
+              <Link to="/register" className="m-btn m-btn-primary">
+                Start 14-day trial
+              </Link>
+              <a href="mailto:sales@toastnotification.com?subject=Volume%20pricing" className="m-btn m-btn-ghost">
+                Contact for &gt;5,000 devices
+              </a>
+            </div>
+
+            <p className="m-plan-fineprint">
+              Trial requires no credit card. Add up to 100 devices during the trial. Billing begins on payment-method
+              capture; cancel any time from the Stripe billing portal.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Cost reference */}
+      <section className="m-section" style={{ paddingTop: 32 }} aria-labelledby="cost-heading">
+        <div className="m-container">
+          <h2 id="cost-heading" className="m-section-heading is-centered">
+            Indicative cost by fleet size.
+          </h2>
+
+          <table className="m-cost-table" aria-label="Monthly and annual cost by device count">
+            <thead>
+              <tr>
+                <th scope="col">Devices</th>
+                <th scope="col">Monthly</th>
+                <th scope="col">Annual</th>
+                <th scope="col" className="m-th-note">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {COSTS.map((row) => (
+                <tr key={row.devices}>
+                  <td><span className="m-mono">{row.devices}</span></td>
+                  <td><span className="m-mono">{row.monthly}</span></td>
+                  <td><span className="m-mono">{row.annual}</span></td>
+                  <td className="m-cost-note">{row.note ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* What's included */}
+      <section className="m-section" style={{ background: 'var(--bg-secondary)' }} aria-labelledby="included-heading">
+        <div className="m-container">
+          <h2 id="included-heading" className="m-section-heading is-centered">
+            What&rsquo;s included.
+          </h2>
+          <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 580, marginInline: 'auto' }}>
+            Every feature is included in every subscription. There is no Pro upsell, no Enterprise gate, no add-on SKU.
+          </p>
+
+          <div className="m-inclusion-grid">
+            {INCLUSIONS.map((group) => (
+              <div key={group.heading} className="m-inclusion-card">
+                <h3>{group.heading}</h3>
+                <ul>
+                  {group.items.map((it) => (
+                    <li key={it}>{it}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="m-section" aria-labelledby="faq-heading">
+        <div className="m-container">
+          <h2 id="faq-heading" className="m-section-heading is-centered" style={{ marginBottom: 48 }}>
+            Frequently asked.
+          </h2>
+
+          <div className="m-faq">
+            {FAQ.map((item, idx) => {
+              const open = idx === openIdx;
+              return (
+                <div key={item.q} className={`m-faq-item${open ? ' is-open' : ''}`}>
+                  <button
+                    type="button"
+                    className="m-faq-trigger"
+                    aria-expanded={open}
+                    aria-controls={`faq-panel-${idx}`}
+                    onClick={() => setOpenIdx(open ? null : idx)}
+                  >
+                    <span>{item.q}</span>
+                    <ChevronDown className="m-faq-chevron" />
+                  </button>
+                  {open && (
+                    <div id={`faq-panel-${idx}`} className="m-faq-answer" role="region">
+                      {item.a}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Final CTA */}
+      <section className="m-section" style={{ background: 'var(--bg-secondary)' }} aria-labelledby="pricing-cta-heading">
+        <div className="m-final-cta">
+          <h2 id="pricing-cta-heading">Procurement-friendly. Engineering-grade.</h2>
+          <p>
+            Start a 14-day trial without a credit card, or contact us for volume pricing, NET-30 terms, or a master
+            service agreement.
+          </p>
+          <div className="m-final-cta-buttons">
+            <Link to="/register" className="m-btn m-btn-primary">
+              Start trial
+            </Link>
+            <a href="mailto:sales@toastnotification.com?subject=Toast%20Notification%20procurement" className="m-btn m-btn-ghost">
+              Contact procurement
+            </a>
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}

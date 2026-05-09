@@ -351,13 +351,26 @@ Carl sliced M7 at orientation (2026-05-09). M7.A delivers the design spec and th
 - Pre-commit security fix (INFO-M7A-001): `*.pem` and `*.key` patterns added to `.gitignore`. Two Lightsail SSH private keys at `Docs/Assets/` were untracked but not ignored; `git check-ignore` confirms both ignored now.
 - TS check + Vite build clean. No backend changes.
 
+### M7.B Closure (Corporate Edition) — 2026-05-09
+- Re-scoped 2026-05-09 after Keith called the original M7.B render flat. New brief: corporate (Bloomberg / Datadog / Cloudflare register), not vibe-SaaS template.
+- **Tier model collapsed.** Three-tier (Free / Pro / Enterprise) pricing replaced with single plan: $0.22/device/month, 100-device subscription minimum ($22/month entry), 14-day free trial. No upsells, no premium tiers. Backend pricing-v2 implementation is Codex's track per `Docs/ToastRevival/CODEX-HANDOFF.md`.
+- **Real product screenshot** captured from the live composer (smoke-test tenant on prod) and shipped at `public/screenshots/composer-hero.png`. Replaces the M7.B-paused empty 16:9 placeholder frame.
+- Home page rebuilt — hero (real screenshot), problem/solution (msg.exe vs branded toast), capabilities (4-card), security architecture (8-control matrix), how it works (3-step), pricing summary (math table), 14-day-trial final CTA. Zero internal milestone codes leaks. No "M9 roadmap" / "MOST POPULAR" / "publishes shortly" copy.
+- Pricing page rebuilt — single Standard plan card, indicative-cost table by fleet size (100 → 5,000+ devices), 6-section "what's included" inclusion grid (Notifications, Targeting, Deployment, Tracking & audit, Security, Branding & ops), 8-question FAQ accordion (devices, mid-month overage, contracts, volume, trial, payment, data residency, SSO/SAML/HIPAA), procurement-friendly final CTA with `mailto:` for >5,000 devices.
+- `MarketingLayout` / `MarketingHeader` / `MarketingFooter` / `BrandMark` / `FeatureIcons` corporate scaffolding from M7.A retained (light-mode Diana spec, restrained accent, 8px grid, Bloomberg-grade typography). Footer slimmed to 3-col (brand + Product + Legal).
+- `HowWeBuiltIt.tsx` and `DocsComingSoon.tsx` deleted per Keith's standing rules: DocPro/AI-built case study is OFF the public marketing surface (lives in llms.txt + internal docs only); no placeholder pages ever ship.
+- App.tsx routing: marketing routes (`/` and `/pricing`) wrapped in lazy-loaded `MarketingLayout`. Dashboard moves to `/dashboard`. Root `/` is a `RootIndex` toggle — anon visitors see the marketing Home, authenticated users redirect to `/dashboard`. Sidebar's existing `to="/"` Dashboard link resolves through the toggle without modification, so Codex's in-flight Sidebar WIP is untouched.
+- Build clean: 721 modules transformed, marketing chunks lazy-loaded (`Home-*.js` 11 kB, `Pricing-*.js` 9.8 kB, `MarketingLayout-*.js` 4.2 kB, `MarketingLayout-*.css` 20.85 kB, `FeatureIcons-*.js` 1.5 kB), main bundle 722 kB. TS check passes against the full project including 25 in-flight Codex WIP files.
+- Deployed to TOASTWEB1 with `/opt/toast/dashboard.bak.m7b` rollback backup. Post-deploy verification: emitted `/static/index-7zXBsNuA.js` returns 200 (722 540 bytes); `/`, `/pricing`, `/login`, `/register` all 200; `/screenshots/composer-hero.png` 200 (125 198 bytes). Playwright live render check: anon `/` → marketing Home, authed `/` → redirect to `/dashboard`, both with zero console errors.
+- **Codex coordination doc** shipped at `Docs/ToastRevival/CODEX-HANDOFF.md` — file manifest of what we touched tonight and what's NOT touched, plus the spec Codex inherits for pricing v2 ($0.22/device + 100-device floor + 14-day trial) and PlatformAdmin role (`IsPlatformAdmin: bool` flag on `AppUser`, `/api/system/*` endpoints, idempotent seed for keithrlucier@gmail.com).
+
 ### Deliverables
 - **D1** [x **COMPLETE 2026-05-09 (M7.A)**]: Diana DESIGN-SPEC for marketing site (shared design system with dashboard); onboarding emoji→SVG swap closes INFO-M6-004.
-- **D2**: Build Mode execution — hero, features, problem/solution, how-it-works, pricing summary, final CTA on `/`
-- **D3**: Pricing page (`/pricing`) — full tier comparison table + 8-question FAQ
-- **D4**: Documentation pages (`/docs/*`) — getting started, deploy guides (Store/Intune/RMM), API reference
-- **D5**: How We Built It (`/how-we-built-it`) + SEO + JSON-LD + sitemap + `llms.txt` (M7.D)
-- **D6**: Deploy to toastnotification.com (existing domain — same Lightsail box, same nginx, no DNS changes)
+- **D2** [x **COMPLETE 2026-05-09 (M7.B Corporate Edition)**]: Marketing Home rebuilt corporate-grade — hero with real product screenshot, problem/solution comparison, capability matrix, security architecture, how-it-works, single-plan pricing summary, formal CTA. Live at https://toastnotification.com/.
+- **D3** [x **COMPLETE 2026-05-09 (M7.B Corporate Edition)**]: Pricing page rebuilt as single-plan layout — $0.22/device + 100-device floor + 14-day trial, indicative-cost table, 6-card inclusion grid, 8-question FAQ. Live at https://toastnotification.com/pricing.
+- **D4**: Documentation pages (`/docs/*`) — getting started, deploy guides (Store/Intune/RMM), API reference. **Deferred**; not on critical path for tonight.
+- **D5**: SEO + JSON-LD + sitemap + `llms.txt` (M7.D). The /how-we-built-it page is REMOVED from the spec per Keith's directive — the DocPro/AI-built story stays in `llms.txt` + internal docs only, never on public surfaces.
+- **D6** [x **COMPLETE 2026-05-09**]: Deployed to https://toastnotification.com — same Lightsail box (TOASTWEB1), same nginx, no DNS change. Curl + Playwright verified.
 
 ### SEO & LLM Discovery Notes (Keith's direction)
 

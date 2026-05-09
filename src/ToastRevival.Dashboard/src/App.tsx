@@ -1,5 +1,6 @@
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -19,10 +20,64 @@ import AuditLog from './pages/AuditLog';
 import Billing from './pages/Billing';
 import Onboarding from './pages/Onboarding';
 
+// Marketing chunks — lazy so the dashboard bundle doesn't pull in the marketing CSS / pages
+// for already-authenticated users, and the public marketing bundle doesn't pull in Recharts.
+const MarketingLayout = lazy(() => import('./components/marketing/MarketingLayout'));
+const Home = lazy(() => import('./pages/marketing/Home'));
+const Pricing = lazy(() => import('./pages/marketing/Pricing'));
+
+function MarketingFallback() {
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        background: 'var(--bg-primary)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <div className="spinner" />
+    </div>
+  );
+}
+
+/**
+ * Root index — the path / serves the public marketing Home for anonymous
+ * visitors, and redirects authenticated users to /dashboard. Sidebar's
+ * "Dashboard" link still uses to="/" and is resolved through this redirect.
+ */
+function RootIndex() {
+  const { user, loading } = useAuth();
+  if (loading) return <MarketingFallback />;
+  if (user) return <Navigate to="/dashboard" replace />;
+  return (
+    <Suspense fallback={<MarketingFallback />}>
+      <Home />
+    </Suspense>
+  );
+}
+
 const router = createBrowserRouter([
+  // Auth surfaces
   { path: '/login',      element: <Login /> },
   { path: '/register',   element: <Register /> },
   { path: '/onboarding', element: <ProtectedRoute><Onboarding /></ProtectedRoute> },
+
+  // Public marketing surfaces — single SPA, MarketingLayout chrome
+  {
+    element: (
+      <Suspense fallback={<MarketingFallback />}>
+        <MarketingLayout />
+      </Suspense>
+    ),
+    children: [
+      { path: '/',         element: <RootIndex /> },
+      { path: '/pricing',  element: <Suspense fallback={<MarketingFallback />}><Pricing /></Suspense> },
+    ],
+  },
+
+  // Authenticated dashboard surfaces
   {
     element: (
       <ProtectedRoute>
@@ -30,12 +85,12 @@ const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true,          element: <Dashboard /> },
+      { path: '/dashboard',   element: <Dashboard /> },
       { path: '/analytics',   element: <Analytics /> },
       { path: '/devices',     element: <Devices /> },
       { path: '/templates',   element: <Templates /> },
       { path: '/compose',     element: <Compose /> },
-      { path: '/assets',       element: <Assets /> },
+      { path: '/assets',      element: <Assets /> },
       { path: '/history',     element: <History /> },
       {
         path: '/moderation',
@@ -87,6 +142,7 @@ const router = createBrowserRouter([
       },
     ],
   },
+
   { path: '*', element: <Navigate to="/" replace /> },
 ]);
 

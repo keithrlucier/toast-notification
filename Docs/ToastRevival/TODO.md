@@ -2,9 +2,14 @@
 
 ## Current Reality
 
-Project status: **M0A through M6 ALL COMPLETE. M7.A COMPLETE 2026-05-09 (marketing site DESIGN-SPEC + onboarding SVG swap closing INFO-M6-004). M7.B PAUSED 2026-05-09 — visual rendering came out flat against locked spec; revisit with real product screenshots and tighter visual brief. WIP stashed (`git stash list`).** Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt. **FIX-PROD-001 RESOLVED 2026-05-09** — Vite `assetsDir: 'static'` fixed the blank-page blocker on `/register` and every other route. **First-time admin signup at https://toastnotification.com/register.**
+Project status: **M0A through M6 ALL COMPLETE. M7.A COMPLETE 2026-05-09. M7.B Corporate Edition COMPLETE 2026-05-09 — marketing site rebuilt against a tighter corporate brief (Bloomberg/Datadog register, real product screenshot, single-plan pricing) and shipped to https://toastnotification.com/.** Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt. **FIX-PROD-001 RESOLVED 2026-05-09** — Vite `assetsDir: 'static'` fixed the blank-page blocker. **FIX-PROD-002 RESOLVED 2026-05-09** — register flow end-to-end. **First-time admin signup at https://toastnotification.com/register.**
 
-Next decision: customer-journey end-to-end smoke test (register → onboard → install agent → send notification → verify delivery → verify billing) before committing to more marketing work.
+**Active backend rewrite tracks owned by Codex (per `Docs/ToastRevival/CODEX-HANDOFF.md`):**
+- Pricing v2 — collapse `SubscriptionTier` enum, `LicenseService` rewrite (no tier limits, single rate, $22/mo floor), Stripe per-unit metered model with 14-day trial, `BillingController` shape change. Frontend `Billing.tsx` and `Onboarding.tsx` plan-picker step are stale and need rewrite.
+- PlatformAdmin role — `AppUser.IsPlatformAdmin: bool`, `PlatformAdmin` auth policy, `/api/system/*` cross-tenant endpoints, idempotent seed for keithrlucier@gmail.com, `AuthController.Register` correction so the public register endpoint NEVER mints platform admins.
+- Admin dashboard UI redesign — every authenticated route. The corporate light-mode chrome ("Enterprise Console" + "System Admin" + Operations/Administration sidebar) is currently deployed live but the source state is uncommitted in the working tree as 25 modified tracked files.
+
+Next decision: when Codex returns (≥14 hours from 2026-05-09 03:39 ET), point Codex at `CODEX-HANDOFF.md` and let it pick up the backend rewrite + admin UI redesign + commit the WIP files.
 
 ## Keith
 
@@ -125,15 +130,15 @@ All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 
 - [x] Pre-commit fix (INFO-M7A-001): `*.pem` / `*.key` added to `.gitignore`.
 - [x] Code Sweep SHIP WITH NOTES (INFO-M7A-002 deferred to M7.D, INFO-M7A-003 deferred to M7.B, INFO-M7A-004 standing vigilance).
 
-### M7.B — Build Mode (next session)
-- [ ] `MarketingLayout` component (header, footer, no sidebar).
-- [ ] `MarketingHeader` + `MarketingFooter` per spec.
-- [ ] Home page: hero, problem/solution, features 2×2, how-it-works 3-step, pricing summary, final CTA.
-- [ ] Pricing page: full tier comparison table + 8-question FAQ accordion.
-- [ ] How We Built It page (engineering case study).
-- [ ] Marketing routes lazy-loaded in `App.tsx` (`React.lazy()`).
-- [ ] Resolve INFO-M7A-003: either add `GET /api/analytics/global-summary` public endpoint OR drop the lifetime-count line from the hero.
-- [ ] Diana sign-off on every section, desktop + mobile.
+### M7.B Corporate Edition — COMPLETE 2026-05-09
+- [x] `MarketingLayout` + `MarketingHeader` + `MarketingFooter` shipped (M7.A scaffolding retained, footer slimmed to 3-col).
+- [x] Home page rebuilt corporate-grade — hero (real product screenshot), problem/solution, capability matrix, security architecture, how-it-works, single-plan pricing summary, 14-day-trial CTA.
+- [x] Pricing page rebuilt as single-plan layout ($0.22/device + 100-device floor + 14-day trial), indicative-cost table, 6-card inclusion grid, 8-question FAQ.
+- [x] HowWeBuiltIt + DocsComingSoon DELETED per Keith's standing rule (no DocPro/AI-built story on public surface; no placeholder pages).
+- [x] Marketing routes lazy-loaded in App.tsx with RootIndex toggle (anon → Home, auth → /dashboard).
+- [x] INFO-M7A-003 resolved by removing the lifetime-count line entirely — no fake numbers, no public unauth endpoint added.
+- [x] Real product screenshot captured from live composer (smoke-test tenant) at `public/screenshots/composer-hero.png`.
+- [x] Build clean, deploy clean, post-deploy curl + Playwright verified.
 
 ### M7.C — Build Mode (after M7.B)
 - [ ] Docs hub (`/docs`) with two-column layout (sticky sidebar nav + content).

@@ -2,6 +2,14 @@
 
 ## Open Issues
 
+### INFO-SEC-006 (open, M9 polish) — nginx static SPA responses miss defensive headers
+
+**Filed:** 2026-05-09 (production deploy verification of SEC-001).
+**Surface:** `/etc/nginx/sites-available/toast` on TOASTWEB1.
+**Issue:** SEC-001 added `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy` via ASP.NET middleware in `Program.cs`. Verified live on every `/api/*` response — both 401 challenges and authenticated traffic carry the headers. But `GET /` (marketing) and `GET /login` (React SPA HTML) are served directly by nginx's static-file handler from `/opt/toast/dashboard/`, bypassing the ASP.NET pipeline entirely. Those responses carry only nginx defaults (Server / Content-Type / Last-Modified / ETag / Accept-Ranges) — none of the defensive headers. The SPA HTML is therefore not protected against clickjacking or MIME confusion at the page-load level; only the XHR responses to `/api/*` get the protection.
+**Fix (M9 polish):** add `add_header ... always` directives to the nginx server block so static responses carry the same defensive set, plus `Strict-Transport-Security` (since nginx is the TLS terminator). Once nginx adds them, both API and SPA responses are uniformly protected. The `always` flag is required so the headers apply to non-2xx nginx responses too.
+**Blocking:** No — XHR-level protection is in place; this closes the page-load surface.
+
 ### SEC-005 — **RESOLVED 2026-05-09** (TOTP code replay within ±1 step)
 
 **Filed:** 2026-05-09 (post-M8.C security review). Was carrying as INFO-M3-001 since M3.

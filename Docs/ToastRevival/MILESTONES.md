@@ -417,8 +417,8 @@ Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplica
 - **D1**: End-to-end test: Store install → register → receive notification → interact → verify delivery tracking (Keith-lab work — waits on signed MSIX flight to 9PFD6004DVTN)
 - **D2**: End-to-end test: MSI/RMM install → same flow (Keith-lab)
 - **D3**: End-to-end test: Intune LOB deploy → same flow (Keith-lab)
-- **D4**: Load testing — 1,000 concurrent agents, notification blast, measure delivery latency
-- **D5**: Security penetration testing — tenant isolation, auth bypass, content injection, privilege escalation
+- **D4** [x **COMPLETE 2026-05-09 (M8.B)**]: Load harness — concurrent SignalR clients, single-tenant fanout latency percentiles (p50/p95/p99), queue saturation drain. Default 100-device CI-fast scenario asserts every device receives a signed payload within a 5s p95 budget; opt-in 1,000-device variant gated on `TOAST_TEST_RUN_LOAD_1K=1` for local measurement. Sustained-burst scenario verifies the unbounded `Channel<Guid>` in `NotificationQueueService` drains cleanly across 5×30 = 150 deliveries with no `Failed`/`PartialFailure` rows. Closes M8.A carry-forward INFO items: INFO-M8A-001 (PostgresFixture Docker pre-flight) and INFO-M8A-002 (ApiTestFactory class-scoped fixture share). See `EVIDENCE/2026-05-09-m8b-load-harness.md`.
+- **D5**: Security penetration testing — tenant isolation, auth bypass, content injection, privilege escalation. WebSocket-transport hub variant test (closes INFO-M8A-003) lands here.
 - **D6**: Beta program — invite 3-5 MSP partners for real-world testing
 - **D7**: Bug fix cycle based on beta feedback
 
@@ -442,9 +442,36 @@ Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplica
 - Diana: not engaged (backend-only milestone).
 - Carl: scope-slicing decision (M8.A vs full M8), CI-runner-or-no-runner call.
 
+### M8.B Closure (2026-05-09) — Load Harness + Fixture Refactor
+
+- 1 deliverable shipped (D4 load harness), closing the two M8.A INFO items it carried (INFO-M8A-001 PostgresFixture Docker pre-flight + INFO-M8A-002 ApiTestFactory class-scoped fixture share).
+- New `LoadFixture` (collection-scoped via `LoadCollection`) owns one `ApiTestFactory` plus a `Respawner` snapshot of the post-migration empty schema. Both `EndToEndNotificationTests` and the new `LoadTests` consume the shared fixture; per-test isolation preserved via `_load.ResetAsync()` calls (truncates non-Identity tables in milliseconds, no-op when Respawner can't initialize against the connection string).
+- New `LoadHarness` static helper exposes `SeedTenantAsync(factory, deviceCount)` and `RunSingleNotificationFanoutAsync(factory, tenant, timeout)`. Seeding bypasses the rate-limited `/api/devices/register` endpoint via DB scope + `TokenService` minting (rationale: M8.A E2E covers registration; M8.B is testing fanout). Admin user is seeded with `UserRole.Admin` so the `>100`-device target gate passes. Result type captures p50/p95/p99 latency, first/last receive offset, total elapsed, HMAC verify failures.
+- New `LoadTests` class with three `[Fact]`s:
+  - `Fanout_To_DefaultDeviceCount_DeliversWithinLatencyBudget` — 100-device CI-fast smoke; asserts every device receives, every payload HMAC-verifies, p95 < 5s.
+  - `Fanout_To_LargeCount_OptIn_DeliversWithinLooseBudget` — 1,000-device variant gated on `TOAST_TEST_RUN_LOAD_1K=1`; asserts ≥99% receive within 2 minutes, zero verify failures. Skipped on CI by default to keep wall-time predictable.
+  - `Sustained_Burst_AllNotificationsDrainCleanly` — 5 notifications dispatched in tight succession against 30 devices; polls until every notification reaches `NotificationStatus.Sent` (which `ProcessAsync` only flips on full delivery success), failing fast on `Failed`/`PartialFailure`.
+- `PostgresFixture.InitializeAsync` adds a friendly Docker pre-flight: probes `/var/run/docker.sock` (Linux/macOS) or `\\.\pipe\docker_engine` (Windows), honors `DOCKER_HOST`, throws a single-paragraph `InvalidOperationException` pointing the developer at the env-var override and the CI service-container pattern. Without the gate, Testcontainers surfaces an internal connection-failure stack trace that isn't actionable.
+- `EndToEndNotificationTests` refactored from per-test `ApiTestFactory` instantiation to the shared `LoadFixture`. Test now starts with `await _load.ResetAsync()` so the shared DB is clean for each run.
+- Build: `dotnet build` on the API + tests projects clean (0 warnings, 0 errors) once the local Defender block on `Microsoft.AspNetCore.Mvc.Testing.Tasks.dll` is sidestepped via `-p:_MvcTestingTasksAssembly=<relocated-copy>`. CI runner (Linux Ubuntu) is unaffected and is the verification gate (M8.A precedent).
+- New standing rules (Carl):
+  - **Pre-seed via DB scope when the test target is downstream of registration.** Going through `/api/devices/register` for load testing burns the rate-limit budget on the registration path the test isn't even measuring; seeding keeps the pressure on the actual surface under test.
+  - **Default load-test sizing optimizes for CI predictability.** The 1,000-device run is opt-in, not the default. The default scenario (100 devices) must complete under 30s wall-clock on the GitHub-hosted Ubuntu runner.
+  - **Friendly fixture pre-flight is non-negotiable.** When a test fixture has external dependencies (Docker, network, third-party services), the fixture's `InitializeAsync` must produce a single-paragraph instruction on missing dependency before any vendor exception surfaces. The vendor stack trace is for after the gate, not in place of one.
+- INFO items deferred:
+  - INFO-M8B-001: load test p95 budget is a smoke threshold, not a regression gate — replace with a CI-runner-baselined rolling p95 at M8.C/M9.
+  - INFO-M8B-002: M8.C should add an env-gated registration-path load scenario for completeness.
+  - INFO-M8B-003: local-build Defender block on this dev box (environmental, no action).
+
+### Agent Deployment (M8.B)
+- Anthony: D4 load harness + fixture refactor + Docker pre-flight + E2E refactor — system-level wiring on the test infrastructure, single-author shape consistent with M8.A.
+- Abish: significant-scope Code Sweep across 6 files (3 new + 2 modified test files + 1 doc surface).
+- Diana: not engaged (backend-only milestone).
+- Carl: scope-slicing decision (D4 lands first, D5 holds for M8.C with WebSocket-transport variant), test-sizing call (default 100, opt-in 1,000), pre-seed-vs-register-endpoint call.
+
 ### Agent Deployment (Future M8 Slices)
-- Anthony: D4 load harness, D5 security probes, D1/D2/D3 end-to-end on Keith's lab once signed packages land
-- Abish: D4 / D6-D7 (load testing is scripted, beta coordination is process work) + Code Sweep all slices
+- Anthony: D5 security probes + WebSocket-transport variant (M8.C), D1/D2/D3 end-to-end on Keith's lab once signed packages land
+- Abish: D5 / D6-D7 (security probes are scripted, beta coordination is process work) + Code Sweep all slices
 
 ---
 

@@ -2,11 +2,11 @@
 
 ## Current Reality
 
-Project status: **M0A through M7 ALL COMPLETE. M8.A COMPLETE 2026-05-09 — Backend integration test foundation shipped.** New `tests/ToastRevival.Api.Tests` project (xUnit + Microsoft.AspNetCore.Mvc.Testing 8.0.15 + Testcontainers.PostgreSql 4.0.0 + Microsoft.AspNetCore.SignalR.Client 8.0.15) with first E2E scenario covering tenant register → device register → SignalR fanout → HMAC verify → ReportDelivery → ReportInteraction → DB invariants. Production code minimally extended (`public partial class Program;` only). CI runner at `.github/workflows/api-tests.yml` runs on every push/PR touching API/sln/test files against a Postgres 16 service container. Closes carry-forward `INFO-M1-004` (zero automated tests since M1).
+Project status: **M0A through M8.B ALL COMPLETE. M8.B COMPLETE 2026-05-09 — Load harness + fixture refactor shipped.** New `tests/ToastRevival.Api.Tests` files at M8.B: `LoadFixture.cs` (collection-scoped shared `ApiTestFactory` + `Respawner` snapshot — closes INFO-M8A-002), `LoadHarness.cs` (DB-scope tenant/device seeding + concurrent SignalR fanout runner with p50/p95/p99 reporter), `LoadTests.cs` (default 100-device CI-fast scenario asserts p95 < 5s; opt-in 1,000-device gated on `TOAST_TEST_RUN_LOAD_1K=1`; sustained-burst saturation drain). `PostgresFixture` gained a friendly Docker pre-flight (closes INFO-M8A-001). `EndToEndNotificationTests` refactored to consume the shared `LoadFixture`. M8.A (backend test foundation, `tests/ToastRevival.Api.Tests` xUnit + WebApplicationFactory + Testcontainers PostgreSQL) closed earlier same day. Production code is unchanged — M8.B is test-infrastructure only.
 
 M7.D earlier same day shipped SEO + LLM-discovery layer (`llms.txt`, `robots.txt`, `sitemap.xml`, per-page JSON-LD via the new `useSeo` hook, favicon set, 1200×630 OG card). M7.A/B/C earlier shipped marketing site rebuilt corporate-grade + public docs hub. Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt.
 
-**Next milestone: M8.B** — load testing harness (D4: 1,000 concurrent agents, fanout latency, queue throughput) reusing M8.A's `ApiTestFactory` + `PostgresFixture` foundation. Then M8.C (security pen-test surface — D5) and M8.D (beta program coordination — D6/D7). D1/D2/D3 (Store / MSI / Intune Windows-side E2E) wait on Keith's lab + signed-package flight.
+**Next milestone: M8.C** — security pen-test surface (D5: tenant-isolation probes, auth-bypass attempts, content-injection, privilege escalation) plus the WebSocket-transport hub variant test (closes INFO-M8A-003) plus the env-gated registration-path load scenario (INFO-M8B-002). Then M8.D (beta program coordination — D6/D7). D1/D2/D3 (Store / MSI / Intune Windows-side E2E) wait on Keith's lab + signed-package flight.
 
 **Codex handoff tracks closed 2026-05-09:**
 - Pricing v2 shipped: single Standard plan, $0.22/device/month, 100-device monthly floor ($22), 14-day Stripe trial, no Free/Pro/Enterprise plan picker.
@@ -180,19 +180,21 @@ All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 
 - [x] Build clean (0 warnings, 0 errors solution-wide).
 - [x] EVIDENCE captured at `EVIDENCE/2026-05-09-m8a-test-foundation.md`.
 
-### M8.B — Load testing (next session)
-- [ ] D4: 1,000 concurrent agents harness (parallel SignalR connections, single-tenant or multi-tenant fan-out, fixed-rate notification blast).
-- [ ] Latency percentiles: p50/p95/p99 from POST /api/notifications → ReceiveNotification arrival → ReportDelivery acknowledgment.
-- [ ] Queue saturation behavior: when `Channel<Guid>` writer outpaces reader, observe back-pressure / processing rate.
-- [ ] `Respawn` integration for per-test DB cleanup once test count grows.
-- [ ] Address INFO-M8A-001 (Docker pre-flight) and INFO-M8A-002 (factory share) as part of harness restructure.
+### M8.B — COMPLETE 2026-05-09
+- [x] D4: load harness with concurrent SignalR clients, single-tenant fanout latency percentiles (p50/p95/p99), HMAC verify, queue saturation drain. Default 100-device CI-fast scenario; opt-in 1,000-device variant via `TOAST_TEST_RUN_LOAD_1K=1`; sustained-burst scenario over 5×30 deliveries.
+- [x] `LoadFixture` (collection-scoped shared `ApiTestFactory` + `Respawner` snapshot) — closes INFO-M8A-002.
+- [x] `PostgresFixture` Docker pre-flight (Linux socket / Windows pipe / DOCKER_HOST honored) — closes INFO-M8A-001.
+- [x] `Respawn 6.2.1` integration for per-test cleanup; `_load.ResetAsync()` no-op-safe when Respawner can't init.
+- [x] `EndToEndNotificationTests` refactored to consume the shared `LoadFixture` — both test classes amortize startup.
+- [x] Latency capture from POST `/api/notifications` dispatch to per-device `ReceiveNotification` arrival; ReportDelivery loop at scale deferred to M8.C.
 
-### M8.C — Security pen-test (after M8.B)
+### M8.C — Security pen-test + transport variant (next session)
 - [ ] D5: tenant-isolation probes (cross-tenant device read/write, hub group leakage, audit log fence).
 - [ ] D5: auth bypass attempts (expired JWT, swapped tenantId claim, malformed device JWT, missing-MFA broadcast).
 - [ ] D5: content injection (XSS in notification body, oversized payload, unicode boundary cases).
 - [ ] D5: privilege escalation (Technician self-grant Admin, Admin self-grant SuperAdmin, BYO-platformAdmin claim).
-- [ ] WebSocket-transport hub variant test (closes INFO-M8A-003).
+- [ ] WebSocket-transport hub variant test (closes INFO-M8A-003) using `factory.Server.CreateWebSocketClient()` to exercise the `Program.cs:65-75 OnMessageReceived` query-string JWT path.
+- [ ] Env-gated registration-path load scenario (INFO-M8B-002) for completeness.
 
 ### M8.D — Beta program (Keith-driven)
 - [ ] D6: invite 3–5 MSP partners — Keith identifies and contacts.

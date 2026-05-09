@@ -486,18 +486,21 @@ Before declaring a frontend deploy clean, verify:
 ### Lesson (FIX-PROD-001, 2026-05-09)
 Production blank-page blocker shipped because the M5.C asset library introduced `/assets/` as an API prefix without anyone re-validating Vite's default output dir against the nginx routing table. The deploy passed every existing check (HTML 200, build 0 errors, files-on-disk verify) but no check covered "does the URL the SPA emits actually resolve to the file the SPA emits." Add to deploy verification: a single `curl --max-time 10 https://toastnotification.com<emitted-script-src>` per deploy, expecting 200 with bytes > 0.
 
-## Backend Test Foundation (M8.A, 2026-05-09)
+## Backend Test Foundation (M8.A → M8.B, 2026-05-09)
 
-### Layout
+### Layout (M8.B)
 
 ```
 tests/ToastRevival.Api.Tests/
-  ToastRevival.Api.Tests.csproj    # xUnit + Mvc.Testing + SignalR.Client + Testcontainers.PostgreSql
+  ToastRevival.Api.Tests.csproj    # xUnit + Mvc.Testing + SignalR.Client + Testcontainers.PostgreSql + Respawn 6.2.1
   appsettings.Test.json            # dummy Stripe values, test JWT key, suppressed log noise
-  PostgresFixture.cs               # IAsyncLifetime collection fixture (Testcontainers + env-var fallback)
+  PostgresFixture.cs               # IAsyncLifetime collection fixture (Testcontainers + env-var fallback + Docker pre-flight, M8.B)
   ApiTestFactory.cs                # WebApplicationFactory<Program> override (forces Production env, rewrites connection string)
+  LoadFixture.cs                   # Collection-scoped shared ApiTestFactory + Respawner snapshot (M8.B, closes INFO-M8A-002)
+  LoadHarness.cs                   # Concurrent-SignalR fanout harness with p50/p95/p99 latency reporter (M8.B)
   PayloadVerifier.cs               # Agent-side HMAC reproduction (mirrors NotificationPayloadBuilder.BuildSigned)
-  EndToEndNotificationTests.cs     # First E2E: tenant-register → device-register → SignalR-fanout → HMAC-verify → ReportDelivery → ReportInteraction
+  EndToEndNotificationTests.cs     # First E2E: tenant-register → device-register → SignalR-fanout → HMAC-verify → ReportDelivery → ReportInteraction (refactored to LoadFixture, M8.B)
+  LoadTests.cs                     # M8.B fanout-load + sustained-burst saturation tests
 ```
 
 ### Standing rules
@@ -507,7 +510,11 @@ tests/ToastRevival.Api.Tests/
 3. **Production environment in tests.** `ApiTestFactory.CreateHost` sets `UseEnvironment("Production")` so CORS uses the configured `AllowedOrigins` (empty) instead of the dev `SetIsOriginAllowed(_ => true)`, and Swagger doesn't load. Test surface matches deployed behavior.
 4. **`db.Database.Migrate()` runs on test startup** — same hook as production. Schema is applied automatically when the WebApplicationFactory boots; no separate migration step in test setup.
 5. **PayloadVerifier mirrors production primitives only** — HMAC-SHA256 + `CryptographicOperations.FixedTimeEquals`. Format changes go through `NotificationPayloadBuilder.BuildSigned`; verifier doesn't reproduce the format, just verifies the HMAC over received bytes.
-6. **SignalR client uses LongPolling for TestServer compat.** In-process TestServer doesn't speak WebSockets; the payload-signing and hub-method paths are transport-agnostic, so LongPolling is a faithful exercise of the agent loop. Production WebSocket-transport coverage is deferred to a M8.B+ variant test (INFO-M8A-003).
+6. **SignalR client uses LongPolling for TestServer compat.** In-process TestServer doesn't speak WebSockets; the payload-signing and hub-method paths are transport-agnostic, so LongPolling is a faithful exercise of the agent loop. Production WebSocket-transport coverage is deferred to a M8.C variant test (INFO-M8A-003) using `factory.Server.CreateWebSocketClient()`.
+7. **Friendly fixture pre-flight (M8.B).** External-dependency fixtures (`PostgresFixture` for Docker) probe the dependency before invoking the vendor SDK, throwing a single-paragraph instruction on missing dependency. Vendor stack traces surface only after the gate passes.
+8. **Pre-seed via DB scope when the test target is downstream of registration (M8.B).** `LoadHarness.SeedTenantAsync` inserts `Tenant` + `AppUser` (via `UserManager`) + N `Device` rows directly via the API's service scope, then mints JWTs through `TokenService`. Going through `/api/devices/register` would burn the rate-limit budget on the registration path the test isn't measuring; seeding keeps the pressure on the actual surface under test (the hub fanout pipeline). The registration path is independently covered by `EndToEndNotificationTests`.
+9. **Default load-test sizing optimizes for CI predictability (M8.B).** `LoadTests.Fanout_To_DefaultDeviceCount_DeliversWithinLatencyBudget` runs at 100 devices and must complete under 30s wall-clock on the Linux Ubuntu runner. The 1,000-device variant is opt-in via `TOAST_TEST_RUN_LOAD_1K=1` for local measurement, never default-on in CI.
+10. **Shared fixture + per-test reset (M8.B).** `LoadFixture` (collection-scoped, owns one `ApiTestFactory` + `Respawner` snapshot) is consumed by both `EndToEndNotificationTests` and `LoadTests`. Per-test isolation: every test method calls `await _load.ResetAsync()` at top, which truncates non-Identity tables back to the snapshot in milliseconds. Respawner-null fallback (e.g. connection string can't DDL-truncate): `ResetAsync` becomes a no-op, tests still pass on fresh-GUID isolation.
 
 ### CI surface
 

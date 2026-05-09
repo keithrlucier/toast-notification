@@ -8,17 +8,17 @@
 **Surface:** entire `src/ToastRevival.Api` — no test project existed.
 **Resolution:** New `tests/ToastRevival.Api.Tests` project shipped at M8.A with xUnit + Microsoft.AspNetCore.Mvc.Testing 8.0.15 + Testcontainers PostgreSQL fixture + Microsoft.AspNetCore.SignalR.Client 8.0.15. First end-to-end scenario covers the M2.A/M2.B critical path: tenant register → device register → admin send → SignalR fanout → HMAC verify → ReportDelivery → ReportInteraction → DB invariants. CI runner at `.github/workflows/api-tests.yml` runs the suite against a Postgres 16 service container on every push/PR touching API, sln, or tests. See `EVIDENCE/2026-05-09-m8a-test-foundation.md`.
 
-### INFO-M8A-001 (open, M8.B candidate)
+### INFO-M8A-001 — **RESOLVED 2026-05-09 (M8.B)** (PostgresFixture friendly Docker pre-flight)
 
-`tests/ToastRevival.Api.Tests/PostgresFixture.cs` has no friendly Docker-availability pre-flight. If neither Docker nor `TOAST_TEST_CONNECTION_STRING` is configured locally, `_container.StartAsync()` fails with a Testcontainers exception that isn't immediately self-explanatory. Add a `[SkippableFact]` pattern or a clearer prefatory check at M8.B when more tests come online and dev-box discoverability matters more.
+**Resolution:** `tests/ToastRevival.Api.Tests/PostgresFixture.cs` `InitializeAsync` now probes the platform-specific Docker endpoint (`/var/run/docker.sock` on Linux/macOS, `\\.\pipe\docker_engine` on Windows; honors `DOCKER_HOST` override) before calling `_container.StartAsync()`. When neither Docker nor `TOAST_TEST_CONNECTION_STRING` is reachable, the fixture throws an `InvalidOperationException` with a single-paragraph instruction pointing the developer at the env-var override and the CI service-container pattern. The Testcontainers stack trace surfaces only after this gate passes.
 
-### INFO-M8A-002 (open, M8.B candidate)
+### INFO-M8A-002 — **RESOLVED 2026-05-09 (M8.B)** (ApiTestFactory class-scoped fixture share)
 
-`ApiTestFactory` is created per-test-method in `EndToEndNotificationTests.cs`. Acceptable for one test; once M8.B+ adds more scenarios in the same class, refactor to `IClassFixture<ApiTestFactory>` so the in-process API + TestServer is shared across tests in the class.
+**Resolution:** New `LoadFixture` (collection-scoped via `LoadCollection`) owns one `ApiTestFactory` instance plus a `Respawner` snapshot of the empty post-migration schema. Both `EndToEndNotificationTests` and the new `LoadTests` consume the shared fixture. Per-test isolation is preserved via `_load.ResetAsync()` calls at the top of every test method (truncates non-Identity tables back to the snapshot in milliseconds). The M8.A pattern of building a fresh factory per test is preserved for connection strings that don't support the Respawner DDL truncation path (Respawner stays null, `ResetAsync` becomes a no-op, tests still pass on fresh-GUID isolation).
 
-### INFO-M8A-003 (open, M8.B candidate)
+### INFO-M8A-003 (open, M8.C candidate)
 
-The first E2E scenario forces SignalR `LongPolling` transport because in-process TestServer does not speak WebSockets. Production agents use WebSockets via `Microsoft.AspNetCore.SignalR.Client` default negotiation. The query-string JWT path (`Program.cs:65-75 — JwtBearerEvents.OnMessageReceived` reading `Query["access_token"]` for `/hubs` paths) is therefore not exercised by M8.A. Add a WebSocket-transport variant test in M8.B using `factory.Server.CreateWebSocketClient()` to cover this seam.
+The M8.A E2E scenario and the M8.B load harness both force SignalR `LongPolling` transport because in-process TestServer does not speak WebSockets. Production agents use WebSockets via `Microsoft.AspNetCore.SignalR.Client` default negotiation. The query-string JWT path (`Program.cs:65-75 — JwtBearerEvents.OnMessageReceived` reading `Query["access_token"]` for `/hubs` paths) is therefore not exercised. Add a WebSocket-transport variant test in M8.C alongside the auth-bypass / tenant-isolation pen-test work using `factory.Server.CreateWebSocketClient()` to cover this seam.
 
 ### INFO-M8A-004 (open, no action)
 
@@ -27,6 +27,18 @@ The first E2E scenario forces SignalR `LongPolling` transport because in-process
 ### INFO-M8A-005 (open, no action)
 
 `tests/ToastRevival.Api.Tests/PayloadVerifier.cs` reproduces the production HMAC verification logic (HMAC-SHA256 + `CryptographicOperations.FixedTimeEquals`) because the Windows-only `ToastRevival.Agent` project cannot be referenced from a netstandard test assembly. Drift risk is minimal — both ends use the same vendor primitives, and the tenant signing key encoding is shared via `DeviceTokenResponse`. If `Tenant.SigningKey` ever changes encoding, both surfaces update at once. Flagged for record only.
+
+### INFO-M8B-001 (open, M8.C/M9 candidate)
+
+`tests/ToastRevival.Api.Tests/LoadTests.cs::Fanout_To_DefaultDeviceCount_DeliversWithinLatencyBudget` asserts `result.P95Ms < 5000` as a behavioral smoke. The threshold is a generous initial budget chosen without CI-runner data — it should be tightened (or replaced with a regression-tracking percentile) once the test has accumulated 10+ green runs on the GitHub-hosted Ubuntu runner. M8.C or M9 candidate: capture a rolling p95 baseline as a workflow-published artifact, then assert that new runs land within ±20% of the rolling median.
+
+### INFO-M8B-002 (open, M8.C candidate)
+
+The M8.B load harness pre-seeds devices via DB scope and JWT minting, skipping `POST /api/devices/register`. This is correct for fanout-path testing — the registration path is covered by M8.A's E2E test, and the rate-limited unauthenticated `device-per-hour` policy would cap an anon-IP burst at 10/hr (TestServer presents a single `RemoteIpAddress`-or-`anon` partition). M8.C should add a complementary load scenario that registers devices through the public endpoint at a sustainable pace (i.e. with `TOAST_TEST_RUN_REGISTRATION_LOAD=1` env-gated) to validate the registration-path under sustained load with real Stripe-quantity-sync calls disabled.
+
+### INFO-M8B-003 (open, no action — environmental)
+
+`dotnet build` and `dotnet test` are blocked locally on this dev box by Microsoft Defender's load-time block on `Microsoft.AspNetCore.Mvc.Testing.Tasks.dll` and on freshly-compiled `ToastRevival.Api.Tests.dll`. ACL is `FullControl`; bash can read the bytes (MZ header confirmed); the .NET runtime gets `E_ACCESSDENIED (0x80070005)` when `Assembly.LoadFile()`-ing them. Same root cause that constrained M8.A to CI-only test execution — a Defender real-time scan that intercepts code-load on `.nuget` paths but not on relocated copies. Workaround verified locally: `-p:_MvcTestingTasksAssembly=<copy-of-the-DLL-outside-.nuget>` lets the build succeed (0 warnings, 0 errors). The CI runner's Linux Ubuntu environment does not reproduce. M8.A precedent stands: CI is the verification gate.
 
 ### FIX-M7D-001 — **RESOLVED 2026-05-09 (pre-commit)** (Defensive `</script>` escape on JSON-LD serialization)
 

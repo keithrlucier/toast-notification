@@ -33,24 +33,29 @@ namespace ToastRevival.Api.Tests;
 /// 7. <c>ReportInteraction</c> over the hub flips it to Clicked with the action
 ///    string and an InteractedAt timestamp.
 /// </summary>
-[Collection(nameof(PostgresCollection))]
+[Collection(nameof(LoadCollection))]
 public sealed class EndToEndNotificationTests
 {
     private static readonly TimeSpan ReceiveTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan PollTimeout    = TimeSpan.FromSeconds(10);
 
-    private readonly PostgresFixture _postgres;
+    private readonly LoadFixture _load;
 
-    public EndToEndNotificationTests(PostgresFixture postgres)
+    public EndToEndNotificationTests(LoadFixture load)
     {
-        _postgres = postgres;
+        _load = load;
     }
 
     [Fact]
     public async Task HubFanout_DeliversSignedPayload_ReportsDelivery_ReportsInteraction()
     {
-        await using var factory = new ApiTestFactory(_postgres.ConnectionString);
-        using var http          = factory.CreateClient();
+        // Reset the shared database to a clean slate so the seeded tenant
+        // doesn't collide with a prior test run's leftovers (Respawner is a
+        // no-op on connection strings that don't support DDL truncation).
+        await _load.ResetAsync();
+
+        var factory    = _load.Factory;
+        using var http = factory.CreateClient();
 
         // 1) Register the tenant + admin user — first session this DB has seen.
         var registerEmail = $"admin-{Guid.NewGuid():n}@toastrevival.test";

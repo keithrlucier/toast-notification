@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
+import { billingApi, type BillingConfig } from '../api/billing';
+import { useAuth } from '../contexts/AuthContext';
 
 interface TenantSettingsData {
   tenantName: string;
@@ -30,17 +32,25 @@ const SCENARIO_OPTIONS = [
 ];
 
 export default function TenantSettings() {
+  const { user } = useAuth();
   const [data, setData]       = useState<TenantSettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
+  const isPlatformAdmin = Boolean(user?.isPlatformAdmin);
 
   // Controlled form state
   const [logoUrl, setLogoUrl]               = useState('');
   const [primaryColor, setPrimaryColor]     = useState('#1F6FBD');
   const [defaultAudio, setDefaultAudio]     = useState('');
   const [defaultScenario, setDefaultScenario] = useState('Default');
+  const [billingConfig, setBillingConfig]   = useState<BillingConfig | null>(null);
+  const [billingPriceId, setBillingPriceId] = useState('');
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingSaving, setBillingSaving]   = useState(false);
+  const [billingError, setBillingError]     = useState('');
+  const [billingSuccess, setBillingSuccess] = useState('');
 
   useEffect(() => {
     api.get<TenantSettingsData>('/api/tenant/settings')
@@ -57,6 +67,22 @@ export default function TenantSettings() {
         setLoading(false);
       });
   }, []);
+
+  useEffect(() => {
+    if (!isPlatformAdmin) return;
+
+    setBillingLoading(true);
+    setBillingError('');
+    billingApi.getBillingConfig()
+      .then(config => {
+        setBillingConfig(config);
+        setBillingPriceId(config.perDevicePriceId ?? '');
+      })
+      .catch(err => {
+        setBillingError(err instanceof ApiError ? err.message : 'Failed to load billing configuration.');
+      })
+      .finally(() => setBillingLoading(false));
+  }, [isPlatformAdmin]);
 
   const save = async () => {
     setSaving(true);
@@ -75,6 +101,23 @@ export default function TenantSettings() {
       setError(err instanceof ApiError ? err.message : 'Failed to save settings.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveBillingConfig = async () => {
+    setBillingSaving(true);
+    setBillingError('');
+    setBillingSuccess('');
+    try {
+      const config = await billingApi.updateBillingConfig(billingPriceId.trim());
+      setBillingConfig(config);
+      setBillingPriceId(config.perDevicePriceId);
+      setBillingSuccess('Billing configuration saved.');
+      setTimeout(() => setBillingSuccess(''), 3000);
+    } catch (err) {
+      setBillingError(err instanceof ApiError ? err.message : 'Failed to save billing configuration.');
+    } finally {
+      setBillingSaving(false);
     }
   };
 
@@ -243,6 +286,78 @@ export default function TenantSettings() {
           Per-tenant rate limit customization is handled by support on the standard plan.
         </p>
       </div>
+
+      {isPlatformAdmin && (
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Billing Configuration</h2>
+              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 13 }}>
+                Platform-wide Stripe price used when tenants start checkout.
+              </p>
+            </div>
+            <span style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: billingConfig?.isConfigured ? 'var(--status-success)' : 'var(--status-warning)',
+              background: billingConfig?.isConfigured ? 'rgba(34,197,94,0.12)' : 'rgba(203,104,18,0.12)',
+              borderRadius: 4,
+              padding: '4px 8px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+            }}>
+              {billingLoading ? 'Loading' : billingConfig?.isConfigured ? 'Configured' : 'Missing'}
+            </span>
+          </div>
+
+          {billingError && <div className="error-banner" style={{ marginBottom: 16 }}>{billingError}</div>}
+          {billingSuccess && (
+            <div className="success-banner" style={{ marginBottom: 16 }}>
+              {billingSuccess}
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, alignItems: 'end' }}>
+            <div className="field">
+              <label>Stripe Price ID</label>
+              <input
+                type="text"
+                value={billingPriceId}
+                onChange={e => setBillingPriceId(e.target.value)}
+                placeholder="price_..."
+                disabled={billingLoading || billingSaving}
+                style={{ minHeight: 44, fontFamily: 'var(--font-mono)', fontSize: 13 }}
+              />
+            </div>
+            <button
+              className="btn btn-primary"
+              onClick={saveBillingConfig}
+              disabled={billingLoading || billingSaving}
+              style={{ minHeight: 44, width: '100%', justifyContent: 'center' }}
+            >
+              {billingSaving ? 'Saving...' : 'Save Billing'}
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginTop: 18 }}>
+            <div className="metric-card">
+              <div className="metric-label">Unit Price</div>
+              <div className="metric-value">${(billingConfig?.pricePerDevice ?? 0.22).toFixed(2)}</div>
+              <div className="metric-sub">per device</div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-label">Minimum</div>
+              <div className="metric-value">{billingConfig?.minimumDevices ?? 100}</div>
+              <div className="metric-sub">billable devices</div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-label">Floor</div>
+              <div className="metric-value">${(billingConfig?.monthlyFloor ?? 22).toFixed(0)}</div>
+              <div className="metric-sub">per month</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <button

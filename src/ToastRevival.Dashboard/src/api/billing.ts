@@ -27,6 +27,14 @@ export interface Invoice {
   hostedUrl: string | null;
 }
 
+export interface BillingConfig {
+  perDevicePriceId: string;
+  isConfigured: boolean;
+  pricePerDevice: number;
+  minimumDevices: number;
+  monthlyFloor: number;
+}
+
 export const billingApi = {
   getPlan: () =>
     api.get<BillingPlan>('/api/billing/plan'),
@@ -39,4 +47,10 @@ export const billingApi = {
 
   getInvoices: () =>
     api.get<{ invoices: Invoice[] }>('/api/billing/invoices'),
+
+  getBillingConfig: () =>
+    api.get<BillingConfig>('/api/system/billing/config'),
+
+  updateBillingConfig: (perDevicePriceId: string) =>
+    api.post<BillingConfig>('/api/system/billing/config', { perDevicePriceId }),
 };

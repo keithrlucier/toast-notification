@@ -19,6 +19,10 @@ QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Runtime-managed local overrides. This stays out of git and lets platform
+// admins set non-secret operational values without SSH.
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
 // Database
 builder.Services.AddDbContext<AppDbContext>(opts =>
     opts.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -154,6 +158,7 @@ builder.Services.AddSingleton<IPdfExportService, PdfExportService>();
 // M6 licensing
 builder.Services.AddScoped<ILicenseService, LicenseService>();
 builder.Services.AddScoped<IStripeBillingSyncService, StripeBillingSyncService>();
+builder.Services.AddSingleton<IBillingConfigService, BillingConfigService>();
 
 // CORS — dev allows any origin; production should lock this down via config
 builder.Services.AddCors(opts =>

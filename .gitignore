@@ -19,6 +19,7 @@ TestResults/
 *.user
 *.suo
 .vs/
+src/ToastRevival.Api/appsettings.Local.json
 
 # Windows packaging and signing outputs
 *.pfx

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { billingApi, type BillingPlan, type Invoice } from '../api/billing';
+import { ApiError } from '../api/client';
 
 const STATUS_COLOR: Record<string, string> = {
   Active: 'var(--status-success)',
@@ -56,8 +57,8 @@ export default function Billing() {
     try {
       const { url } = await billingApi.createCheckout();
       window.location.href = url;
-    } catch {
-      setError('Could not start checkout. Confirm Stripe pricing is configured and try again.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not start checkout. Confirm Stripe pricing is configured and try again.');
       setCheckoutLoading(false);
     }
   };

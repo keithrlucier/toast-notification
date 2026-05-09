@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -15,10 +16,57 @@ namespace ToastRevival.Api.Controllers;
 public class SystemController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly IBillingConfigService _billingConfig;
+    private readonly IAuditService _audit;
 
-    public SystemController(AppDbContext db)
+    public SystemController(
+        AppDbContext db,
+        IBillingConfigService billingConfig,
+        IAuditService audit)
     {
         _db = db;
+        _billingConfig = billingConfig;
+        _audit = audit;
+    }
+
+    [HttpGet("billing/config")]
+    public IActionResult BillingConfig()
+    {
+        return Ok(_billingConfig.GetSnapshot());
+    }
+
+    [HttpPost("billing/config")]
+    public async Task<IActionResult> UpdateBillingConfig([FromBody] UpdateBillingConfigRequest request)
+    {
+        if (request is null)
+            return BadRequest(new { message = "Billing configuration is required." });
+
+        BillingConfigSnapshot snapshot;
+        try
+        {
+            snapshot = await _billingConfig.UpdatePerDevicePriceIdAsync(
+                request.PerDevicePriceId,
+                HttpContext.RequestAborted);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
+        }
+
+        await _audit.LogAsync(
+            GetTenantId(),
+            GetUserId(),
+            "billing.config.updated",
+            "SystemBillingConfig",
+            null,
+            new { perDevicePriceId = MaskPriceId(snapshot.PerDevicePriceId) },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(snapshot);
     }
 
     [HttpGet("tenants")]
@@ -225,4 +273,25 @@ public class SystemController : ControllerBase
             .Select(g => new { TenantId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.TenantId, x => x.Count);
     }
+
+    private Guid GetTenantId()
+    {
+        var value = User.FindFirstValue("tenantId");
+        return Guid.TryParse(value, out var tenantId) ? tenantId : Guid.Empty;
+    }
+
+    private Guid? GetUserId()
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+        return Guid.TryParse(value, out var userId) ? userId : null;
+    }
+
+    private static string MaskPriceId(string priceId)
+    {
+        if (priceId.Length <= 12) return "price_***";
+        return $"{priceId[..10]}...{priceId[^4..]}";
+    }
 }
+
+public sealed record UpdateBillingConfigRequest(string? PerDevicePriceId);

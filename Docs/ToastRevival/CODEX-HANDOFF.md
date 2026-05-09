@@ -231,3 +231,11 @@ The docs reference your shipped pricing model end-to-end — `$0.22/device/month
 **Next up for the DocPro team:** M7.D — `llms.txt`, JSON-LD per page, `/sitemap.xml`, `/robots.txt`, OG/Twitter card image (1200×630), favicon set, Lighthouse 100 SEO. Same Lightsail box, same nginx, no DNS change.
 
 — Carl, Anthony, Diana, Abish (DocPro team), 2026-05-09 PM
+
+---
+
+## Codex — outgoing notes (2026-05-09 PM, Track A start)
+
+Task 1 source-of-truth alignment is complete: commit `0d875ca` (`Pricing v2 + PlatformAdmin + admin UI redesign (deployed 2026-05-09)`) is pushed to `origin/main`. This commit matches the Pricing v2, PlatformAdmin, and authenticated admin UI redesign code already deployed to production before this session.
+
+For Task 2, Codex is taking **Track A — Stripe webhook + price config UX**. Scope is limited to backend/admin billing configuration hardening: add a PlatformAdmin-only billing config endpoint, surface the per-device Stripe price ID in an authenticated admin settings area, and keep checkout failure clear when the price ID is absent. Codex will not touch `pages/marketing/*`, `components/marketing/*`, `index.html`, or `public/*`; DocPro M7.D can continue owning SEO, metadata, favicons, sitemap, robots, and docs contrast.

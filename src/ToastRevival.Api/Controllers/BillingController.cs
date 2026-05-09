@@ -20,17 +20,20 @@ public class BillingController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ILicenseService _license;
+    private readonly IBillingConfigService _billingConfig;
     private readonly IConfiguration _config;
     private readonly ILogger<BillingController> _logger;
 
     public BillingController(
         AppDbContext db,
         ILicenseService license,
+        IBillingConfigService billingConfig,
         IConfiguration config,
         ILogger<BillingController> logger)
     {
         _db = db;
         _license = license;
+        _billingConfig = billingConfig;
         _config = config;
         _logger = logger;
     }
@@ -84,11 +87,13 @@ public class BillingController : ControllerBase
 
         var secretKey = _config["Stripe:SecretKey"];
         if (string.IsNullOrWhiteSpace(secretKey) || secretKey.StartsWith("sk_test_REPLACE"))
-            return StatusCode(503, "Billing is not configured on this server.");
+            return StatusCode(503, new { message = "Stripe billing is not configured on this server. Add the Stripe secret key before checkout can start." });
 
-        var priceId = _config["Stripe:PerDevicePriceId"];
-        if (string.IsNullOrWhiteSpace(priceId) || priceId.StartsWith("price_REPLACE"))
-            return StatusCode(503, "Per-device billing price is not configured on this server.");
+        var billingConfig = _billingConfig.GetSnapshot();
+        if (!billingConfig.IsConfigured)
+            return StatusCode(503, new { message = "Stripe per-device price ID is not configured. A platform admin can set it in Settings before checkout can start." });
+
+        var priceId = billingConfig.PerDevicePriceId;
 
         StripeConfiguration.ApiKey = secretKey;
         await _license.SyncConsumedCountAsync(tenant);

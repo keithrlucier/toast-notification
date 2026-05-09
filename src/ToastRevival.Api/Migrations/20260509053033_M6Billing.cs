@@ -33,7 +33,7 @@ namespace ToastRevival.Api.Migrations
                 name: "IX_Notifications_Status_ScheduledAt",
                 table: "Notifications",
                 columns: new[] { "Status", "ScheduledAt" },
-                filter: "scheduled_at IS NOT NULL");
+                filter: "\"ScheduledAt\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_Timestamp",

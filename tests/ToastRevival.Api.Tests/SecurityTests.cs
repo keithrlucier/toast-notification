@@ -40,6 +40,43 @@ public sealed class SecurityTests
         _load = load;
     }
 
+    // ─── Defensive Response Headers ──────────────────────────────────────────
+
+    [Fact]
+    public async Task SecurityDefaults_ResponseIncludesDefensiveHeaders()
+    {
+        // Closes the "no security headers" gap — Program.cs sets
+        // X-Content-Type-Options, X-Frame-Options, Referrer-Policy, and
+        // Permissions-Policy on every response (including 401 challenges
+        // and static-file responses) so a future middleware reorder or
+        // accidental short-circuit can't silently strip them.
+        await _load.ResetAsync();
+        var factory = _load.Factory;
+
+        using var http = factory.CreateClient();
+        // /api/templates is [Authorize]; unauthenticated GET returns 401.
+        // The 401 response must still carry the defensive headers — that's
+        // the whole point of placing the middleware before authentication.
+        var resp = await http.GetAsync("/api/templates");
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+
+        Assert.Equal("nosniff", SingleHeaderValue(resp, "X-Content-Type-Options"));
+        Assert.Equal("DENY", SingleHeaderValue(resp, "X-Frame-Options"));
+        Assert.Equal("strict-origin-when-cross-origin", SingleHeaderValue(resp, "Referrer-Policy"));
+
+        var permissions = SingleHeaderValue(resp, "Permissions-Policy");
+        Assert.Contains("camera=()", permissions);
+        Assert.Contains("microphone=()", permissions);
+        Assert.Contains("geolocation=()", permissions);
+    }
+
+    private static string SingleHeaderValue(HttpResponseMessage resp, string name)
+    {
+        if (resp.Headers.TryGetValues(name, out var values)) return string.Join(",", values);
+        if (resp.Content.Headers.TryGetValues(name, out var contentValues)) return string.Join(",", contentValues);
+        throw new InvalidOperationException($"Response did not carry header '{name}'.");
+    }
+
     // ─── Tenant Isolation ────────────────────────────────────────────────────
 
     [Fact]

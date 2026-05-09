@@ -47,6 +47,17 @@ builder.Services.AddIdentityCore<AppUser>(opts =>
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException("Jwt:Key is required.");
 
+// Closes INFO-M1-006: a production deployment that forgets the Jwt__Key
+// environment override silently falls through to whatever short placeholder
+// sits in appsettings.json. HMAC-SHA256 wants 32+ bytes of key material;
+// anything shorter weakens the signature beyond useful guarantee. Block it.
+if (!builder.Environment.IsDevelopment() && jwtKey.Length < 32)
+{
+    throw new InvalidOperationException(
+        "Jwt:Key must be at least 32 characters in non-Development environments. " +
+        "Override via the Jwt__Key environment variable.");
+}
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opts =>
     {
@@ -193,6 +204,40 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
 }
+
+// Security defaults — defensive response headers on every response. Set
+// before any other middleware so error responses, 401 challenges, and
+// static-file responses all carry them.
+//
+// HSTS + HTTPS redirect are production-only — TestServer has no HTTPS pipe
+// and Development typically runs over plain http://localhost. HSTS skips
+// localhost by default, so it's safe to register but only useful behind a
+// real TLS terminator.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
+
+app.Use(async (ctx, next) =>
+{
+    var headers = ctx.Response.Headers;
+    // X-Content-Type-Options: prevents browsers from MIME-sniffing a
+    // response away from the declared Content-Type. Cheap, universally safe.
+    headers["X-Content-Type-Options"] = "nosniff";
+    // X-Frame-Options: clickjacking defense. The API never renders HTML
+    // intended for embedding (Swagger UI in dev is the only HTML surface
+    // and clickjacking on it is non-issue), so DENY is the right call.
+    headers["X-Frame-Options"] = "DENY";
+    // Referrer-Policy: prevents leaking full URLs (which can carry tenant
+    // subdomain or query params) to cross-origin destinations like external
+    // image hosts referenced in toast hero/logo URLs.
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    // Permissions-Policy: the API has no need for camera/mic/geolocation
+    // surfaces. Disabling closes any embedded-context probe vector.
+    headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+    await next();
+});
 
 if (app.Environment.IsDevelopment())
 {

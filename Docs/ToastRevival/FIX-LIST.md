@@ -2,6 +2,37 @@
 
 ## Open Issues
 
+### SEC-001 — **RESOLVED 2026-05-09** (API response missing defensive security headers)
+
+**Filed:** 2026-05-09 (post-M8.C security review).
+**Surface:** `src/ToastRevival.Api/Program.cs` middleware pipeline.
+**Issue:** API responses carried only the default Kestrel/ASP.NET headers — no `X-Content-Type-Options`, no `X-Frame-Options`, no `Referrer-Policy`, no `Permissions-Policy`, no HSTS. A misbehaving browser MIME-sniffing a JSON response, a clickjacking iframe of a Swagger UI page, a referrer leak from a toast hero-image fetch, or a downgrade attack on the TLS pipe all sat exposed.
+**Fix applied:** Inline middleware at the top of the response pipeline (before auth, before static files, before swagger) sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`. `UseHsts` and `UseHttpsRedirection` registered in non-Development environments only (TestServer has no HTTPS pipe; Development typically runs over plain http://localhost). HSTS skips localhost by default, so it's only useful behind the production TLS terminator on TOASTWEB1.
+**Verification:** `tests/ToastRevival.Api.Tests/SecurityTests.cs::SecurityDefaults_ResponseIncludesDefensiveHeaders` exercises an unauthenticated `GET /api/templates` (returns 401) and asserts every defensive header is present. Placement before authentication means even challenge responses and 4xx error pages carry the headers.
+**Blocking:** No — defensive only.
+
+### SEC-002 — **RESOLVED 2026-05-09** (No SAST coverage)
+
+**Filed:** 2026-05-09 (post-M8.C security review).
+**Surface:** `.github/workflows/`.
+**Issue:** No static analysis on push/PR. Compiler default warnings only — no Roslyn analyzer rules, no CodeQL, no SonarQube. C# AND TypeScript surfaces both unscanned for the standard SAST class (SQL injection, command injection, taint flow, hardcoded secrets, deserialization gadgets, etc.).
+**Fix applied:** New `.github/workflows/codeql.yml` runs CodeQL on push to main, PR to main, and Mondays 06:13 UTC. Two language matrix entries: `csharp` (manual build of `ToastRevival.Api.csproj`) and `javascript-typescript` (no build needed). `security-extended` query suite. Findings surface in the GitHub Security tab and gate PR merge once branch protection enforces required checks.
+**Blocking:** No — additive defensive layer.
+
+### SEC-003 — **RESOLVED 2026-05-09** (No dependency vulnerability scanning)
+
+**Filed:** 2026-05-09 (post-M8.C security review).
+**Surface:** `.github/dependabot.yml`.
+**Issue:** No automated detection of known CVEs in NuGet, npm, or GitHub Actions dependencies. Vulnerability advisories propagated to the project only on manual review.
+**Fix applied:** New `.github/dependabot.yml` covering three ecosystems (`nuget` rooted at `/`, `npm` at `/src/ToastRevival.Dashboard`, `github-actions` at `/`). Weekly cadence (Monday) for version updates; security advisories surface immediately regardless of schedule. PR limit per ecosystem 5 to keep noise bounded. Update groups for ASP.NET Core, EF Core, test stack, React, Vite, and TypeScript so semver bumps land as one PR per group rather than dozens.
+**Blocking:** No — defensive only.
+
+### INFO-M1-006 — **RESOLVED 2026-05-09** (JWT key min-length runtime check)
+
+**Filed:** 2026-05-08 (M1 Code Sweep). **Resolved:** 2026-05-09 (post-M8.C security pass).
+**Surface:** `src/ToastRevival.Api/Program.cs` JWT key load.
+**Resolution:** A misconfigured production deployment that forgets to override `Jwt__Key` would silently fall through to whatever short placeholder sat in `appsettings.json`. HMAC-SHA256 wants 32+ bytes of key material; anything shorter weakens the signature beyond useful guarantee. New runtime check throws `InvalidOperationException` when `!builder.Environment.IsDevelopment() && jwtKey.Length < 32`. Test config key is 70 characters; ApiTestFactory's Production-environment posture passes the check.
+
 ### FIX-M8C-001 — **RESOLVED 2026-05-09 (M8.C)** (Cross-tenant audit log leak)
 
 **Filed:** 2026-05-09 during M8.C orientation (Carl spotted the missing tenantId filter while mapping pen-test surfaces).
@@ -286,12 +317,7 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Surface:** `Services/NotificationQueueService.cs`
 **Resolution:** `EnqueueDueScheduledAsync` runs at startup (backfill) and every 60 seconds (via `RunSchedulerLoopAsync` PeriodicTimer). Backfill loads `Notifications WHERE Status=Queued AND ScheduledAt<=now` and enqueues them. Timer tick does the same sweep continuously. `ProcessAsync` now guards on `Status != Queued` to prevent double-fanout if a startup + timer tick overlap. Both tasks run concurrently via `Task.WhenAll` alongside the existing queue consumer (`ProcessQueueAsync`).
 
-### INFO-M1-006 — JWT key requires environment-specific override (low)
-**Filed:** 2026-05-08 (M1 Code Sweep)
-**Surface:** `appsettings.json`
-**Issue:** `Jwt:Key` placeholder is in committed `appsettings.json`. No runtime assertion enforces minimum key length or environment-specific override.
-**Fix:** Add a startup check: `if (jwtKey.Length < 32 && !app.Environment.IsDevelopment()) throw`. Use environment variable `Jwt__Key` for production overrides.
-**Blocking:** No. Covered by deployment documentation (M7/M9).
+### INFO-M1-006 — RESOLVED 2026-05-09 (see entry above for resolution detail)
 
 ### INFO-MSIX-004-D — **RESOLVED 2026-05-09 (M2.A)**
 

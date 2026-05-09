@@ -243,6 +243,25 @@ Submit Notification
 - Exportable for compliance/incident response
 - **Tenant scoping rule (M8.C)**: `AuditLog` has no global query filter — the PlatformAdmin `SystemController` needs the cross-tenant view. Every per-tenant controller that reads `AuditLog` must scope by `User.tenantId` claim explicitly. FIX-M8C-001 (2026-05-09) caught the missing filter on `AuditController.List` and `AuditController.Export`. Composite `(TenantId, Timestamp)` index supports the predicate efficiently. Standing sweep check: "Does every entity without a global query filter have an explicit tenantId predicate at every per-tenant controller read site?"
 
+### Defensive Response Headers (2026-05-09)
+Every API response carries the following headers via inline middleware in `Program.cs`, set before authentication so 401 challenges and static-file responses both carry them:
+
+| Header | Value | Purpose |
+|---|---|---|
+| `X-Content-Type-Options` | `nosniff` | Blocks browser MIME sniffing away from declared `Content-Type`. |
+| `X-Frame-Options` | `DENY` | Clickjacking defense. The API never renders embeddable HTML. |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Prevents tenant subdomain / query leakage on cross-origin image fetches. |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | Closes embedded-context probe vectors the API has no need for. |
+
+`UseHsts()` and `UseHttpsRedirection()` registered in non-Development environments only (TestServer + dev runs over plain http://localhost; HSTS auto-skips localhost regardless). Production TLS termination at TOASTWEB1 is the only place HSTS is meaningful.
+
+Regression coverage: `tests/ToastRevival.Api.Tests/SecurityTests.cs::SecurityDefaults_ResponseIncludesDefensiveHeaders`.
+
+### Static Analysis & Dependency Hygiene (2026-05-09)
+- **CodeQL** (`.github/workflows/codeql.yml`) — runs on push to main, PR to main, and Mondays 06:13 UTC. Two-language matrix (`csharp` with manual build, `javascript-typescript` no build). `security-extended` query suite. Findings surface in the GitHub Security tab.
+- **Dependabot** (`.github/dependabot.yml`) — three ecosystems (nuget /, npm /src/ToastRevival.Dashboard, github-actions /). Weekly Monday version updates; security advisories surface immediately. Update groups (aspnet-core, ef-core, test-stack, react, vite, typescript) keep semver bumps batched per group.
+- **JWT key length guard** (`Program.cs`) — non-Development startup throws when `Jwt:Key.Length < 32`. Forces production override via `Jwt__Key` env var.
+
 ## Agent Architecture (Windows)
 
 ### Deployment Flow (MSI/RMM)

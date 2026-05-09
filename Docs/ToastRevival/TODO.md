@@ -27,7 +27,7 @@ Next decision: configure the real Stripe per-device price in production as `Stri
 - [x] Sign the M0 D2 MSIX (`artifacts/installer/msix/ToastNotification.Agent-0.2.0.1.msix`) - DONE 2026-05-07 via `signtool.exe`.
 - [x] Validate install of signed M0 D2 MSIX on Win11 lab. 0.2.0.1 installed but did not fire toasts (FIX-MSIX-004); 0.2.0.3 patched + signed + installed 2026-05-08, visible toast fires, NotificationInvoked routes cleanly.
 - [x] Confirm Microsoft Partner Center access (Keith signed in 2026-05-07). Verifying app ID `9PFD6004DVTN` is reachable from this account is M0 D5 work.
-- [ ] Accept the updated App Developer Agreement in Partner Center if prompted (only when M0 D5 actually flights a build).
+- [x] Accept the updated App Developer Agreement in Partner Center if prompted (handled when M0 D5 was flighted to the live listing).
 - [x] Confirm domain/DNS control for `toastnotification.com` — DNS pointed 2026-05-09. Live at https://toastnotification.com.
 - [ ] Confirm Stripe account status — needed for M6 billing integration.
 - [ ] Terminate AWS Windows VM (52.21.249.120) — CI moved to GitHub Actions, VM has no remaining purpose.
@@ -77,14 +77,14 @@ Next decision: configure the real Stripe per-device price in production as `Stri
 
 ## Engineering - M0 next deliverables
 
-### M0 D5 (build complete 2026-05-08 — awaiting Keith sign + flight)
+### M0 D5 — **CLOSED 2026-05-09** (Store listing live)
 - [x] FIX-MSIX-001: `-p:TargetPlatformVersion=10.0.22621.0` added to `build-msix.ps1` command line. (csproj PropertyGroup approach does not work — TFM late-import override; see CONTEXT.md rule #4.)
 - [x] Add `uap5:StartupTask` extension to manifest for Store/MSIX logon-launch parity.
 - [x] Build MSIX 0.2.1.0: `.\scripts\build-msix.ps1 -Version 0.2.1.0 -SkipAssetGeneration`. Verified: MinVersion=10.0.19041.0, MaxVersionTested=10.0.22621.0, all 3 extensions present. 63.82 MB unsigned artifact at `artifacts/installer/msix/ToastNotification.Agent-0.2.1.0.msix`.
-- [ ] **Keith**: Sign `ToastNotification.Agent-0.2.1.0.msix` via `.\scripts\sign-msix.ps1 -Path artifacts\installer\msix\ToastNotification.Agent-0.2.1.0.msix`
-- [ ] **Keith**: Accept updated App Developer Agreement in Partner Center if prompted.
-- [ ] **Keith**: Flight signed MSIX to Partner Center listing 9PFD6004DVTN (private/hidden). Verify package passes certification.
-- [ ] **Diana**: Deliver curated tile assets (Square44x44, Square150x150, Wide310x150, StoreLogo) before any expansion beyond private/hidden flight.
+- [x] **Keith**: Sign `ToastNotification.Agent-0.2.1.0.msix` via `scripts/sign-msix.ps1`. **DONE.**
+- [x] **Keith**: Accept updated App Developer Agreement in Partner Center. **DONE.**
+- [x] **Keith**: Flight signed MSIX to Partner Center listing **9PFD6004DVTN**. **DONE — listing live at https://apps.microsoft.com/detail/9PFD6004DVTN.**
+- [ ] **Diana** (deferred to M9 polish): Deliver curated tile assets (Square44x44, Square150x150, Wide310x150, StoreLogo) before any expansion beyond the current markets. Not blocking the listing — Store accepted whatever assets were submitted at flight time.
 
 ### M0 D6 — DEFERRED
 Deployment documentation deferred. Everything worth capturing is in CONTEXT.md already. Fold into M1 prep or skip — not on the critical path.

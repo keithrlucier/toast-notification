@@ -36,7 +36,7 @@
   - Win10 1809 install validation deferred to M0 D4 GPO matrix (no Win10 1809 lab machine on hand).
 - **D3** [x **COMPLETE 2026-05-08**]: MSI wrapper installs the agent + registers `\Toast2IT\ToastNotificationAgentLogon` Scheduled Task at install (replaces M0A's Startup-folder shortcut). Task is logon-triggered with BUILTIN\Users group principal (`S-1-5-32-545`) at `LeastPrivilege`; action runs `%ProgramFiles%\Toast Notification\ToastNotification.Agent.exe --template alert --no-wait`. WiX 5 deferred custom actions invoke `[System64Folder]schtasks.exe` with `/Create /XML /F` (after InstallFiles, condition `NOT REMOVE`) and `/Delete /F` (before RemoveFiles, condition `REMOVE="ALL"`, `Return="ignore"` for idempotency). Pre-install verification clean (XML parses, MSI Custom Action table correct Type 3106/3170, payload byte-identical repo → cab → admin-install extract). Lab install verified 2026-05-08: signed `ToastNotification.Agent-0.3.0.0.msi` installed cleanly on Win11 lab; `Get-ScheduledTask -TaskPath '\Toast2IT\' -TaskName 'ToastNotificationAgentLogon'` returned `State=Ready` with `MSFT_TaskLogonTrigger` and `MSFT_TaskExecAction`; alert toast fired at next user logon (Critical scenario, hero + logo + Acknowledge/Report buttons all rendered correctly). See `EVIDENCE/2026-05-08-m0-d3-msi-build-with-scheduled-task.md` and `EVIDENCE/2026-05-08-m0-d3-task-fires-at-logon.md`.
 - **D4** [x **COMPLETE 2026-05-08**]: Verified scheduled task on Win11 lab: MSI 0.3.1.0 installs cleanly, task State=Ready, toast fires, second local user account also receives toast (BUILTIN\Users principal confirmed), uninstall removes task cleanly. FIX-MSIX-002 applied (manifest MinVersion aligned with runtime gate). GPO/Intune testing deferred: GPO standing rules documented in CONTEXT.md, domain/Intune carry to M8 beta. See `EVIDENCE/2026-05-08-m0-d4-matrix-results.md`.
-- **D5**: Verify Store submission pipeline — push skeleton app to the existing 9PFD6004DVTN listing (private/hidden flight)
+- **D5** [x **CLOSED 2026-05-09**]: Store submission pipeline verified end-to-end. M0 D5 signed MSIX (`ToastNotification.Agent-0.2.1.0.msix`) flighted to existing listing **9PFD6004DVTN**; live at https://apps.microsoft.com/detail/9PFD6004DVTN. Lab install can pull from the public Store listing directly.
 - **D6**: Document deployment findings and any fallback mechanisms needed
 
 ### Open Research
@@ -414,7 +414,7 @@ Carl sliced M7 at orientation (2026-05-09). M7.A delivers the design spec and th
 Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplicationFactory + Postgres test foundation and the first server-side E2E scenario (the API/SignalR/DB loop that D1/D2/D3 lab tests will exercise once Keith flights signed packages). M8.B/C/D are subsequent sessions covering load, security, and beta coordination.
 
 ### Deliverables
-- **D1**: End-to-end test: Store install → register → receive notification → interact → verify delivery tracking (Keith-lab work — waits on signed MSIX flight to 9PFD6004DVTN)
+- **D1**: End-to-end test: Store install → register → receive notification → interact → verify delivery tracking (Keith-lab work — signed MSIX is already live at https://apps.microsoft.com/detail/9PFD6004DVTN, so the lab install can pull from the public Store listing directly).
 - **D2**: End-to-end test: MSI/RMM install → same flow (Keith-lab)
 - **D3**: End-to-end test: Intune LOB deploy → same flow (Keith-lab)
 - **D4** [x **COMPLETE 2026-05-09 (M8.B)**]: Load harness — concurrent SignalR clients, single-tenant fanout latency percentiles (p50/p95/p99), queue saturation drain. Default 100-device CI-fast scenario asserts every device receives a signed payload within a 5s p95 budget; opt-in 1,000-device variant gated on `TOAST_TEST_RUN_LOAD_1K=1` for local measurement. Sustained-burst scenario verifies the unbounded `Channel<Guid>` in `NotificationQueueService` drains cleanly across 5×30 = 150 deliveries with no `Failed`/`PartialFailure` rows. Closes M8.A carry-forward INFO items: INFO-M8A-001 (PostgresFixture Docker pre-flight) and INFO-M8A-002 (ApiTestFactory class-scoped fixture share). See `EVIDENCE/2026-05-09-m8b-load-harness.md`.
@@ -495,7 +495,7 @@ Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplica
 - Carl: scope-slicing decision (cleanup commit before pen-test work, FIX-M8C-001 caught and patched same milestone instead of deferred), AuditLog query-filter design call (PlatformAdmin needs cross-tenant; per-tenant controllers must filter explicitly), test-fixture-vs-shared-factory call on RegistrationLoadTests (own factory for rate-limit isolation).
 
 ### Agent Deployment (Future M8 Slices)
-- Anthony: D1/D2/D3 end-to-end on Keith's lab once signed packages flight to Partner Center
+- Anthony: D1/D2/D3 end-to-end on Keith's lab — signed Store MSIX is live (9PFD6004DVTN); MSI/RMM channel and Intune LOB packaging exist; Keith's lab pass is the remaining gate
 - Abish: D6/D7 (beta coordination is process work) + Code Sweep all slices
 
 ---
@@ -505,7 +505,7 @@ Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplica
 
 ### Deliverables
 - **D1**: Production infrastructure — Azure/AWS deployment, monitoring, alerting, backups
-- **D2**: Store submission — update 9PFD6004DVTN with production build, expand to all markets
+- **D2**: Store submission — listing **9PFD6004DVTN is live** at https://apps.microsoft.com/detail/9PFD6004DVTN with the M0 D5 signed MSIX (closed 2026-05-09). Remaining work: keep the Store version current as new builds ship, expand to additional markets when product reach warrants, and Diana's curated tile assets before broader expansion.
 - **D3** [x **COMPLETE 2026-05-09**]: RMM deployment packages — `infrastructure/rmm/install-toast-agent.ps1` (canonical PowerShell 5.1+ install script with Authenticode verify, idempotent skip-if-installed, msiexec /qn) + `uninstall-toast-agent.ps1` + per-RMM READMEs for NinjaOne, Datto RMM, ConnectWise Automate. Single source of truth; per-RMM dirs explain how to import the canonical script. Defense-in-depth: script verifies MSI Authenticode `Toast2IT, LLC` cert + chain before execution, refuses to install otherwise.
 - **D4**: Launch marketing — email to beta users, social media, MSP community posts
 - **D5**: Support system — ticketing, knowledge base, SLA documentation

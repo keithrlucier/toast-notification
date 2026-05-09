@@ -2,6 +2,39 @@
 
 ## Open Issues
 
+### INFO-M7A-001 — **RESOLVED 2026-05-09 (pre-commit)**
+
+**Filed:** 2026-05-09 (M7.A Code Sweep)
+**Surface:** `.gitignore`, `Docs/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem`, `Docs/Assets/Toast_Data_1_LightsailDefaultKey-us-east-1.pem`
+**Issue:** Lightsail SSH private keys for TOASTWEB1 and TOASTDATA1 were sitting untracked in `Docs/Assets/` with no `.gitignore` rule. A future `git add .` or `git add -A` (against the standing project rule, but trivially possible) would have committed key material to a public repo.
+**Resolution:** Added `*.pem` and `*.key` patterns to `.gitignore` with `letsencrypt/` allow-list reservation. `git check-ignore -v Docs/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem` confirms both keys are now ignored. No key material was ever staged. Standing rule going forward: SSH keys, signing keys, and TLS private keys belong in `.gitignore` by extension, not by location.
+
+### INFO-M7A-002 (low) — DEPLOY.md path discrepancy
+
+**Filed:** 2026-05-09 (M7.A Code Sweep)
+**Surface:** `Docs/ToastRevival/DEPLOY.md:451`
+**Issue:** The redeploy procedure references the Web key at `Docs/ToastRevival/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem`, but the actual file lives at `Docs/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem` (workspace-root `Docs/Assets/`, not `Docs/ToastRevival/Assets/`). Anyone copy-pasting the redeploy script gets `scp: No such file or directory`.
+**Fix (deferred to M7.D):** Either update `DEPLOY.md` to point at `Docs/Assets/...`, or move the key file under `Docs/ToastRevival/Assets/` to match the doc. Fix in the same session that runs the M7 marketing-site deploy — the redeploy procedure will be exercised then.
+**Blocking:** No (current redeploy works because Keith knows where the keys actually live).
+
+### INFO-M7A-003 (medium) — Hero "real notification count" needs a public endpoint or removal
+
+**Filed:** 2026-05-09 (M7.A Code Sweep)
+**Surface:** Marketing Home hero ("Already trusted by MSPs to deliver [N] notifications.")
+**Issue:** The DESIGN-SPEC says the hero may render a real lifetime notification count fetched from `GET /api/analytics/global-summary` (a public, unauthenticated, cross-tenant aggregate). That endpoint does not exist. The spec also says "skip this line when the count is under 1000; we're not faking traction" — which is the de-facto current state.
+**Fix (M7.B):** Either (a) add the public endpoint with a tenant-aggregate count and gate the hero line on `count >= 1000`, or (b) drop the line from the hero entirely until M9 GA. Whichever Carl picks, document the choice in the M7.B notes. Do NOT ship a hardcoded or invented number — Diana's standing rule against faked traction.
+**Blocking:** No (the spec already says "skip when low"; M7.B build must just respect that).
+
+### INFO-M7A-004 (acceptable / standing vigilance) — Third-party script discipline
+
+**Filed:** 2026-05-09 (M7.A Code Sweep)
+**Surface:** Marketing site build pipeline (M7.B/C/D).
+**Issue:** The DESIGN-SPEC states "no third-party analytics scripts. No marketing pixels. No GTM. We don't need to know what you click on this page." This is enforceable but easy to violate in a build session if someone reaches for a quick analytics drop-in.
+**Standing check:** Code Sweep on M7.B/C/D must include a grep of the diff for `googletagmanager`, `google-analytics`, `gtag(`, `fbq(`, `hotjar`, `segment`, `mixpanel`, `posthog`, `intercom`, `drift`, `cookieconsent`, `osano`, `onetrust`. If any of those land in the marketing routes, HOLD.
+**Blocking:** No (preventative; not a current defect).
+
+
+
 ### FIX-MSIX-001 — **RESOLVED 2026-05-08 (M0 D5)**
 
 **Filed:** 2026-05-07 (M0 D2 Code Sweep)

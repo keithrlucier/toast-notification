@@ -1,5 +1,47 @@
 # ToastRevival - Test Log
 
+## 2026-05-09 (M7.A — Marketing Site Design Spec + Onboarding SVGs)
+
+### Build Checks
+- `npx tsc -p tsconfig.app.json --noEmit` (strict): **0 errors**.
+- `npm run build` (Vite): **clean** (712 modules, pre-existing chunk size warning unchanged — marketing route lazy-loading is M7.B work).
+- `dotnet build ToastRevival.sln`: not run (frontend-only milestone, no backend changes).
+
+### Pre-Commit Fix
+- **Security**: `Docs/Assets/*.pem` (Lightsail SSH private keys for TOASTWEB1 + TOASTDATA1) were untracked but NOT in `.gitignore` — a future `git add .` or `git add -A` would have committed them. Added `*.pem` and `*.key` patterns to `.gitignore` (with a `letsencrypt/` allow-list reserved for any future certbot artifacts that may legitimately live in-tree). `git check-ignore` confirms both keys now ignored. **Defense-in-depth fix; no key material was ever staged.**
+
+### New Files
+- `src/ToastRevival.Dashboard/src/icons/onboarding/index.tsx` — four React SVG components (`OnboardingBell`, `OnboardingTemplate`, `OnboardingPackage`, `OnboardingLaunch`) at the spec geometry. Stroke-only, 1.5 weight, round join/cap, `currentColor` so parent CSS controls the color.
+
+### Modified Files
+- `Docs/ToastRevival/DESIGN-SPEC.md` — Marketing Site section expanded from a 20-line stub to a ~480-line M7 specification covering architectural premise (single SPA, two visual contexts), routes, page chrome, page-by-page wireframes (Home / Pricing / Docs / How We Built It / Legal), image strategy, icon system, animation rules, mobile breakpoints, performance targets, copy direction (banned-word list), Onboarding SVG spec with reference SVG paths, `llms.txt` draft, SEO/JSON-LD direction, M7.B/C/D acceptance criteria, and explicit out-of-scope list.
+- `src/ToastRevival.Dashboard/src/pages/Onboarding.tsx` — replaced four emoji icons (🔔📋📦🚀) on the welcome step with the four `Onboarding*` SVG components. Bell at 32px, three-up at 24px. Container colors set to `var(--accent)` so SVG `currentColor` resolves correctly. `aria-hidden="true"` on every decorative SVG.
+- `.gitignore` — added `*.pem` and `*.key` (see Pre-Commit Fix).
+
+### Code Sweep Results (M7.A — Abish, SHIP WITH NOTES)
+
+**Scope**: SIGNIFICANT — design spec deliverable plus a frontend behavioral change (icon swap on a user-facing onboarding flow). Spec is the authoritative artifact; SVG swap is the implementation evidence that the spec is buildable.
+
+**Blast Radius**:
+- Upstream: `Onboarding.tsx` is rendered at `/onboarding` (post-register flow). No other call sites — verified via Grep.
+- Downstream: New SVG components consumed only by `Onboarding.tsx`. No global side effects, no context changes, no API calls.
+- Test coverage: No automated tests; manually verified via `npm run build` + visual inspection of bundled artifact.
+
+**Five-Perspective Review**:
+1. **Regression** — emoji rendering removed; SVG renders inline at the same container slots. fontSize:28/22 removed (was emoji-only); replaced with explicit SVG width/height + `color: var(--accent)` for stroke. Container layouts (64×64 bell halo, 3-column flex grid) unchanged. No layout regression observable in the production build.
+2. **Edge cases** — `currentColor` requires a parent `color` style; both SVG mounts now set `color: 'var(--accent)'`. `aria-hidden="true"` on all four icons (decorative; the adjacent label provides the accessible name). `prefers-reduced-motion` not relevant (no animation in the icons themselves).
+3. **Security** — pure JSX SVG, no `dangerouslySetInnerHTML`, no external `<image>`/`<use href>` references, no inline `<script>`. No credentials introduced. Pre-commit `.pem` ignore patch (above) closed the only material risk.
+4. **Performance** — four tiny inline components (~1.5KB raw added to the bundle). Negligible. The pre-existing 717KB main bundle warning is unchanged and is M7.B (route-level code-splitting) territory.
+5. **Architectural Consistency** — line weight 1.5, stroke-only, round caps/joins matches Lucide-derived sidebar icons. New `src/icons/onboarding/` directory cleanly separates bespoke icons from `lucide-react` imports. Component naming (`Onboarding*`) is verbose but unambiguous.
+
+**INFO items filed**:
+- INFO-M7A-001 (RESOLVED pre-commit): `*.pem` / `*.key` added to `.gitignore`.
+- INFO-M7A-002 (deferred to M7.D): `DEPLOY.md:451` references the SSH key at `Docs/ToastRevival/Assets/...` but the file actually lives at `Docs/Assets/...`. Path mismatch. Fix DEPLOY.md before the M7.D deploy session OR move the key to match the documented path.
+- INFO-M7A-003 (deferred to M7.B): the Home hero spec optionally renders a real notification count from a public `GET /api/analytics/global-summary` endpoint that does not yet exist. M7.B build must either add the endpoint OR drop the line from the hero (the spec already says "skip when count < 1000" — which is the current state). Don't ship a fake number.
+- INFO-M7A-004 (acceptable / standing): cookie-consent / privacy posture is "we don't track" — verify in M7.B that no third-party scripts (Google Fonts, GTM, ads pixels) are added to `index.html` during the build phase. The fonts are already self-hosted; this is a vigilance item for the build session.
+
+**RECOMMENDATION**: SHIP WITH NOTES. Spec is internally consistent, buildable, and matches Diana's standing rules. Onboarding SVG swap closes INFO-M6-004 cleanly. Critical pre-commit security fix (`.pem` gitignore) absorbed. M7.B/C/D have a complete acceptance bar to build against.
+
 ## 2026-05-09 (M5.D — Export)
 
 ### Build Checks

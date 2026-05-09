@@ -2,7 +2,7 @@
 
 ## Current Reality
 
-Project status: **M0A through M5.D ALL COMPLETE. Production live at https://toastnotification.com (2026-05-09) — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt.** Next: **M6 — Licensing & Subscription System (Stripe).**
+Project status: **M0A through M6 ALL COMPLETE. M7.A COMPLETE 2026-05-09 (marketing site DESIGN-SPEC + onboarding SVG swap closing INFO-M6-004). Production live at https://toastnotification.com — TOASTWEB1 (54.82.103.160) + TOASTDATA1 (172.26.3.164 private). HTTPS via Let's Encrypt.** Next: **M7.B — Build Mode marketing site core pages (Home / Pricing / How We Built It).**
 
 ## Keith
 
@@ -113,20 +113,46 @@ All 8 deliverables shipped. `src/ToastRevival.Api` — ASP.NET Core 8 / EF Core 
 
 - [ ] **INFO-MSIX-004-A/B/C** (DiagLog hygiene): Before any production launch, gate DiagLog behind a `--diag` flag or add log rotation. Currently writes append-only with no size cap and silently swallows all I/O exceptions (intentional for diagnostics phase, not for steady state). M2.D or M3 candidate.
 
+## M7 — Marketing Site (sliced 2026-05-09)
+
+### M7.A — COMPLETE 2026-05-09
+- [x] DESIGN-SPEC.md Marketing Site section expanded from stub to full ~480-line spec.
+- [x] Four onboarding SVG components (`OnboardingBell`/`OnboardingTemplate`/`OnboardingPackage`/`OnboardingLaunch`) at `src/ToastRevival.Dashboard/src/icons/onboarding/index.tsx`.
+- [x] `Onboarding.tsx` welcome step swapped from 🔔📋📦🚀 emojis to the four SVG components.
+- [x] INFO-M6-004 closed.
+- [x] Pre-commit fix (INFO-M7A-001): `*.pem` / `*.key` added to `.gitignore`.
+- [x] Code Sweep SHIP WITH NOTES (INFO-M7A-002 deferred to M7.D, INFO-M7A-003 deferred to M7.B, INFO-M7A-004 standing vigilance).
+
+### M7.B — Build Mode (next session)
+- [ ] `MarketingLayout` component (header, footer, no sidebar).
+- [ ] `MarketingHeader` + `MarketingFooter` per spec.
+- [ ] Home page: hero, problem/solution, features 2×2, how-it-works 3-step, pricing summary, final CTA.
+- [ ] Pricing page: full tier comparison table + 8-question FAQ accordion.
+- [ ] How We Built It page (engineering case study).
+- [ ] Marketing routes lazy-loaded in `App.tsx` (`React.lazy()`).
+- [ ] Resolve INFO-M7A-003: either add `GET /api/analytics/global-summary` public endpoint OR drop the lifetime-count line from the hero.
+- [ ] Diana sign-off on every section, desktop + mobile.
+
+### M7.C — Build Mode (after M7.B)
+- [ ] Docs hub (`/docs`) with two-column layout (sticky sidebar nav + content).
+- [ ] Getting Started doc.
+- [ ] Deploy guides (Store, Intune, RMM).
+- [ ] API reference (auth, devices, notifications, webhooks).
+
+### M7.D — SEO + Deploy (after M7.C)
+- [ ] `llms.txt` at `https://toastnotification.com/llms.txt` (use M7.A draft as starting point; fill in real numbers).
+- [ ] JSON-LD per page (SoftwareApplication on home, Product/AggregateOffer on pricing, TechArticle/BreadcrumbList on docs, Article on how-we-built-it).
+- [ ] `/sitemap.xml` and `/robots.txt`.
+- [ ] OG/Twitter card image (1200×630) — Keith provides product screenshot or Diana shoots one.
+- [ ] Favicon set (32/64/192/512 SVG + ICO).
+- [ ] Resolve INFO-M7A-002: fix `DEPLOY.md:451` SSH key path (`Docs/ToastRevival/Assets/...` → `Docs/Assets/...`).
+- [ ] Deploy to toastnotification.com (same Lightsail box, same nginx, no DNS change).
+- [ ] Lighthouse SEO 100, Accessibility ≥ 95, Performance ≥ 90 mobile.
+
 ## Deferred (later milestones)
 
-- Backend API (M1).
-- Full Windows agent with SignalR, HMAC, reconnect (M2).
-- Content moderation, broadcast gates (M3).
-- React admin dashboard (M4-M5).
 - Curated per-template hero/logo imagery (Diana M4 deliverable, not blocking).
-- Stripe billing/licensing (M6).
-- Marketing site (M7).
-
-## Deferred
-
-- Backend API.
-- React admin dashboard.
-- SignalR agent communication.
-- Billing/licensing.
-- Marketing site.
+- Tray icon production SVG assets (M9 GA — five states per Diana's spec).
+- End-to-end testing across Store/RMM/Intune (M8).
+- Beta program with 3-5 MSP partners (M8).
+- Public launch + Store expansion (M9).

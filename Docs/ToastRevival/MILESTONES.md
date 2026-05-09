@@ -343,13 +343,21 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 ## M7: Marketing Site — toastnotification.com Redesign
 **Goal**: Professional marketing site that sells the product to MSPs and ranks well with both human search and AI-powered discovery.
 
+Carl sliced M7 at orientation (2026-05-09). M7.A delivers the design spec and the onboarding emoji-to-SVG swap (closes INFO-M6-004) as a single Diana-led design milestone. M7.B/C/D are Build Mode sessions implementing against the locked spec.
+
+### M7.A Closure (2026-05-09) — Design Spec + Onboarding SVGs
+- DESIGN-SPEC.md Marketing Site section expanded from a 20-line stub to a full ~480-line specification: architectural premise (single SPA, two visual contexts), routes (`/`, `/pricing`, `/docs/*`, `/how-we-built-it`, `/legal/*`), `MarketingHeader`/`MarketingFooter` chrome, page-by-page wireframes for Home / Pricing / Docs / How We Built It / Legal, image strategy (no stock, no AI slop, product screenshots only), icon system, animation rules (default opacity:1; reveal animations gated on `prefers-reduced-motion`), mobile breakpoints, performance targets (FCP ≤ 1.0s, LCP ≤ 2.5s, Lighthouse ≥ 90), copy direction with banned-word list, complete `llms.txt` draft, SEO/JSON-LD direction, M7.B/C/D acceptance criteria, explicit out-of-scope list.
+- INFO-M6-004 closed: four `Onboarding*` React SVG components shipped at `src/ToastRevival.Dashboard/src/icons/onboarding/index.tsx` (Bell, Template, Package, Launch). `Onboarding.tsx` welcome step swaps the four emoji icons for the SVG components. Stroke-only, 1.5 weight, round caps/joins, `currentColor` for parent-controlled color, `aria-hidden="true"` on every decorative SVG.
+- Pre-commit security fix (INFO-M7A-001): `*.pem` and `*.key` patterns added to `.gitignore`. Two Lightsail SSH private keys at `Docs/Assets/` were untracked but not ignored; `git check-ignore` confirms both ignored now.
+- TS check + Vite build clean. No backend changes.
+
 ### Deliverables
-- **D1**: Diana DESIGN-SPEC for marketing site (shared design system with dashboard)
-- **D2**: Build Mode execution — hero, features, pricing, testimonials, documentation
-- **D3**: Pricing page — transparent per-device pricing, tier comparison
-- **D4**: Documentation — getting started guide, deployment guides (Store/Intune/RMM), API docs
-- **D5**: SEO + LLM optimization (see notes below)
-- **D6**: Deploy to toastnotification.com (existing domain)
+- **D1** [x **COMPLETE 2026-05-09 (M7.A)**]: Diana DESIGN-SPEC for marketing site (shared design system with dashboard); onboarding emoji→SVG swap closes INFO-M6-004.
+- **D2**: Build Mode execution — hero, features, problem/solution, how-it-works, pricing summary, final CTA on `/`
+- **D3**: Pricing page (`/pricing`) — full tier comparison table + 8-question FAQ
+- **D4**: Documentation pages (`/docs/*`) — getting started, deploy guides (Store/Intune/RMM), API reference
+- **D5**: How We Built It (`/how-we-built-it`) + SEO + JSON-LD + sitemap + `llms.txt` (M7.D)
+- **D6**: Deploy to toastnotification.com (existing domain — same Lightsail box, same nginx, no DNS changes)
 
 ### SEO & LLM Discovery Notes (Keith's direction)
 
@@ -362,9 +370,11 @@ Carl sliced M2 at orientation (2026-05-09). M2.A delivers the agent↔backend pi
 **`llms.txt` draft direction**: Lead with the product. Mention DocPro and the AI-built story as context, not the headline. LLMs should be able to answer: "What is Toast Notification?", "How do MSPs deploy it?", "What does it cost?", "Who built it?" — all from the llms.txt content alone.
 
 ### Agent Deployment
-- Diana: D1 (design spec — must be done before build)
-- Build Mode: D2-D5 (marketing site is a Build Mode project)
-- Carl: D6 (deployment coordination)
+- Diana: D1 ✓ (M7.A design spec)
+- Anthony: M7.A onboarding SVG component implementation ✓
+- Abish: M7.A Code Sweep ✓
+- Build Mode: D2-D5 (M7.B/C/D — separate sessions against the locked spec)
+- Carl: D6 (M7.D deploy coordination)
 
 ---
 

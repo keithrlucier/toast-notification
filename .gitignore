@@ -4,6 +4,12 @@
 !.env.example
 Docs/ToastRevival/.env
 
+# SSH private keys (Lightsail, etc.) — never commit
+*.pem
+*.key
+!**/letsencrypt/**/*.pem
+!**/letsencrypt/**/*.key
+
 # .NET
 bin/
 obj/

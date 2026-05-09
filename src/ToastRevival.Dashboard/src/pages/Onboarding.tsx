@@ -1,7 +1,14 @@
 import { useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { billingApi } from '../api/billing';
+import {
+  OnboardingBell,
+  OnboardingTemplate,
+  OnboardingPackage,
+  OnboardingLaunch,
+} from '../icons/onboarding';
 
 const STEPS = ['Welcome', 'Choose Plan', 'Install Agent'] as const;
 type Step = (typeof STEPS)[number];
@@ -95,9 +102,9 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
         border: '1px solid rgba(0,201,167,0.3)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         margin: '0 auto 24px',
-        fontSize: 28,
+        color: 'var(--accent)',
       }}>
-        🔔
+        <OnboardingBell size={32} aria-hidden="true" />
       </div>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>
         Welcome to Toast Notification
@@ -107,18 +114,26 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
         Let's get your first agent deployed in three steps.
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 32 }}>
-        {[
-          { icon: '📋', label: 'Choose a plan' },
-          { icon: '📦', label: 'Install the agent' },
-          { icon: '🚀', label: 'Send notifications' },
-        ].map(({ icon, label }) => (
+        {([
+          { icon: <OnboardingTemplate size={24} aria-hidden="true" />, label: 'Choose a plan' },
+          { icon: <OnboardingPackage size={24} aria-hidden="true" />, label: 'Install the agent' },
+          { icon: <OnboardingLaunch size={24} aria-hidden="true" />, label: 'Send notifications' },
+        ] as { icon: ReactNode; label: string }[]).map(({ icon, label }) => (
           <div key={label} style={{
             padding: '16px 8px',
             background: 'var(--bg-secondary)',
             borderRadius: 8,
             textAlign: 'center',
           }}>
-            <div style={{ fontSize: 22, marginBottom: 6 }}>{icon}</div>
+            <div style={{
+              marginBottom: 6,
+              color: 'var(--accent)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              {icon}
+            </div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</div>
           </div>
         ))}

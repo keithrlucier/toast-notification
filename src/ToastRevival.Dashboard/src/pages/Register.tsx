@@ -28,7 +28,7 @@ export default function Register() {
     setLoading(true);
     try {
       const res = await api.post<{ userId: string; step: string }>(
-        '/auth/register/init',
+        '/api/auth/register/init',
         { fullName, tenantName, email, mobile }
       );
       setUserId(res.userId);
@@ -45,7 +45,7 @@ export default function Register() {
     setError('');
     setLoading(true);
     try {
-      await api.post('/auth/register/verify-sms', { userId, code });
+      await api.post('/api/auth/register/verify-sms', { userId, code });
       navigate('/check-email', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Verification failed. Please try again.');

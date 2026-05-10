@@ -37,7 +37,7 @@ export default function SetPassword() {
     setError('');
     setLoading(true);
     try {
-      const res = await api.post<AuthResponse>('/auth/register/set-password', { userId, token, password });
+      const res = await api.post<AuthResponse>('/api/auth/register/set-password', { userId, token, password });
       setSession(res);
       navigate('/dashboard', { replace: true });
     } catch (err) {

@@ -4,6 +4,7 @@ import { devicesApi, type Device } from '../api/devices';
 import { notificationsApi, type NotificationHistoryItem } from '../api/notifications';
 import StatusBadge, { DeviceStatus } from '../components/StatusBadge';
 import { ApiError } from '../api/client';
+import DeployCommand from '../components/DeployCommand';
 
 function formatRelative(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -81,6 +82,9 @@ export default function Dashboard() {
 
       {error && <div className="error-banner">{error}</div>}
 
+      {/* Deploy command — shown when no devices registered */}
+      {devices.length === 0 && !loading && <DeployCommand />}
+
       {/* Metrics */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
         <div className="metric-card">
@@ -155,8 +159,10 @@ export default function Dashboard() {
           </div>
           {devices.length === 0 ? (
             <div className="empty-state">
-              <p>No devices registered.</p>
-              <p style={{ fontSize: 12 }}>Deploy the agent via MSI or Microsoft Store.</p>
+              <p>No devices yet.</p>
+              <Link to="/devices" style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none' }}>
+                View deploy command →
+              </Link>
             </div>
           ) : (
             <table className="data-table">

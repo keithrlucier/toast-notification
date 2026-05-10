@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { devicesApi, type Device } from '../api/devices';
 import { DeviceStatus } from '../components/StatusBadge';
 import { ApiError } from '../api/client';
+import DeployCommand from '../components/DeployCommand';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -130,12 +131,13 @@ export default function Devices() {
           <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
             <span className="spinner" style={{ width: 24, height: 24, borderWidth: 3 }} />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : filtered.length === 0 && (search || filter !== 'all') ? (
           <div className="empty-state">
-            <p>{search || filter !== 'all' ? 'No devices match your filters.' : 'No devices registered yet.'}</p>
-            {!search && filter === 'all' && (
-              <p style={{ fontSize: 12 }}>Deploy the Windows agent via MSI or Microsoft Store.</p>
-            )}
+            <p>No devices match your filters.</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 24 }}>
+            <DeployCommand />
           </div>
         ) : (
           <table className="data-table">

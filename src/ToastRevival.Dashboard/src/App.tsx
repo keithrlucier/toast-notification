@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import SetPassword from './pages/SetPassword';
 import CheckEmail from './pages/CheckEmail';
+import VerifySms from './pages/VerifySms';
 import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
 import Templates from './pages/Templates';
@@ -73,6 +74,7 @@ const router = createBrowserRouter([
   { path: '/login',         element: <Login /> },
   { path: '/register',      element: <Register /> },
   { path: '/set-password',  element: <SetPassword /> },
+  { path: '/verify-sms',   element: <VerifySms /> },
   { path: '/check-email',   element: <CheckEmail /> },
   { path: '/onboarding',    element: <ProtectedRoute><Onboarding /></ProtectedRoute> },
 

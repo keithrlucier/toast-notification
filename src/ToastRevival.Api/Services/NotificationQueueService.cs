@@ -34,8 +34,22 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
         _logger = logger;
     }
 
-    public void Enqueue(Guid notificationId) =>
-        _channel.Writer.TryWrite(notificationId);
+    // Manual queue-depth tracking. Channel.CreateUnbounded with
+    // SingleReader=true uses an internal queue type whose Reader.CanCount
+    // returns false — the single-consumer optimization deliberately skips
+    // Count to avoid the synchronization needed to keep it consistent.
+    // We track a mirror counter via Interlocked so the health endpoint can
+    // report depth without losing the perf win. Producer increments after
+    // a successful TryWrite; consumer decrements after a successful read.
+    private int _queueDepth;
+
+    public void Enqueue(Guid notificationId)
+    {
+        if (_channel.Writer.TryWrite(notificationId))
+            Interlocked.Increment(ref _queueDepth);
+    }
+
+    public int QueueDepth => Volatile.Read(ref _queueDepth);
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -62,6 +76,11 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
     {
         await foreach (var notificationId in _channel.Reader.ReadAllAsync(ct))
         {
+            // Decrement before ProcessAsync — depth measures "items waiting
+            // in the channel," not "items in flight." A long-running process
+            // step doesn't pin depth high; that's separate signal (could add
+            // an in-flight gauge later if useful).
+            Interlocked.Decrement(ref _queueDepth);
             try
             {
                 await ProcessAsync(notificationId, ct);

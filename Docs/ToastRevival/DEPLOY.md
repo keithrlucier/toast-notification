@@ -435,6 +435,49 @@ Option B is simpler for initial deployment. Option A is safer for future deploys
 - [ ] Set up Lightsail alarms: CPU > 80% on TOASTWEB1, disk > 80% on TOASTDATA1
 - [ ] Configure Azure Content Safety endpoint + key before onboarding real MSP tenants
 
+## Uptime Monitoring
+
+`GET /api/health` is the canonical liveness/readiness probe — anonymous, returns 200 when the API + DB + queue are all healthy and 503 when something's degraded. Wire an external uptime monitor against `https://toastnotification.com/api/health` and alert on any non-200.
+
+Recommended free-tier options (any one is sufficient):
+
+| Service | Free tier | Setup |
+|---|---|---|
+| **UptimeRobot** | 50 monitors, 5-min interval | Account → "Add New Monitor" → Type `HTTP(s)` → URL `https://toastnotification.com/api/health` → Interval `5m` → Alert contact email/SMS |
+| **BetterStack** (Better Uptime) | 10 monitors, 30-sec interval | Heartbeats → "Create Monitor" → URL → expected status `200` → on-call schedule |
+| **Pingdom** | 1 monitor free | Add Check → HTTP(S) → URL → 5-min interval |
+| **Lightsail alarms** | Native AWS | Lightsail → toast-web instance → Metrics → Alarm → Status check failed (no external HTTP probe; complementary, not replacement) |
+
+For any monitor, set the keyword/text match to `"healthy"` (case-sensitive) so a 200-with-degraded-body still alerts. The endpoint emits `"status": "healthy"` only when every subsystem passes.
+
+### Response shape
+
+```json
+{
+  "status":         "healthy" | "degraded",
+  "version":        "<assembly version>",
+  "uptimeSeconds":  <int>,
+  "checks": {
+    "db":    { "healthy": <bool>, "latencyMs": <int>, "error": <string?> },
+    "queue": { "healthy": <bool>, "depth":     <int> }
+  }
+}
+```
+
+Verify from any machine:
+
+```bash
+curl -sS https://toastnotification.com/api/health | jq .
+```
+
+A clean response in production looks like the example in `Docs/ToastRevival/CONTEXT.md` Health Endpoint section.
+
+### What the monitor catches vs. what it doesn't
+
+**Catches**: kestrel down, nginx down, TLS cert expired, DNS misconfiguration, postgres down, postgres unreachable from web box, queue consumer wedged (depth climbing without producer pressure).
+
+**Doesn't catch**: tenant data corruption, slow tail latency, memory leaks below the panic threshold, third-party Stripe/ContentSafety outages. Those need application metrics + log-based alerting (M9 polish).
+
 ## Redeploy Procedure
 
 When code changes need to go to production (run from dev machine):

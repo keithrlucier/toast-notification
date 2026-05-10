@@ -267,6 +267,30 @@ Regression coverage: `tests/ToastRevival.Api.Tests/SecurityTests.cs::SecurityDef
 
 Regression coverage: `tests/ToastRevival.Api.Tests/CsvHelperTests.cs` (9 [Theory]/[Fact] cases including the both-defenses stacking case where the apostrophe goes inside the outer double quotes when the value also contains a comma).
 
+### Health Endpoint (2026-05-09)
+`GET /api/health` returns a shallow liveness/readiness payload for external uptime probes (UptimeRobot, Pingdom, BetterStack, Lightsail alarm, k8s probes if we ever orchestrate). Anonymous — the entire point is for an unauthenticated probe to verify the API is reachable, the database is reachable, and the background queue isn't wedged.
+
+Response shape:
+```json
+{
+  "status":         "healthy" | "degraded",
+  "version":        "<assembly version>",
+  "uptimeSeconds":  <int>,
+  "checks": {
+    "db":    { "healthy": <bool>, "latencyMs": <int>, "error": <string?> },
+    "queue": { "healthy": <bool>, "depth":     <int> }
+  }
+}
+```
+
+HTTP `200` when every checked subsystem is healthy; `503` when one or more failed (body lists which). External probes treat anything other than `200` (including network failures and timeouts) as unhealthy.
+
+Intentionally shallow — no tenant counts, no notification IDs, no env-var values, no stack traces. Anything probe-worthy that's also sensitive belongs on an authenticated admin surface, not here.
+
+DB ping runs `Database.CanConnectAsync` (a `SELECT 1` round-trip) with a 2-second timeout. Queue depth is tracked via `Interlocked` counter mirroring the unbounded `Channel<Guid>` (the `SingleReader=true` optimization disables `Channel.Reader.CanCount`, so a manual mirror is required). Producer increments after `TryWrite`; consumer decrements after `ReadAllAsync` yields a value. Steady-state depth is ~zero except during burst windows; a depth that climbs without producer pressure increasing is the canonical "consumer is hung" signal.
+
+Regression coverage: `tests/ToastRevival.Api.Tests/HealthEndpointTests.cs` (anonymous reachability, response shape, defensive headers — SEC-001 regression).
+
 ### Database Backups — TOASTDATA1 (2026-05-09)
 Daily `pg_dump --format=custom` of the `toastrevival` database via systemd timer (`toast-pg-backup.timer`). Schedule: `OnCalendar=02:00 UTC` with `RandomizedDelaySec=5min`, `Persistent=true` for missed-run catch-up. Retention 14 days. Every dump passes `pg_restore --list` TOC verification before atomic `.partial` → `.dump` rename — corrupt dumps never reach the visible inventory.
 

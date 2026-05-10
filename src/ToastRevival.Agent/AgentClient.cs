@@ -254,10 +254,25 @@ internal sealed class AgentHubClient : IAsyncDisposable
     }
 
     /// <summary>
+    /// M9.C / INFO-M9B-001: max page size requested per /pending call. Server
+    /// clamps this to [1, 500]; we request the ceiling so a long-offline drain
+    /// finishes in fewer round-trips, each round-trip costing one slot of the
+    /// device-catchup-per-hour=60/hr rate-limit budget. With CatchupPageSize=500
+    /// the per-hour drain ceiling is 30,000 notifications.
+    /// </summary>
+    private const int CatchupPageSize = 500;
+
+    /// <summary>
     /// Fetch every Pending delivery for this device since the last known
     /// good window and run them through the same verify+render+report
     /// pipeline as live hub messages. Idempotent via the de-dup cache —
     /// notifications already rendered in this process lifetime are skipped.
+    ///
+    /// M9.C / INFO-M9B-001: pages until a partial page is returned. Each loop
+    /// iteration advances `since` to the last item's CreatedAt + 1 tick so
+    /// the next GET excludes the rows we just processed. A partial page
+    /// (Count &lt; CatchupPageSize) means the server returned everything that
+    /// matched — exit the loop.
     /// </summary>
     private async Task RunCatchupAsync(CancellationToken ct)
     {
@@ -265,47 +280,78 @@ internal sealed class AgentHubClient : IAsyncDisposable
         // arriving during the GET don't get filtered out of the next catch-up.
         var since = _lastCatchupSince;
         var nextSince = DateTime.UtcNow;
+        var totalDrained = 0;
 
-        // First call (since == null) omits the query param so the server
-        // drains the full Pending backlog — see FIX-M2B-001 in the field
-        // doc on this class. Subsequent calls send the captured timestamp.
-        var url = since.HasValue
-            ? $"/api/notifications/pending?since={Uri.EscapeDataString(since.Value.ToString("o"))}"
-            : "/api/notifications/pending";
+        // Hard ceiling on iteration count — defense in depth against a server
+        // bug returning the same rows over and over. With CatchupPageSize=500
+        // and the per-hour rate limit of 60, the server-bounded ceiling is
+        // already 60. This is just so we never spin.
+        const int MaxLoops = 64;
 
-        List<PendingNotificationItem>? items;
-        try
-        {
-            using var resp = await _http.GetAsync(url, ct);
-            if (!resp.IsSuccessStatusCode)
-            {
-                var body = await resp.Content.ReadAsStringAsync(ct);
-                DiagLog.Write($"Catch-up GET {(int)resp.StatusCode}: {body}");
-                return;
-            }
-            items = await resp.Content.ReadFromJsonAsync<List<PendingNotificationItem>>(cancellationToken: ct);
-        }
-        catch (OperationCanceledException) { return; }
-        catch (Exception ex)
-        {
-            DiagLog.Write($"Catch-up GET failed: {ex.GetType().Name}: {ex.Message}");
-            return;
-        }
-
-        if (items is null || items.Count == 0)
-        {
-            DiagLog.Write($"Catch-up: nothing pending since {(since.HasValue ? since.Value.ToString("O") : "(beginning)")}");
-            _lastCatchupSince = nextSince;
-            return;
-        }
-
-        DiagLog.Write($"Catch-up: {items.Count} pending notification(s) since {(since.HasValue ? since.Value.ToString("O") : "(beginning)")}");
-        foreach (var item in items)
+        for (var loop = 0; loop < MaxLoops; loop++)
         {
             if (ct.IsCancellationRequested) return;
-            await RenderAndReportAsync(item.PayloadJson, item.Signature, source: "catchup");
+
+            // First call (since == null) omits the `since` query param so the
+            // server drains the full Pending backlog — see FIX-M2B-001.
+            // Always include limit so newer servers honor our preferred page size.
+            var url = since.HasValue
+                ? $"/api/notifications/pending?since={Uri.EscapeDataString(since.Value.ToString("o"))}&limit={CatchupPageSize}"
+                : $"/api/notifications/pending?limit={CatchupPageSize}";
+
+            List<PendingNotificationItem>? items;
+            try
+            {
+                using var resp = await _http.GetAsync(url, ct);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var body = await resp.Content.ReadAsStringAsync(ct);
+                    DiagLog.Write($"Catch-up GET {(int)resp.StatusCode}: {body}");
+                    return;
+                }
+                items = await resp.Content.ReadFromJsonAsync<List<PendingNotificationItem>>(cancellationToken: ct);
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex)
+            {
+                DiagLog.Write($"Catch-up GET failed: {ex.GetType().Name}: {ex.Message}");
+                return;
+            }
+
+            if (items is null || items.Count == 0)
+            {
+                if (loop == 0)
+                    DiagLog.Write($"Catch-up: nothing pending since {(since.HasValue ? since.Value.ToString("O") : "(beginning)")}");
+                else
+                    DiagLog.Write($"Catch-up: drained {totalDrained} notification(s) across {loop} page(s).");
+                _lastCatchupSince = nextSince;
+                return;
+            }
+
+            totalDrained += items.Count;
+            DiagLog.Write($"Catch-up page {loop + 1}: {items.Count} item(s) since {(since.HasValue ? since.Value.ToString("O") : "(beginning)")}");
+
+            foreach (var item in items)
+            {
+                if (ct.IsCancellationRequested) return;
+                await RenderAndReportAsync(item.PayloadJson, item.Signature, source: "catchup");
+            }
+
+            // Partial page → server returned everything that matched, drain done.
+            if (items.Count < CatchupPageSize)
+            {
+                DiagLog.Write($"Catch-up: drained {totalDrained} notification(s) across {loop + 1} page(s) (final page partial).");
+                _lastCatchupSince = nextSince;
+                return;
+            }
+
+            // Full page → advance `since` past the last item's CreatedAt and
+            // loop. +1 tick prevents re-fetching the boundary row (server
+            // filter is `CreatedAt >= since`).
+            since = items[^1].CreatedAt.AddTicks(1);
         }
 
+        DiagLog.Write($"Catch-up: hit MaxLoops={MaxLoops} guard after draining {totalDrained}; advancing _lastCatchupSince anyway.");
         _lastCatchupSince = nextSince;
     }
 
@@ -386,6 +432,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
             && Guid.TryParse(idStr, out var notificationId))
         {
             var action = parsed.GetValueOrDefault("action") ?? "click";
+            var url = parsed.GetValueOrDefault("url");
             try
             {
                 await _hub.InvokeAsync("ReportInteraction", notificationId, action);
@@ -395,6 +442,8 @@ internal sealed class AgentHubClient : IAsyncDisposable
             {
                 DiagLog.Write($"ReportInteraction failed for {notificationId}: {ex.GetType().Name}: {ex.Message}");
             }
+
+            ToastUrlLauncher.OpenIfAllowed(url);
         }
     }
 
@@ -468,6 +517,49 @@ internal static class InteractionFallback
         catch (Exception ex)
         {
             DiagLog.Write($"InteractionFallback POST {notificationId} failed: {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+}
+
+internal static class ToastUrlLauncher
+{
+    public static bool OpenIfAllowed(string? encodedUrl)
+    {
+        if (string.IsNullOrWhiteSpace(encodedUrl)) return false;
+
+        Uri uri;
+        try
+        {
+            var url = Uri.UnescapeDataString(encodedUrl);
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+                || parsed is null
+                || parsed.Scheme is not ("http" or "https"))
+            {
+                DiagLog.Write("ToastUrlLauncher: rejected non-http(s) URL.");
+                return false;
+            }
+            uri = parsed;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"ToastUrlLauncher: rejected malformed URL: {ex.GetType().Name}.");
+            return false;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = uri.AbsoluteUri,
+                UseShellExecute = true,
+            });
+            DiagLog.Write($"ToastUrlLauncher: opened URL for host '{uri.Host}'.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"ToastUrlLauncher: open failed: {ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }

@@ -71,9 +71,14 @@ public class AuthController : ControllerBase
 
         var tenant = new Tenant
         {
-            Name       = req.TenantName,
-            Subdomain  = subdomain,
-            SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+            Name          = req.TenantName,
+            Subdomain     = subdomain,
+            SigningKey    = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+            // INFO-M1-003 (M9.C): every new tenant gets a pre-shared enrollment key.
+            // Devices must include this in /api/devices/register or the request is
+            // rejected with 403. Key is surfaced in the admin dashboard's deploy
+            // command so MSPs paste it into their RMM script alongside CLIENTID.
+            EnrollmentKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)),
         };
         _db.Tenants.Add(tenant);
         await _db.SaveChangesAsync();
@@ -274,6 +279,8 @@ public class AuthController : ControllerBase
             Name = req.TenantName,
             Subdomain = subdomain,
             SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+            // INFO-M1-003 (M9.C): see Initiate() — same auto-gen on legacy register path.
+            EnrollmentKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)),
         };
         _db.Tenants.Add(tenant);
         await _db.SaveChangesAsync();

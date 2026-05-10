@@ -19,9 +19,13 @@ namespace ToastRevival.Agent;
 ///   Error           #DC2626 red, static
 ///   Connecting      #7A7A92 dim, static
 ///
+/// M9.C: production bell glyphs replace M0A's placeholder circles. Bell is
+/// rendered via GraphicsPath at icon construction time, tinted by state color.
+/// Single shape across all five states — only the fill color tells the user
+/// which state. Renders crisply at 16×16 native and at high-DPI resampling.
+///
 /// INFO-M2C-001: HICONs created via Bitmap.GetHicon() are not explicitly freed.
 /// Acceptable for process-lifetime tray icons — handles are released on process exit.
-/// Before M9 GA: swap placeholder GDI+ circles for SVG-rasterized production assets.
 /// </summary>
 internal sealed class TrayIconService : IDisposable
 {
@@ -90,12 +94,12 @@ internal sealed class TrayIconService : IDisposable
 
         _uiContext = SynchronizationContext.Current;
 
-        _connectingIcon    = CreateCircleIcon(16, Color.FromArgb(0x7A, 0x7A, 0x92));
-        _connectedIcon     = CreateCircleIcon(16, Color.FromArgb(0x00, 0xC9, 0xA7));
-        _reconnectingIcon  = CreateCircleIcon(16, Color.FromArgb(0xF5, 0x9E, 0x0B));
-        _reconnectingDimIcon = CreateCircleIcon(16, Color.FromArgb(0x86, 0x57, 0x06)); // ~55% brightness of amber
-        _disconnectedIcon  = CreateCircleIcon(16, Color.FromArgb(0xF5, 0x9E, 0x0B));
-        _errorIcon         = CreateCircleIcon(16, Color.FromArgb(0xDC, 0x26, 0x26));
+        _connectingIcon      = CreateBellIcon(16, Color.FromArgb(0x7A, 0x7A, 0x92));
+        _connectedIcon       = CreateBellIcon(16, Color.FromArgb(0x00, 0xC9, 0xA7));
+        _reconnectingIcon    = CreateBellIcon(16, Color.FromArgb(0xF5, 0x9E, 0x0B));
+        _reconnectingDimIcon = CreateBellIcon(16, Color.FromArgb(0x86, 0x57, 0x06)); // ~55% brightness of amber
+        _disconnectedIcon    = CreateBellIcon(16, Color.FromArgb(0xF5, 0x9E, 0x0B), strikethrough: true);
+        _errorIcon           = CreateBellIcon(16, Color.FromArgb(0xDC, 0x26, 0x26), strikethrough: true);
 
         var menu = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer() };
         menu.Items.Add(new ToolStripMenuItem("Open Dashboard",          null, (_, _) => OpenDashboard()));
@@ -218,16 +222,71 @@ internal sealed class TrayIconService : IDisposable
         }
     }
 
-    private static Icon CreateCircleIcon(int size, Color fill)
+    /// <summary>
+    /// M9.C / Diana: bell glyph rendered as a filled GraphicsPath. Uses normalized
+    /// coordinates [0..1] scaled to <paramref name="size"/> so the same path
+    /// data renders cleanly at 16×16 (system tray native), 32×32 (high-DPI
+    /// scaling), or any other size Windows asks for. The bell silhouette is
+    /// composed of (a) the bell body — a downward-rounded cup with a flared
+    /// rim, (b) the clapper — a small disc beneath the rim. Strikethrough
+    /// states (Disconnected / Error) overlay a single diagonal slash to
+    /// communicate "not currently delivering" at a glance in the tray.
+    /// </summary>
+    private static Icon CreateBellIcon(int size, Color fill, bool strikethrough = false)
     {
         using var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp))
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.Clear(Color.Transparent);
+
             using var brush = new SolidBrush(fill);
-            var m = Math.Max(2, size / 6);
-            g.FillEllipse(brush, m, m, size - m * 2 - 1, size - m * 2 - 1);
+            using var path  = new GraphicsPath();
+
+            // Bell body — symmetric profile drawn from the top stem down through
+            // the dome, into the flared rim. Coordinates are in [0..1] of icon
+            // size; the float multiplications scale to the requested resolution.
+            var s = (float)size;
+            float Sx(float x) => x * s;
+            float Sy(float y) => y * s;
+
+            // Stem on top (small rectangle hint of the bell crown).
+            path.AddRectangle(new RectangleF(Sx(0.45f), Sy(0.10f), Sx(0.10f), Sy(0.06f)));
+
+            // Body — a closed polygon that approximates a bell silhouette.
+            // Top of dome at 0.16y, widening to the rim at 0.74y.
+            var body = new[]
+            {
+                new PointF(Sx(0.32f), Sy(0.16f)),
+                new PointF(Sx(0.32f), Sy(0.50f)),
+                new PointF(Sx(0.22f), Sy(0.66f)),
+                new PointF(Sx(0.18f), Sy(0.74f)),
+                new PointF(Sx(0.82f), Sy(0.74f)),
+                new PointF(Sx(0.78f), Sy(0.66f)),
+                new PointF(Sx(0.68f), Sy(0.50f)),
+                new PointF(Sx(0.68f), Sy(0.16f)),
+            };
+            // Smooth top of dome with a tiny arc by adding an ellipse there.
+            path.AddPolygon(body);
+            path.AddEllipse(Sx(0.28f), Sy(0.10f), Sx(0.44f), Sy(0.20f));
+
+            // Clapper — a small disc just below the rim.
+            path.AddEllipse(Sx(0.43f), Sy(0.78f), Sx(0.14f), Sy(0.14f));
+
+            g.FillPath(brush, path);
+
+            if (strikethrough)
+            {
+                // Diagonal slash from upper-right to lower-left, in the same fill
+                // color, stroked thick enough to read at 16×16. We round the cap
+                // so anti-aliasing doesn't leave a pixel-jagged tip.
+                using var pen = new Pen(fill, Math.Max(2f, s * 0.14f))
+                {
+                    StartCap = LineCap.Round,
+                    EndCap   = LineCap.Round,
+                };
+                g.DrawLine(pen, Sx(0.84f), Sy(0.16f), Sx(0.16f), Sy(0.84f));
+            }
         }
         return Icon.FromHandle(bmp.GetHicon());
     }

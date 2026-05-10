@@ -1,17 +1,39 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { api } from '../api/client';
+
+interface TenantSettingsLite {
+  enrollmentKey: string | null;
+}
 
 export default function DeployCommand() {
   const { user } = useAuth();
   const [copied, setCopied] = useState(false);
+  const [enrollmentKey, setEnrollmentKey] = useState<string | null>(null);
+
+  // M9.C / INFO-M1-003: pull the per-tenant enrollment key so MSPs can paste
+  // it into their RMM script. Admin-only on the server side; non-admin users
+  // see a deploy command without ENROLLMENTKEY (their device installs will be
+  // rejected unless an admin shares the key out-of-band).
+  useEffect(() => {
+    let cancelled = false;
+    api.get<TenantSettingsLite>('/api/tenant/settings')
+      .then(res => { if (!cancelled) setEnrollmentKey(res.enrollmentKey ?? null); })
+      .catch(() => { /* non-fatal: deploy command renders without the key */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const tenantId  = user?.tenantId ?? '<your-tenant-id>';
   const serverUrl = window.location.origin;
+  const enrollmentLine = enrollmentKey
+    ? ` ^\n  ENROLLMENTKEY=${enrollmentKey}`
+    : '';
   const command   =
-    `msiexec /i ToastNotification.msi /qn ^\n  CLIENTID=${tenantId} ^\n  SERVERURL=${serverUrl}`;
+    `msiexec /i ToastNotification.msi /qn ^\n  CLIENTID=${tenantId}${enrollmentLine} ^\n  SERVERURL=${serverUrl}`;
 
   const copy = () => {
-    navigator.clipboard.writeText(command.replace(' ^\n ', ' ')).then(() => {
+    // collapse caret-newline-spaces back into single spaces for clipboard
+    navigator.clipboard.writeText(command.replace(/ \^\n\s+/g, ' ')).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -85,6 +107,12 @@ export default function DeployCommand() {
           <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>CLIENTID</span>{' '}
           <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)' }}>{tenantId}</code>
         </span>
+        {enrollmentKey && (
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>ENROLLMENTKEY</span>{' '}
+            <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)' }}>{enrollmentKey}</code>
+          </span>
+        )}
         <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
           <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>SERVERURL</span>{' '}
           <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)' }}>{serverUrl}</code>

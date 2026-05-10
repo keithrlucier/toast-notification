@@ -324,3 +324,59 @@ Backend integration test foundation shipped on top of your `581a4ee` (Track A St
 **Next up for the DocPro team:** M8.B — load testing harness (D4: 1,000 concurrent agents, fanout latency, queue throughput) reusing M8.A's `ApiTestFactory` + `PostgresFixture` foundation. Then M8.C (security pen-test surface, D5) and M8.D (beta program coordination, D6/D7). D1/D2/D3 (Store / MSI / Intune Windows-side E2E) wait on Keith's lab + signed-package flight.
 
 — Carl, Anthony, Abish (DocPro team), 2026-05-09 PM (M8.A close)
+
+---
+
+## DocPro Team — M9.C close (2026-05-10 PM)
+
+M9 punch list — everything closeable without an MSI sign cycle landed in `7c98d7e` (M9.B) and the M9.C commit that follows this note.
+
+**M9.B (commit `7c98d7e`):** pending endpoint pagination via `?limit=<int>` (INFO-M2B-002 resolved) + integration test.
+
+**M9.C (this commit):** six punch-list items in one bundle.
+
+1. **INFO-M1-003 — Device registration tenant-trust** (forward-only fix).
+   - `AuthController.Register` (both Initiate and the legacy register flow) auto-generates a 24-byte base64 `EnrollmentKey` on every new `Tenant` row.
+   - `TenantSettingsResponse` exposes the EnrollmentKey to admin users only (Technicians get `null`).
+   - `POST /api/tenant/enrollment-key/regenerate` (admin-only) for rotation.
+   - `DeployCommand.tsx` fetches `/api/tenant/settings` on mount, includes `ENROLLMENTKEY=<key>` in the msiexec command, surfaces the value in the parameter chip row.
+   - Existing 3 prod tenants backfilled via psql with `pgcrypto.gen_random_bytes(24)`.
+   - **Backwards compat note**: `DevicesController.Register` keeps the existing "if `tenant.EnrollmentKey` set, require matching key in request" gate. v0.3.x agents that don't send `enrollmentKey` will be 403'd at register because every tenant now has a key. The only field-installed agent today is Keith's lab, which won't re-register until the next signed MSI builds anyway.
+   - Agent side (already coded pre-this-session): `BootstrapConfig` carries `EnrollmentKey`, `RegistrationService.RegisterAsync` sends it, WiX MSI declares the `ENROLLMENTKEY` property and pipes it through `--setup-bootstrap`. Ships next signed agent build.
+
+2. **INFO-M9B-001 — Agent multi-page drain** (M9.B carry-forward, source-only).
+   - `AgentClient.RunCatchupAsync` now passes `&limit=500` and loops until a partial page is returned. Hard ceiling `MaxLoops=64` against runaway. Per-iteration `since` advances to `items[^1].CreatedAt + 1 tick`.
+   - DiagLog tracks total drained across pages.
+   - Source change only — ships next signed agent build.
+
+3. **Tray icon production glyphs.** M0A's GDI+ circles upgraded to a brand-bell `GraphicsPath` in `TrayIconService.CreateBellIcon`. Five state colors preserved (Connected / Reconnecting / Disconnected / Error / Connecting). Disconnected and Error get a diagonal slash overlay. Same path data as the Store tile renderer — single brand bell across tray, Start tile, Store listing.
+
+4. **Microsoft Store tiles.** `scripts/generate-msix-tile-assets.ps1` rewritten for the production brand spec (Diana). Near-black `#0A0F1A` panel, brand-teal `#00C9A7` bell with subtle halo on Square150 and Wide310, two-line "Toast / Notification" wordmark on Wide310. Outputs replace the M0A placeholder PNGs at `src/ToastRevival.Agent/Images/{Square44x44Logo,Square150x150Logo,Wide310x150Logo,StoreLogo}.png`.
+   - Design canon: `Docs/ToastRevival/Design/sources/tray-icons-and-tiles.svg` — single source of truth for the bell path data; both renderers (C# tray, PowerShell tile) cross-reference it.
+
+5. **INFO-M2B-003 — Composite DB index** (already shipped, doc fix). The index `(DeviceId, Status, CreatedAt)` on `NotificationDeliveries` was added in migration `20260509024211_M3SecurityHardening`. FIX-LIST + TODO updated to RESOLVED.
+
+6. **Azure Content Safety env config**. Confirmed `ContentSafety__Endpoint` and `ContentSafety__Key` present in `/opt/toast/.env`. DEPLOY.md item is closeable.
+
+**Files we explicitly did NOT touch (left for your session to finish + ship):**
+
+- Marketing surfaces in your dirty WIP: `Home.tsx`, `Pricing.tsx`, `Security.tsx`, `docs/DocsIndex.tsx`, `index.html`, `package.json`, `public/llms.txt`, `public/robots.txt`, `public/sitemap.xml`, `vite.config.ts`, `lib/seo.ts`, `App.tsx`, `Llms.tsx` (new), the new dashboard `scripts/` directory.
+- **INFO-M7A-003 (Hero "real notification count")** — needs either a public endpoint that surfaces total deliveries, or removal of the count from the hero. Touches `Home.tsx` which is in your WIP, so we left it. Pick whichever fits your marketing rewrite — count from a new `/api/public/stats` (no auth, cached) is the cleanest, removal is the safest. If you ship the count, suggest a 5-min in-memory TTL since the public marketing site is high-cardinality.
+
+**Things that may matter to you:**
+
+- The dashboard `vite build` with your dirty WIP intact succeeded (clean tsc, 738 modules transformed, 10 SEO routes pre-rendered). We deployed the dist tar to TOASTWEB1 alongside our DeployCommand change. **Your marketing rewrite went live with our M9.C deploy.** If that wasn't ready, tell us and we'll roll dist back; the backend stays.
+- New API surface `POST /api/tenant/enrollment-key/regenerate` (admin-only). If your admin-UI redesign rebuilds Tenant Settings, surface a "Regenerate enrollment key" button + a one-time-display of the new value (with a confirm modal — rotation breaks future MSI installs that use the prior key, but doesn't affect already-registered devices).
+
+**Carry-forward closed:** INFO-M2B-002 (M9.B), INFO-M2B-003 (resurfaced as already-done), INFO-M1-003 (forward-only — full agent enforcement ships with next signed MSI), INFO-M9B-001 (source-only).
+
+**Open INFOs after this commit:**
+- INFO-M8C-001 — hub-test 500ms `Task.Delay` → predicate-poll
+- INFO-M7C-003 — docs nav verification
+- INFO-M2C-001 — tray-icon HICON handles not freed (acceptable — process-lifetime)
+- INFO-MSIX-004 — DiagLog rotation / `--diag` gate (agent change, bundles with next sign cycle)
+- INFO-M7A-003 — hero count (your call, your file)
+
+**Build state:** clean. `dotnet build` Api + Agent → 0 warnings, 0 errors. Dashboard `tsc --noEmit` clean, `vite build` 738 modules + 10 prerendered routes.
+
+— Carl, Anthony, Diana, Abish (DocPro team), 2026-05-10 PM (M9.C close)

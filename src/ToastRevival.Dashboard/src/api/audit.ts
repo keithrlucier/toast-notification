@@ -1,4 +1,4 @@
-import { api, ApiError } from './client';
+import { api, apiErrorFromResponse, authHeaders } from './client';
 
 export interface AuditLogEntry {
   id: string;
@@ -16,28 +16,20 @@ export const auditApi = {
 
   /** Fetches and triggers a browser file download of the audit log. */
   exportFile: async (format: 'csv' | 'pdf', days = 30): Promise<void> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`/api/audit/export?format=${format}&days=${days}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    const path = `/api/audit/export?format=${format}&days=${days}`;
+    const res = await fetch(path, { headers: authHeaders() });
     if (!res.ok) {
-      let msg = `Export failed: ${res.status}`;
-      try { const b = await res.json() as { message?: string }; msg = b.message ?? msg; } catch { /* ignore */ }
-      throw new ApiError(res.status, msg);
+      throw await apiErrorFromResponse(res, path, `Export failed: ${res.status}`);
     }
     await triggerDownload(res, `audit-log-${today()}.${format}`);
   },
 
   /** Fetches and triggers a browser file download of a per-notification delivery report. */
   exportDeliveryReport: async (notificationId: string, format: 'csv' | 'pdf'): Promise<void> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`/api/notifications/${notificationId}/report?format=${format}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    const path = `/api/notifications/${notificationId}/report?format=${format}`;
+    const res = await fetch(path, { headers: authHeaders() });
     if (!res.ok) {
-      let msg = `Export failed: ${res.status}`;
-      try { const b = await res.json() as { message?: string }; msg = b.message ?? msg; } catch { /* ignore */ }
-      throw new ApiError(res.status, msg);
+      throw await apiErrorFromResponse(res, path, `Export failed: ${res.status}`);
     }
     await triggerDownload(res, `delivery-${notificationId.slice(0, 8)}.${format}`);
   },

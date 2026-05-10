@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import { authApi, type AuthResponse } from '../api/auth';
+import { AUTH_MESSAGE_STORAGE_KEY, AUTH_UNAUTHORIZED_EVENT, SESSION_EXPIRED_MESSAGE } from '../api/client';
 
 interface AuthUser {
   userId: string;
@@ -22,29 +23,73 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const TOKEN_EXPIRY_SKEW_MS = 5_000;
 
-function parseToken(token: string): { mfaElevated: boolean; isPlatformAdmin: boolean } {
+interface ParsedToken {
+  mfaElevated: boolean;
+  isPlatformAdmin: boolean;
+  expiresAtMs: number | null;
+  valid: boolean;
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]!));
-    return {
-      mfaElevated: payload['mfa'] === 'true' || payload['mfa'] === true,
-      isPlatformAdmin: payload['platformAdmin'] === 'true' || payload['platformAdmin'] === true,
-    };
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - base64.length % 4) % 4), '=');
+    return JSON.parse(atob(padded)) as Record<string, unknown>;
   } catch {
-    return { mfaElevated: false, isPlatformAdmin: false };
+    return null;
   }
 }
 
+function parseToken(token: string): ParsedToken {
+  const payload = decodeJwtPayload(token);
+  if (!payload) {
+    return { mfaElevated: false, isPlatformAdmin: false, expiresAtMs: null, valid: false };
+  }
+
+  const exp = typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  return {
+    mfaElevated: payload['mfa'] === 'true' || payload['mfa'] === true,
+    isPlatformAdmin: payload['platformAdmin'] === 'true' || payload['platformAdmin'] === true,
+    expiresAtMs: exp,
+    valid: exp !== null,
+  };
+}
+
+function isExpired(token: ParsedToken): boolean {
+  return token.expiresAtMs !== null && token.expiresAtMs <= Date.now() + TOKEN_EXPIRY_SKEW_MS;
+}
+
+function clearStoredSession(): void {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+}
+
+function storeAuthMessage(message: string): void {
+  sessionStorage.setItem(AUTH_MESSAGE_STORAGE_KEY, message);
+}
+
+function unauthorizedMessage(event: Event): string {
+  if (event instanceof CustomEvent && typeof event.detail?.message === 'string') {
+    return event.detail.message;
+  }
+  return SESSION_EXPIRED_MESSAGE;
+}
+
 function userFromResponse(res: AuthResponse): AuthUser {
-  const { mfaElevated, isPlatformAdmin } = parseToken(res.token);
+  const tokenInfo = parseToken(res.token);
   return {
     userId: res.userId,
     tenantId: res.tenantId,
     email: res.email,
     role: res.role,
-    isPlatformAdmin: Boolean(res.isPlatformAdmin || isPlatformAdmin),
+    isPlatformAdmin: Boolean(res.isPlatformAdmin || tokenInfo.isPlatformAdmin),
     token: res.token,
-    mfaElevated,
+    mfaElevated: tokenInfo.mfaElevated,
   };
 }
 
@@ -52,18 +97,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const clearSession = useCallback((message?: string) => {
+    clearStoredSession();
+    if (message) storeAuthMessage(message);
+    setUser(null);
+  }, []);
+
   useEffect(() => {
     const stored = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
     if (stored && storedUser) {
       try {
         const parsed = JSON.parse(storedUser) as AuthUser;
-        const { mfaElevated, isPlatformAdmin } = parseToken(stored);
-        setUser({ ...parsed, token: stored, mfaElevated, isPlatformAdmin });
-      } catch { /* ignore corrupt storage */ }
+        const tokenInfo = parseToken(stored);
+        if (!tokenInfo.valid || isExpired(tokenInfo)) {
+          clearStoredSession();
+          storeAuthMessage(SESSION_EXPIRED_MESSAGE);
+        } else {
+          setUser({
+            ...parsed,
+            token: stored,
+            mfaElevated: tokenInfo.mfaElevated,
+            isPlatformAdmin: Boolean(parsed.isPlatformAdmin || tokenInfo.isPlatformAdmin),
+          });
+        }
+      } catch {
+        clearStoredSession();
+      }
     }
     setLoading(false);
   }, []);
+
+  useEffect(() => {
+    const handleUnauthorized = (event: Event) => clearSession(unauthorizedMessage(event));
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorized);
+    return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorized);
+  }, [clearSession]);
+
+  useEffect(() => {
+    if (!user?.token) return;
+
+    const tokenInfo = parseToken(user.token);
+    if (!tokenInfo.valid || isExpired(tokenInfo)) {
+      clearSession(SESSION_EXPIRED_MESSAGE);
+      return;
+    }
+
+    if (tokenInfo.expiresAtMs === null) return;
+
+    const timeout = window.setTimeout(
+      () => clearSession(SESSION_EXPIRED_MESSAGE),
+      Math.max(tokenInfo.expiresAtMs - Date.now(), 0),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [clearSession, user?.token]);
 
   const login = async (email: string, password: string) => {
     const res = await authApi.login({ email, password });
@@ -81,16 +168,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(u);
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setUser(null);
-  };
+  const logout = () => clearSession();
 
   const setMfaToken = (token: string) => {
     if (!user) return;
-    const { mfaElevated, isPlatformAdmin } = parseToken(token);
-    const updated = { ...user, token, mfaElevated, isPlatformAdmin };
+    const tokenInfo = parseToken(token);
+    if (!tokenInfo.valid || isExpired(tokenInfo)) {
+      clearSession(SESSION_EXPIRED_MESSAGE);
+      return;
+    }
+
+    const updated = {
+      ...user,
+      token,
+      mfaElevated: tokenInfo.mfaElevated,
+      isPlatformAdmin: Boolean(user.isPlatformAdmin || tokenInfo.isPlatformAdmin),
+    };
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(updated));
     setUser(updated);

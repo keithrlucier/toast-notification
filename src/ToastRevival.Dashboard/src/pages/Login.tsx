@@ -1,7 +1,13 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ApiError } from '../api/client';
+import { ApiError, AUTH_MESSAGE_STORAGE_KEY } from '../api/client';
+
+function takeAuthMessage(): string {
+  const message = sessionStorage.getItem(AUTH_MESSAGE_STORAGE_KEY) ?? '';
+  if (message) sessionStorage.removeItem(AUTH_MESSAGE_STORAGE_KEY);
+  return message;
+}
 
 export default function Login() {
   const { login } = useAuth();
@@ -11,7 +17,7 @@ export default function Login() {
 
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError]       = useState('');
+  const [error, setError]       = useState(takeAuthMessage);
   const [loading, setLoading]   = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {

@@ -46,11 +46,15 @@ export default function DocsStore() {
       <h2 id="install">Install</h2>
       <ol>
         <li>
-          Open the <strong>Microsoft Store</strong> on the target endpoint.
-        </li>
-        <li>
-          Search for <strong>Toast Notification</strong> and select the listing published by{' '}
-          <strong>Toast2IT, LLC</strong>.
+          Open{' '}
+          <a
+            href="https://apps.microsoft.com/detail/9PFD6004DVTN?hl=en-us&gl=US&ocid=pdpshare"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Toast Notification on the Microsoft Store
+          </a>{' '}
+          on the target endpoint. Listing published by <strong>Toast2IT, LLC</strong>.
         </li>
         <li>
           Click <strong>Install</strong>. The agent installs into your user profile and is ready to register on first

@@ -68,7 +68,7 @@ export default function DeployCommand() {
             ↓ Download MSI
           </a>
           <a
-            href="https://www.microsoft.com/store/apps/9P5L0MRMFRRF"
+            href="https://apps.microsoft.com/detail/9PFD6004DVTN?hl=en-us&gl=US&ocid=pdpshare"
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-secondary"

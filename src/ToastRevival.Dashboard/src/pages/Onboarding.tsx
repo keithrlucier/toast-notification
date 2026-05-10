@@ -171,11 +171,11 @@ function BillingStep({
   return (
     <div>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-        Activate the Standard Plan
+        Billing & Subscription
       </h2>
       <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.55 }}>
-        One plan covers the full tenant. Billing starts with a 14-day trial, then uses active device count with a
-        100-device monthly minimum.
+        Your first 25 devices are always free — no credit card required. Billing activates automatically
+        when you exceed 25 active devices.
       </p>
 
       <div style={{
@@ -183,7 +183,7 @@ function BillingStep({
         borderRadius: 8,
         background: 'var(--bg-secondary)',
         padding: 24,
-        marginBottom: 20,
+        marginBottom: 16,
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap', marginBottom: 18 }}>
           <div>
@@ -196,24 +196,29 @@ function BillingStep({
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>$0.22</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>per active device/month</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>per active device / month</div>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-          <PlanFact label="Minimum" value="100 devices" />
-          <PlanFact label="Monthly floor" value="$22.00" />
-          <PlanFact label="Trial" value="14 days" />
+          <PlanFact label="Free tier" value="1–25 devices" />
+          <PlanFact label="Standard rate" value="$0.22 / device" />
+          <PlanFact label="Billing starts" value="At device 26+" />
         </div>
       </div>
+
+      <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 20, lineHeight: 1.5 }}>
+        Stripe billing is only required when you exceed 25 devices. You can configure it now or any time
+        from the Billing page.
+      </p>
 
       {checkoutError && <div className="error-banner" style={{ marginBottom: 16 }}>{checkoutError}</div>}
 
       <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-        <button className="btn btn-secondary" onClick={onNext}>
-          Configure Later
+        <button className="btn btn-ghost" onClick={onCheckout} disabled={checkoutLoading}>
+          {checkoutLoading ? 'Redirecting...' : 'Set Up Billing'}
         </button>
-        <button className="btn btn-primary" onClick={onCheckout} disabled={checkoutLoading}>
-          {checkoutLoading ? 'Redirecting...' : 'Start Trial'}
+        <button className="btn btn-primary" onClick={onNext}>
+          Continue
         </button>
       </div>
     </div>

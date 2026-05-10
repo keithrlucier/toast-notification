@@ -516,6 +516,19 @@ Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplica
 - Anthony: D3 (RMM packages require testing on actual RMM tools)
 - Abish: D4-D6 (marketing coordination, documentation, compliance prep)
 
+### M9.B Closure (2026-05-10) — Pending Endpoint Pagination
+- INFO-M2B-002 resolved. `GET /api/notifications/pending` now accepts an optional `?limit=<int>` query param, defaulting to 100 (backwards compat for v0.3.x agents that omit it) and server-clamped to `[1, 500]`. Wire shape stays an array — agents in the field unmarshal `List<PendingNotificationItem>` and need no rebuild.
+- New integration test `SecurityTests.PendingEndpoint_LimitParamControlsPageSize_ClampsToBounds` exercises default + explicit-in-range + upper-clamp (limit=999 → 500) + lower-clamp (limit=0 → 1) against a real Postgres container with 510 seeded Pending deliveries.
+- Code Sweep: SHIP. No HOLD findings. INFO-M9B-001 (carry-forward): agent-side adoption of `?limit=500` deferred to next signed agent build to avoid an MSI rebuild + sign cycle this session — until then the fleet drains at 100/call. INFO-M2B-003 (composite DB index `(DeviceId, Status, CreatedAt)`) becomes more valuable now that callers can request 500-item pages; still acceptable at MVP scale.
+- Pre-commit hygiene (Abish catch): two unrelated WIP files in working tree (`Security.tsx` 226-line marketing copy edit, `Agent.csproj` 0.3.1.0 version bump) preserved unstaged via selective-commit pattern. M9.B commit ships only the controller + test + spec note + milestone docs.
+- Build clean: 0 warnings + 0 errors solution-wide. CI runs the new test on `ubuntu-latest` against `postgres:16-alpine` service container — local Docker not required.
+
+### Agent Deployment (M9.B)
+- Anthony: backend controller + integration test (no parallelizable track at this scope).
+- Abish: Code Sweep — caught the pre-existing WIP scope leak before commit.
+- Diana: On bench — backend-only milestone, no UI work.
+- Carl: foreman + selective-commit discipline.
+
 ---
 
 ## Milestone Summary

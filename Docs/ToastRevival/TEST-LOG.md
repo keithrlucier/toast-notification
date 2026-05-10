@@ -669,7 +669,7 @@ Plus a structural improvement: `NotificationPayloadBuilder.BuildSigned` extracte
 
 ### Code Sweep — INFO findings (non-blocking, deferred)
 
-- **INFO-M2B-002** (M3 / M5): Pending endpoint hard cap of 100 items per call. >100 backlog drains across multiple reconnect cycles. Acceptable for now; explicit pagination can land at M3/M5.
+- **INFO-M2B-002**: **RESOLVED 2026-05-10 (M9.B)**. `GET /api/notifications/pending` now accepts `?limit=<int>` query param, default 100 (backwards compat for v0.3.x agents that omit it), server-clamped to `[1, 500]` via `Math.Clamp`. Wire shape preserved (still `PendingNotificationItem[]`) — agents in the field need no rebuild. Integration test `SecurityTests.PendingEndpoint_LimitParamControlsPageSize_ClampsToBounds` verifies default + explicit-in-range + upper-clamp + lower-clamp against a real Postgres container with 510 seeded Pending deliveries. Agent-side adoption (`?limit=500` in `AgentClient.RunCatchupAsync`) deferred to next signed agent build (INFO-M9B-001 carry-forward).
 - **INFO-M2B-003** (M3 / M5): No composite DB index on `NotificationDelivery (DeviceId, Status, CreatedAt)`. Catch-up query will scan once delivery volume grows. Add via EF model + migration when needed.
 - **INFO-M2B-004** (M3): Agent dedup `MemoryCache` is unbounded (no `SizeLimit`). Acceptable at MVP scale (~100 bytes/entry); set `SizeLimit=50_000` + `Size=1` on entry options at M3.
 - **INFO-M2B-005** (M3): Catch-up endpoint shares the `device-per-hour` (10/hr fixed) policy with `ReportInteraction`. Flaky-network reconnect storms could throttle catch-up. Fire-and-forget semantics mean a 429 just delays delivery to the next successful reconnect — acceptable for now. Consider a separate `device-catchup-per-hour` policy at e.g. 60/hr.

@@ -384,13 +384,12 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Surface:** `src/ToastRevival.Agent/AgentClient.cs::AgentHubClient` (`_renderedCache: MemoryCache<Guid, byte>`, 1-hour sliding expiration; checked in `RenderAndReportAsync`).
 **Resolution:** Notification render + ReportDelivery now go through a shared `RenderAndReportAsync` helper called from both the hub-pushed path (`OnReceiveNotificationAsync`) and the catch-up path (`RunCatchupAsync`). Dedup short-circuits BOTH render AND ReportDelivery — once a notificationId has been delivered in this process, no path re-acknowledges it. The cache entry is set ONLY after `Show()` returns successfully, so a render failure does not poison the cache and prevents a future retry. Sliding window resets on every touch — a notification re-served on every reconnect for an hour stays cached.
 
-### INFO-M2B-002 (M3 / M5) — Pending endpoint pagination beyond 100
+### INFO-M2B-002 — **RESOLVED 2026-05-10 (M9.B)**
 
 **Filed:** 2026-05-09 (M2.B Code Sweep)
 **Surface:** `src/ToastRevival.Api/Controllers/NotificationsController.cs::GetPending`
-**Issue:** Hard cap of 100 items per call. A device with >100 backlog drains across multiple reconnect cycles. Functionally correct (dedup cache prevents replay during paging; remaining Pending deliveries get served on the next Reconnected catch-up cycle), but a long-offline endpoint with a heavy notification volume could take many reconnects to fully drain.
-**Fix:** Add explicit pagination — return `(items, nextCursor)` and let the agent loop until `nextCursor==null`. Or raise the cap.
-**Blocking:** No. Acceptable for current MVP scale.
+**Resolution:** Added optional `[FromQuery] int limit = 100` parameter, server-clamped to `[1, 500]` via `Math.Clamp`. Default unchanged at 100 — v0.3.x agents in the field that omit the param continue to receive the same 100-cap response in the same array wire shape. New callers can request up to 500 items per call to drain large Pending backlogs in fewer round-trips. Wire shape preserved (still `PendingNotificationItem[]`), so no agent rebuild required this milestone. Agent-side adoption (`?limit=500` in `AgentClient.cs::RunCatchupAsync`) deferred to the next signed agent build (INFO-M9B-001 carry-forward).
+**Test:** `SecurityTests.PendingEndpoint_LimitParamControlsPageSize_ClampsToBounds` exercises default (100), explicit-in-range (limit=200 → 200), upper-clamp (limit=999 → 500), lower-clamp (limit=0 → 1) against a real Postgres container with 510 seeded Pending deliveries.
 
 ### INFO-M2B-003 (M3 / M5) — DB index for catch-up query
 

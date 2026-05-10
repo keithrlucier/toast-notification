@@ -385,7 +385,7 @@ agent fires, and whether the fired toast is visible.
 
 ### Resilience
 - SignalR auto-reconnect with exponential backoff `[0, 2, 5, 10, 30]`s (M2.A)
-- Missed notification catch-up on reconnect (M2.B): `GET /api/notifications/pending?since=<DateTime?>` device-JWT-authenticated, returns same `(payloadJson, signature)` shape as hub fanout via shared `NotificationPayloadBuilder.BuildSigned`. Cap 100 per call; ordered `CreatedAt` asc.
+- Missed notification catch-up on reconnect (M2.B): `GET /api/notifications/pending?since=<DateTime?>&limit=<int>` device-JWT-authenticated, returns same `(payloadJson, signature)` shape as hub fanout via shared `NotificationPayloadBuilder.BuildSigned`. `limit` defaults to 100 (backwards compat for v0.3.x agents that omit the param) and is server-clamped to `[1, 500]` (M9.B / INFO-M2B-002). Ordered `CreatedAt` asc.
 - Server-side orphan recovery (M2.B): `NotificationQueueService.RecoverOrphansAsync` runs once at startup, sweeps `Notifications WHERE Status=Sending AND SentAt < now()-5min` to `Failed`. **Standing rule (Carl, M2.B): Pending deliveries are NOT touched** — the catch-up endpoint can still serve them on agent reconnect. The state divergence (Failed notification with Pending→Delivered deliveries trickling in) is acceptable; the alternative ("deliveries to Failed accordingly," the original FIX-LIST plan) would have defeated catch-up entirely.
 - Agent-side dedup (M2.B): `MemoryCache<Guid, byte>` 1-hour sliding expiration. Shared between hub-push and catch-up paths via `RenderAndReportAsync`. Short-circuits BOTH render AND ReportDelivery; entry only set after `Show()` succeeds (render failures don't poison the cache).
 - Survives sleep/wake, network transitions

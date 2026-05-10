@@ -231,10 +231,11 @@ public class NotificationsController : ControllerBase
     /// Filtering: `delivery.DeviceId == me AND delivery.TenantId == me AND
     /// delivery.Status == Pending`, optionally bounded by `since` against
     /// delivery.CreatedAt (which is set when the delivery row was created at
-    /// /api/notifications send time). Response capped at 100 items per call —
-    /// a device that has been offline for a long time pages on subsequent calls
-    /// since its remaining Pending deliveries will still be Pending after the
-    /// first batch is reported delivered.
+    /// /api/notifications send time). Response capped at `limit` items per call,
+    /// where `limit` defaults to 100 (backwards compat for v0.3.x agents) and
+    /// is clamped to [1, 500] — a device that has been offline for a long
+    /// time pages on subsequent calls since its remaining Pending deliveries
+    /// will still be Pending after the first batch is reported delivered.
     ///
     /// Authorization: device-JWT only (type=device claim). User JWTs are
     /// rejected even though the controller-level [Authorize] would let them
@@ -243,8 +244,12 @@ public class NotificationsController : ControllerBase
     /// </summary>
     [HttpGet("pending")]
     [EnableRateLimiting("device-catchup-per-hour")]
-    public async Task<ActionResult<IEnumerable<PendingNotificationItem>>> GetPending([FromQuery] DateTime? since = null)
+    public async Task<ActionResult<IEnumerable<PendingNotificationItem>>> GetPending(
+        [FromQuery] DateTime? since = null,
+        [FromQuery] int limit = 100)
     {
+        limit = Math.Clamp(limit, 1, 500);
+
         var typeClaim = User.FindFirstValue("type");
         var deviceIdClaim = User.FindFirstValue("deviceId");
         var tenantIdClaim = User.FindFirstValue("tenantId");
@@ -277,7 +282,7 @@ public class NotificationsController : ControllerBase
         var pending = await query
             .Include(d => d.Notification)
             .OrderBy(d => d.CreatedAt)
-            .Take(100)
+            .Take(limit)
             .ToListAsync();
 
         var items = pending.Select(d =>

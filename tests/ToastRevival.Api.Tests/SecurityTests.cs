@@ -188,6 +188,74 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public async Task PendingEndpoint_LimitParamControlsPageSize_ClampsToBounds()
+    {
+        // INFO-M2B-002 (M9.B): explicit ?limit= query param on /api/notifications/pending.
+        // Default 100 (backwards compat for v0.3.x agents that omit the param);
+        // clamps to [1, 500]. Wire shape stays an array — agents in the field
+        // unmarshal `List<PendingNotificationItem>` and need no rebuild.
+        await _load.ResetAsync();
+        var factory = _load.Factory;
+
+        var t = await SecurityHarness.SeedTenantAsync(factory, deviceCount: 1, tenantNamePrefix: "Pagination");
+
+        // Seed one Notification and 510 Pending deliveries against the tenant's
+        // single device. 510 lets all four assertions read the same Pending set
+        // without reseeding: default (100), explicit-in-range (200), upper-clamp
+        // (limit=999 → 500), lower-clamp (limit=0 → 1).
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var notif = new Notification
+            {
+                TenantId          = t.TenantId,
+                SenderId          = t.AdminUser.Id,
+                Title             = "pagination probe",
+                TargetType        = TargetType.Device,
+                TargetDeviceCount = 1,
+                Status            = NotificationStatus.Sending,
+            };
+            db.Notifications.Add(notif);
+            for (int i = 0; i < 510; i++)
+            {
+                db.NotificationDeliveries.Add(new NotificationDelivery
+                {
+                    NotificationId = notif.Id,
+                    DeviceId       = t.Devices[0].DeviceId,
+                    TenantId       = t.TenantId,
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        using var http = SecurityHarness.AuthedClient(factory, t.Devices[0].Token);
+
+        var defaultResp = await http.GetAsync("/api/notifications/pending");
+        Assert.Equal(HttpStatusCode.OK, defaultResp.StatusCode);
+        var defaultItems = await defaultResp.Content.ReadFromJsonAsync<PendingNotificationItem[]>();
+        Assert.NotNull(defaultItems);
+        Assert.Equal(100, defaultItems!.Length);
+
+        var explicitResp = await http.GetAsync("/api/notifications/pending?limit=200");
+        Assert.Equal(HttpStatusCode.OK, explicitResp.StatusCode);
+        var explicitItems = await explicitResp.Content.ReadFromJsonAsync<PendingNotificationItem[]>();
+        Assert.NotNull(explicitItems);
+        Assert.Equal(200, explicitItems!.Length);
+
+        var clampHighResp = await http.GetAsync("/api/notifications/pending?limit=999");
+        Assert.Equal(HttpStatusCode.OK, clampHighResp.StatusCode);
+        var clampHighItems = await clampHighResp.Content.ReadFromJsonAsync<PendingNotificationItem[]>();
+        Assert.NotNull(clampHighItems);
+        Assert.Equal(500, clampHighItems!.Length);
+
+        var clampLowResp = await http.GetAsync("/api/notifications/pending?limit=0");
+        Assert.Equal(HttpStatusCode.OK, clampLowResp.StatusCode);
+        var clampLowItems = await clampLowResp.Content.ReadFromJsonAsync<PendingNotificationItem[]>();
+        Assert.NotNull(clampLowItems);
+        Assert.Single(clampLowItems!);
+    }
+
+    [Fact]
     public async Task TenantIsolation_AuditList_DoesNotLeakOtherTenantsRows()
     {
         // FIX-M8C-001 regression test. The AuditLog entity has no global query

@@ -37,6 +37,7 @@ src/ToastRevival.Api/appsettings.Local.json
 # JavaScript / frontend
 node_modules/
 dist/
+dist.tar.gz
 build/
 .vite/
 coverage/

@@ -338,12 +338,16 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Acceptable as-is for M1. Could add a TenantId column to DeviceGroupMember in a future migration if the warning becomes a compliance concern.
 **Blocking:** No.
 
-### INFO-M1-003 — Device registration trusts TenantId from request body (medium)
+### INFO-M1-003 — **RESOLVED 2026-05-10 (M9.C, forward-only)**
 **Filed:** 2026-05-08 (M1 Code Sweep)
-**Surface:** `Controllers/DevicesController.cs` `POST /api/devices/register`
-**Issue:** Any client that knows a valid TenantId can register a device for that tenant. No pre-shared enrollment key gates the endpoint.
-**Fix:** M3 hardening — add `EnrollmentKey` column to Tenant, require it in `RegisterDeviceRequest`, validate server-side before allowing registration.
-**Blocking:** No. Endpoint behavior is noted in code comment.
+**Surface:** `Controllers/DevicesController.cs` `POST /api/devices/register`, `Controllers/AuthController.cs` `Initiate` + legacy `Register`, `Controllers/TenantController.cs`, `DTOs/TenantDtos.cs`, `src/ToastRevival.Dashboard/src/components/DeployCommand.tsx`.
+**Resolution:** Auto-generation of `EnrollmentKey` on every new `Tenant` row (24 bytes via `RandomNumberGenerator.GetBytes` → base64). Existing 3 prod tenants backfilled via psql + `pgcrypto.gen_random_bytes(24)`. `TenantSettingsResponse` exposes the key to admin role only (Technicians get `null`). New `POST /api/tenant/enrollment-key/regenerate` (admin-gated) for rotation. `DeployCommand.tsx` fetches `/api/tenant/settings` on mount and includes `ENROLLMENTKEY=<key>` in the msiexec command, surfacing the value in the parameter chip row. `DevicesController.Register` gate semantics preserved (validates when tenant has key set) — every tenant now has a key, so the gate fires for all registrations going forward. Agent side already coded pre-this-session (`BootstrapConfig.EnrollmentKey`, `RegistrationService.RegisterAsync` sends it, WiX MSI declares the `ENROLLMENTKEY` property and pipes through `--setup-bootstrap`); ships next signed agent build.
+**Backwards compat note:** v0.3.x agents in the field that don't pass `enrollmentKey` will be 403'd at `/api/devices/register` after this milestone. Field install base = Keith's lab only, which won't re-register until the next signed MSI ships.
+
+### INFO-M9B-001 — **RESOLVED 2026-05-10 (M9.C, source-only)**
+**Filed:** 2026-05-10 (M9.B Code Sweep)
+**Surface:** `src/ToastRevival.Agent/AgentClient.cs::RunCatchupAsync`
+**Resolution:** Agent now passes `&limit=500` (the M9.B cap) and loops until a partial page is returned. `MaxLoops=64` ceiling guards against runaway. Per-iteration `since` advances to `items[^1].CreatedAt + 1 tick`. DiagLog tracks total drained across pages. With `CatchupPageSize=500` and the `device-catchup-per-hour=60` rate limit, the per-hour drain ceiling is 30,000 notifications. Source change only — ships next signed agent build alongside INFO-M9C-002 (DiagLog rotation) when that lands.
 
 ### INFO-M1-004 — No test coverage (low)
 **Filed:** 2026-05-08 (M1 Code Sweep)
@@ -391,13 +395,11 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Resolution:** Added optional `[FromQuery] int limit = 100` parameter, server-clamped to `[1, 500]` via `Math.Clamp`. Default unchanged at 100 — v0.3.x agents in the field that omit the param continue to receive the same 100-cap response in the same array wire shape. New callers can request up to 500 items per call to drain large Pending backlogs in fewer round-trips. Wire shape preserved (still `PendingNotificationItem[]`), so no agent rebuild required this milestone. Agent-side adoption (`?limit=500` in `AgentClient.cs::RunCatchupAsync`) deferred to the next signed agent build (INFO-M9B-001 carry-forward).
 **Test:** `SecurityTests.PendingEndpoint_LimitParamControlsPageSize_ClampsToBounds` exercises default (100), explicit-in-range (limit=200 → 200), upper-clamp (limit=999 → 500), lower-clamp (limit=0 → 1) against a real Postgres container with 510 seeded Pending deliveries.
 
-### INFO-M2B-003 (M3 / M5) — DB index for catch-up query
+### INFO-M2B-003 — **RESOLVED 2026-05-09 (already shipped, doc fix M9.C)**
 
 **Filed:** 2026-05-09 (M2.B Code Sweep)
-**Surface:** `src/ToastRevival.Api/Data/AppDbContext.cs` — `NotificationDelivery` entity model.
-**Issue:** No composite index on `(DeviceId, Status, CreatedAt)`. The catch-up query filters on all three; PostgreSQL will currently scan or use the FK index on DeviceId. Acceptable at MVP scale; will become a real concern once a single MSP customer accumulates millions of delivery rows.
-**Fix:** Add `e.HasIndex(d => new { d.DeviceId, d.Status, d.CreatedAt })` in `OnModelCreating` and generate a migration.
-**Blocking:** No.
+**Surface:** `src/ToastRevival.Api/Data/AppDbContext.cs::OnModelCreating` (NotificationDelivery), migration `20260509024211_M3SecurityHardening`.
+**Resolution:** The composite index `(DeviceId, Status, CreatedAt)` on `NotificationDeliveries` was added in migration `20260509024211_M3SecurityHardening` (constraint name `IX_NotificationDeliveries_DeviceId_Status_CreatedAt`). The model-level `e.HasIndex(d => new { d.DeviceId, d.Status, d.CreatedAt })` is at `AppDbContext.cs:110`. Catch-up query at `NotificationsController.GetPending` uses an index-aligned filter (`DeviceId == me AND Status == Pending`) followed by `OrderBy(CreatedAt)` — PostgreSQL plans this as an index range scan. The FIX-LIST entry was carried as open through M9.B because the resolution wasn't documented; M9.C closes the doc.
 
 ### INFO-M2B-004 — **RESOLVED 2026-05-08 (M3, commit `362f9d3`)**
 

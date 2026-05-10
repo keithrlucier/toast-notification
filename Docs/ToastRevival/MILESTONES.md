@@ -516,6 +516,31 @@ Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplica
 - Anthony: D3 (RMM packages require testing on actual RMM tools)
 - Abish: D4-D6 (marketing coordination, documentation, compliance prep)
 
+### M9.C Closure (2026-05-10) — Enrollment Key, Agent Drain Loop, Production Tray + Store Assets
+
+Six punch-list items closed in one bundle. No MSI sign cycle required this session — agent code lands in repo, ships with next signed build.
+
+1. **INFO-M1-003 (forward-only)** — Auto-generation of 24-byte base64 `EnrollmentKey` on every new `Tenant` row. Backfilled 3 existing prod tenants via psql + pgcrypto. `TenantSettingsResponse` exposes the key to admin role only. New admin-gated `POST /api/tenant/enrollment-key/regenerate` for rotation. `DeployCommand.tsx` fetches `/api/tenant/settings` on mount and includes `ENROLLMENTKEY=<key>` in the msiexec command + parameter chip. Backwards-compat note: v0.3.x field installs that don't pass the key will 403 at register going forward; field install base = Keith's lab only.
+2. **INFO-M9B-001 (source-only)** — `AgentClient.RunCatchupAsync` passes `&limit=500` and loops until partial page. `MaxLoops=64` guard. `since` advances `items[^1].CreatedAt + 1 tick`. Drain ceiling 30,000/hr per device.
+3. **Tray icon production glyphs** — `TrayIconService.CreateBellIcon` replaces `CreateCircleIcon`. Five state colors preserved; Disconnected and Error get a diagonal slash overlay. Same path data as the Store tile renderer (single brand bell).
+4. **Microsoft Store tile assets** — `scripts/generate-msix-tile-assets.ps1` rewritten for Diana's M9.C production spec. Near-black `#0A0F1A` panel, brand-teal `#00C9A7` bell with halo on Square150 and Wide310, two-line "Toast / Notification" wordmark on Wide310. Outputs replace M0A placeholders at `src/ToastRevival.Agent/Images/{Square44,Square150,Wide310x150,StoreLogo}.png`.
+5. **INFO-M2B-003 (doc fix)** — Composite DB index `(DeviceId, Status, CreatedAt)` confirmed in migration `20260509024211_M3SecurityHardening`. FIX-LIST + TODO updated.
+6. **Azure Content Safety env config** — `ContentSafety__Endpoint` + `ContentSafety__Key` confirmed present in `/opt/toast/.env`. DEPLOY.md item closeable.
+
+Design canon: `Docs/ToastRevival/Design/sources/tray-icons-and-tiles.svg` — single source of truth for the bell path data; both renderers (C# tray, PowerShell tile) cross-reference it.
+
+Code Sweep: SHIP. INFO-M9C-001/002/003 carry-forwards (full agent enforcement next signed MSI; deploy-command fetch caching nice-to-have; rotation breaks future MSI installs not registered devices).
+
+Cross-AI handoff: parallel session shipping action-buttons + marketing-site rewrite tracks. Selective-commit preserved their unstaged WIP through M9.C close. Full handback note at `Docs/ToastRevival/CODEX-HANDOFF.md` (M9.C section).
+
+Build clean: API, Agent, Dashboard. Deploy verified — `/api/health` 200, `/login` 200, `/security/` + `/docs/` 200 after trailing-slash redirect, auth gates 401 correctly.
+
+### Agent Deployment (M9.C)
+- Anthony: backend EnrollmentKey wiring, agent drain loop, frontend DeployCommand, tile renderer, tray bell glyph.
+- Diana: production tray icon spec + Store tile spec; SVG canon as single source of truth.
+- Abish: Code Sweep (significant scope, multi-file, multi-surface) — SHIP.
+- Carl: foreman + selective-commit discipline + Codex handoff coordination.
+
 ### M9.B Closure (2026-05-10) — Pending Endpoint Pagination
 - INFO-M2B-002 resolved. `GET /api/notifications/pending` now accepts an optional `?limit=<int>` query param, defaulting to 100 (backwards compat for v0.3.x agents that omit it) and server-clamped to `[1, 500]`. Wire shape stays an array — agents in the field unmarshal `List<PendingNotificationItem>` and need no rebuild.
 - New integration test `SecurityTests.PendingEndpoint_LimitParamControlsPageSize_ClampsToBounds` exercises default + explicit-in-range + upper-clamp (limit=999 → 500) + lower-clamp (limit=0 → 1) against a real Postgres container with 510 seeded Pending deliveries.

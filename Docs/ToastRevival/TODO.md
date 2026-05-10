@@ -1,6 +1,6 @@
 # Toast Notification — Open Items
 
-**Last updated: 2026-05-10**
+**Last updated: 2026-05-10 (session 2)**
 
 ## Production status
 
@@ -16,9 +16,9 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 
 ### Medium
 
-- [ ] **Onboarding billing step** — `Onboarding.tsx` step 2 still says "100-device minimum" and "14-day trial starts during checkout." Update to reflect free tier (1–25 free, Stripe only required at 26+).
+- [x] **Onboarding billing step** — Fixed 2026-05-10. Free tier language: "1–25 devices always free, billing starts at device 26+." Continue is primary CTA. Deployed.
 
-- [ ] **Velopack update feed** — `UpdateService.cs` feed URL is a placeholder. Auto-update silently fails. Needs a real Velopack release feed hosted and the URL set in agent config before any public beta or wide deployment.
+- [x] **Velopack update feed** — Fixed 2026-05-10. `https://releases.toastnotification.com/agent/win-x64/` is live with HTTPS. v0.3.1 release package uploaded. Feed verified: `releases.win.json` returns correctly. Agent csproj now carries `<Version>0.3.1</Version>`. To publish future releases: `.\scripts\build-release.ps1 -Version X.Y.Z` then scp `artifacts\releases\*` to server (Anthony handles).
 
 ### Low / polish
 

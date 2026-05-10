@@ -1156,6 +1156,170 @@
   margin: 0;
 }
 
+/* ─────────── Security posture page ─────────── */
+
+.m-security-page {
+  background: var(--bg-primary);
+  min-height: 100vh;
+}
+
+.m-security-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 80px 32px 96px;
+}
+
+.m-security-header {
+  margin-bottom: 64px;
+}
+
+.m-security-header h1 {
+  font-size: 40px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 12px 0 20px;
+}
+
+.m-security-lede {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.m-security-lede a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.m-security-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  padding: 16px 20px;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius-md);
+}
+
+.m-security-section {
+  margin-bottom: 56px;
+  padding-bottom: 56px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.m-security-section:last-of-type {
+  border-bottom: none;
+}
+
+.m-security-section h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin-bottom: 16px;
+}
+
+.m-security-section p {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.m-security-section p:last-child {
+  margin-bottom: 0;
+}
+
+.m-security-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.m-security-section li {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  padding-left: 20px;
+  position: relative;
+}
+
+.m-security-section li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.m-security-section code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 3px;
+  padding: 1px 6px;
+  color: var(--accent);
+}
+
+.m-security-section strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.m-security-section a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.m-security-finding {
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255,180,0,0.2);
+  border-left: 3px solid #FBBF24;
+  border-radius: var(--radius-md);
+  padding: 20px 24px;
+  margin: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.m-security-finding p {
+  margin: 0 !important;
+}
+
+.m-security-finding-label {
+  font-size: 11px !important;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #FBBF24 !important;
+}
+
+.m-security-footer-nav {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 48px;
+  margin-top: 48px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+@media (max-width: 767px) {
+  .m-security-inner { padding: 48px 20px 64px; }
+  .m-security-header h1 { font-size: 30px; }
+  .m-security-meta { flex-direction: column; gap: 6px; }
+}
+
 /* ─────────── Dark theme — scoped to marketing, does not touch dashboard ─────────── */
 
 .marketing-root {

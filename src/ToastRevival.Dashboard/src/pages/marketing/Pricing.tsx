@@ -70,6 +70,10 @@ const FAQ = [
     a: 'A device is any Windows endpoint where the Toast Notification agent is registered and currently active. Decommissioning a device frees the slot immediately. Inactive devices that have not pinged in 30 days are not billed.',
   },
   {
+    q: 'How does device counting work on Terminal Server / RDS?',
+    a: 'Each logged-on user session counts as one device. If ten users are active on a single Terminal Server, that is ten devices. This is intentional — each user receives notifications in their own session, so each session consumes one slot. There is no special TS mode or per-server licensing.',
+  },
+  {
     q: 'What happens if my device count changes mid-month?',
     a: 'Device count is synced to Stripe on registration and decommission. Billing uses the higher of active devices or the 100-device monthly minimum. Canceled subscriptions block new registrations until billing is restored.',
   },
@@ -100,11 +104,11 @@ const FAQ = [
 ];
 
 const COSTS = [
-  { devices: '100', monthly: '$22', annual: '$264', note: 'Subscription minimum.' },
+  { devices: '1 – 25', monthly: 'Free', annual: 'Free', note: 'No credit card.' },
+  { devices: '100', monthly: '$22', annual: '$264' },
   { devices: '250', monthly: '$55', annual: '$660' },
   { devices: '500', monthly: '$110', annual: '$1,320' },
   { devices: '1,000', monthly: '$220', annual: '$2,640' },
-  { devices: '2,500', monthly: '$550', annual: '$6,600' },
   { devices: '5,000', monthly: '$1,100', annual: '$13,200' },
   { devices: '5,000+', monthly: 'Contact us', annual: 'Custom', note: 'Volume pricing.' },
 ];
@@ -135,35 +139,45 @@ export default function Pricing() {
             Pricing.
           </h1>
           <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 600, marginInline: 'auto' }}>
-            One plan. Per-device pricing. Every feature included. No premium tiers, no feature paywalls,
-            no annual contract.
+            Free for small shops. Fair for everyone else. Every feature on every plan.
           </p>
 
-          <div className="m-plan-card" aria-label="Standard plan">
+          <div className="m-plan-card" aria-label="Pricing plans">
             <div className="m-plan-card-head">
               <div>
+                <span className="m-plan-name">Free</span>
+                <p className="m-plan-tagline">1 – 25 devices. Every feature. No credit card.</p>
+              </div>
+              <div className="m-plan-price-block">
+                <span className="m-plan-price" style={{ color: 'var(--accent)' }}>$0</span>
+                <span className="m-plan-price-unit">forever</span>
+              </div>
+            </div>
+
+            <div className="m-plan-card-head" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 24 }}>
+              <div>
                 <span className="m-plan-name">Standard</span>
-                <p className="m-plan-tagline">Every feature, every tenant.</p>
+                <p className="m-plan-tagline">26+ devices. Same features. No upsells.</p>
               </div>
               <div className="m-plan-price-block">
                 <span className="m-plan-price">$0.22</span>
                 <span className="m-plan-price-unit">per device / month</span>
-                <span className="m-plan-price-floor">100-device subscription minimum - $22 / month entry</span>
+                <span className="m-plan-price-floor">No minimum commitment. Cancel anytime.</span>
               </div>
             </div>
 
             <div className="m-plan-card-cta">
               <Link to="/register" className="m-btn m-btn-primary">
-                Start 14-day trial
+                Get started free
               </Link>
-              <a href="mailto:sales@toastnotification.com?subject=Volume%20pricing" className="m-btn m-btn-ghost">
-                Contact for &gt;5,000 devices
+              <a href="mailto:support@toastnotification.com?subject=Toast%20Notification" className="m-btn m-btn-ghost">
+                Contact us
               </a>
             </div>
 
             <p className="m-plan-fineprint">
-              Trial starts in Stripe checkout. Billing begins after 14 days unless canceled; manage payment from the
-              Stripe billing portal.
+              Free tier: up to 25 active devices, no payment required.
+              Standard tier: Stripe billing, managed from your portal.
             </p>
           </div>
         </div>

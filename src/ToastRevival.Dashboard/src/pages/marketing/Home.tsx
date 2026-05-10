@@ -7,36 +7,47 @@ import {
 } from '../../components/marketing/FeatureIcons';
 import { useSeo, softwareApplicationLd } from '../../lib/seo';
 
+const STACK = [
+  { label: '.NET 8 / ASP.NET Core', value: 'Backend API' },
+  { label: 'PostgreSQL 16', value: 'AWS us-east-1' },
+  { label: 'Windows App SDK 1.7', value: 'Native agent' },
+  { label: 'Zero third-party tracking', value: 'No analytics' },
+];
+
 const CAPABILITIES = [
   {
     Icon: FeatureBellCheck,
-    title: 'Rich notifications. Six templates out of the box.',
-    body: 'Hero images, logos, action buttons, scenario routing (Reminder, Alarm, Urgent), custom audio. Every template customizable per tenant. Live preview in the composer matches the Action Center render exactly.',
+    title: 'Rich notifications. Every template included.',
+    body:
+      'Hero images, logos, action buttons, scenario routing (Reminder, Alarm, Urgent), custom audio. Six templates ship with every tenant. Live preview in the composer matches the Action Center render exactly in Segoe UI.',
   },
   {
     Icon: FeatureLockKey,
     title: 'Signed, scanned, and logged on every send.',
-    body: 'Per-tenant HMAC-SHA256 payload signing verified before every render. Azure Content Safety on every notification before publish. Append-only audit log. CSV and PDF export for incident review and client reporting.',
+    body:
+      'Per-tenant HMAC-SHA256 payload signing verified before every render. Azure Content Safety on every notification before publish. Append-only audit log. CSV and PDF export — the kind of evidence a compliance team will actually accept.',
   },
   {
     Icon: FeatureCloudArrow,
-    title: 'Deploys with tools you already run.',
-    body: 'Code-signed MSI with embedded scheduled task. Intune LOB compatible. RMM silent install via CLIENTID and SERVERURL. Code-signed MSIX via the Microsoft Store. Velopack auto-update with enterprise opt-out registry toggle.',
+    title: 'Deploys with the tools you already have.',
+    body:
+      'Code-signed MSI with embedded scheduled task. Intune LOB compatible. RMM silent install via CLIENTID and SERVERURL properties. Code-signed MSIX via the Microsoft Store. Velopack auto-update with enterprise opt-out registry toggle.',
   },
   {
     Icon: FeatureBarChart,
     title: 'Delivery data you can show a client.',
-    body: 'Delivered, clicked, dismissed, failed — reported in real time per notification. Aggregate dashboards and fleet-wide interaction rates. CSV and PDF export formatted for ticket attachment and client-facing reporting.',
+    body:
+      'Delivered, clicked, dismissed, failed — per notification, in real time. Aggregate dashboards and fleet-wide interaction rates. CSV and PDF export formatted for ticket attachment and client-facing reporting.',
   },
 ];
 
 const COMPLIANCE = [
-  { label: 'Transport', value: 'TLS 1.3, HSTS, Let’s Encrypt' },
+  { label: 'Transport', value: "TLS 1.3, HSTS, Let's Encrypt" },
   { label: 'Payload integrity', value: 'HMAC-SHA256 per tenant, verified on every endpoint' },
   { label: 'Auth', value: 'JWT — 60-min user, 365-day device' },
   { label: 'Content scan', value: 'Azure Content Safety on every send' },
   { label: 'At-rest encryption', value: 'AES-256 database, DPAPI on agent config' },
-  { label: 'Tenancy', value: 'EF Core global query filters, every read' },
+  { label: 'Tenancy', value: 'EF Core global query filters enforced on every read' },
   { label: 'Code signing', value: 'Sectigo OV, Thales HSM' },
   { label: 'MFA', value: 'TOTP enforced on broadcast sends' },
 ];
@@ -45,7 +56,7 @@ export default function Home() {
   useSeo({
     title: 'Managed Windows notifications for MSPs',
     description:
-      'Toast Notification is notification infrastructure for MSP fleets. Multi-tenant, payload-signed, audit-logged. Deploy via MSI, Intune, or your RMM.',
+      'Toast Notification is open-infrastructure notification tooling for Windows fleets. Free up to 25 devices. Multi-tenant, payload-signed, audit-logged.',
     path: '/',
     jsonLd: softwareApplicationLd(),
   });
@@ -69,43 +80,38 @@ export default function Home() {
             Your clients get<br />the notification.<br />You get the proof.
           </h1>
           <p className="m-hero-subhead">
-            Multi-tenant notification infrastructure for MSPs. Code-signed agent,
-            HMAC-signed payloads, append-only audit log. Every delivery confirmed.
-            Every interaction on record.
+            Notification infrastructure for Windows fleets.
+            Multi-tenant, payload-signed, append-only audit log.
+            Deploy via MSI, Intune, or your RMM.
+            <strong style={{ color: 'var(--accent)', display: 'block', marginTop: 12 }}>
+              Free for up to 25 devices. No credit card.
+            </strong>
           </p>
           <div className="m-hero-ctas">
             <Link to="/register" className="m-btn m-btn-primary">
-              Start 14-day trial
+              Get started — it&rsquo;s free
             </Link>
-            <Link to="/docs" className="m-btn m-btn-ghost">
-              View docs
+            <Link to="/security" className="m-btn m-btn-ghost">
+              Security posture
             </Link>
           </div>
           <p className="m-hero-fineprint">
-            14-day trial included. 100-device minimum after trial.
+            25 devices free forever. Larger fleets: $0.22/device/month, cancel anytime.
           </p>
         </div>
       </section>
 
-      {/* Stats strip */}
-      <div className="m-stats-strip" aria-label="Platform scale">
+      {/* Honest stack strip */}
+      <div className="m-stats-strip" aria-label="Technical stack">
         <div className="m-stats-inner">
-          <div className="m-stat">
-            <div className="m-stat-value">180k+</div>
-            <div className="m-stat-label">Managed endpoints</div>
-          </div>
-          <div className="m-stat">
-            <div className="m-stat-value">4.2M</div>
-            <div className="m-stat-label">Notifications delivered</div>
-          </div>
-          <div className="m-stat">
-            <div className="m-stat-value">&lt;8 min</div>
-            <div className="m-stat-label">Account to first notification</div>
-          </div>
-          <div className="m-stat">
-            <div className="m-stat-value">$22</div>
-            <div className="m-stat-label">Starting price per month</div>
-          </div>
+          {STACK.map(({ label, value }) => (
+            <div key={label} className="m-stat">
+              <div className="m-stat-value" style={{ fontSize: 15, fontFamily: 'var(--font-mono)', letterSpacing: '0.01em' }}>
+                {label}
+              </div>
+              <div className="m-stat-label">{value}</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -115,14 +121,21 @@ export default function Home() {
           <div className="m-two-col-copy">
             <h2 id="problem-heading">msg.exe delivers.<br />It doesn&rsquo;t confirm.</h2>
             <p>
-              Most MSPs reach endpoints with msg.exe, custom PowerShell, or whatever notification
-              API their RMM ships. It works&mdash;sometimes. It doesn&rsquo;t scale. It
-              isn&rsquo;t brandable. It doesn&rsquo;t track delivery or interaction.
+              Most Windows fleets get their notifications from msg.exe, custom PowerShell,
+              or a notification widget bolted onto an RMM. None of it is branded. None of it
+              tracks delivery or interaction. And none of it produces anything an auditor
+              will recognize as evidence.
             </p>
             <p>
-              And it produces nothing an auditor, a client, or a compliance team will accept
-              as evidence of communication. Toast Notification is purpose-built infrastructure
-              for that gap.
+              Toast Notification fills that gap. It&rsquo;s purpose-built notification
+              infrastructure&mdash;not a feature inside something else. One code-signed agent,
+              one multi-tenant API, one dashboard. Built on an open-source .NET 8 stack running
+              on AWS with no hidden dependencies.
+            </p>
+            <p>
+              <Link to="/security" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>
+                Read the full security architecture &rsaquo;
+              </Link>
             </p>
           </div>
 
@@ -163,43 +176,23 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Case study */}
-      <section className="m-section" aria-labelledby="case-study-heading">
-        <div className="m-case-study">
-          <img
-            src="/marketing/case-study-msp-team.jpg"
-            className="m-case-study-img"
-            alt="MSP operations center"
-            loading="lazy"
-            decoding="async"
-          />
-          <div className="m-case-study-content">
-            <p className="m-case-study-eyebrow">Case study &mdash; Cascade IT Partners</p>
-            <h2 id="case-study-heading">2,400 endpoints.<br />47 clients.<br />Zero Monday callbacks.</h2>
-            <p className="m-case-study-pull">
-              &ldquo;Before Toast Notification, maintenance windows meant a PowerShell script and 20 minutes of
-              Monday morning calls from people who &lsquo;never got the notice.&rsquo; We deployed through
-              NinjaOne on a Tuesday afternoon. By Thursday we&rsquo;d pushed a branded notification to all
-              2,400 endpoints in 51 seconds. Every device confirmed. Zero callbacks.
-              The audit log alone paid for the subscription.&rdquo;
-            </p>
-            <p className="m-case-study-attribution">
-              &mdash; Director of Operations, regional MSP, Pacific Northwest
-            </p>
-            <div className="m-case-study-stats">
-              <div>
-                <div className="m-case-stat-value">51s</div>
-                <div className="m-case-stat-label">Fleet-wide delivery</div>
-              </div>
-              <div>
-                <div className="m-case-stat-value">2,400</div>
-                <div className="m-case-stat-label">Endpoints covered</div>
-              </div>
-              <div>
-                <div className="m-case-stat-value">0</div>
-                <div className="m-case-stat-label">Help desk callbacks</div>
-              </div>
-            </div>
+      {/* Capabilities */}
+      <section className="m-section" aria-labelledby="capabilities-heading">
+        <div className="m-container">
+          <h2 id="capabilities-heading" className="m-section-heading is-centered">
+            What it does.
+          </h2>
+          <p className="m-section-subhead is-centered" style={{ marginTop: 16 }}>
+            Every feature on every plan. Free tier included.
+          </p>
+          <div className="m-features-grid">
+            {CAPABILITIES.map(({ Icon, title, body }) => (
+              <article key={title} className="m-feature-card">
+                <Icon className="m-feature-icon" />
+                <h3>{title}</h3>
+                <p>{body}</p>
+              </article>
+            ))}
           </div>
         </div>
       </section>
@@ -213,15 +206,17 @@ export default function Home() {
         <div className="m-container m-compliance">
           <div className="m-compliance-copy">
             <h2 id="compliance-heading" className="m-section-heading">
-              Eight controls.<br />Every tenant.<br />Every send.
+              Security architecture.<br />No marketing.
             </h2>
             <p className="m-section-subhead" style={{ marginTop: 16, maxWidth: 480 }}>
-              Security is not a tier or an add-on. These controls are enforced
-              on every notification, for every tenant, on every subscription.
+              Eight controls enforced on every notification, for every tenant.
+              This infrastructure is used in production. The security is real
+              because it has to be.
             </p>
             <p className="m-compliance-note">
-              Full technical documentation in the <Link to="/docs">docs</Link>.
-              Pen-test results and architecture details available on request.
+              Pen-tested May 2026. Full architecture details, logging policy,
+              and AWS infrastructure docs on the{' '}
+              <Link to="/security">security page</Link>.
             </p>
           </div>
 
@@ -236,72 +231,45 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Capabilities */}
-      <section className="m-section" aria-labelledby="capabilities-heading">
-        <div className="m-container">
-          <h2 id="capabilities-heading" className="m-section-heading is-centered">
-            Everything included. No tiers.
-          </h2>
-          <p className="m-section-subhead is-centered" style={{ marginTop: 16 }}>
-            Every capability on every subscription. No premium tier. No feature paywalls.
-          </p>
-          <div className="m-features-grid">
-            {CAPABILITIES.map(({ Icon, title, body }) => (
-              <article key={title} className="m-feature-card">
-                <Icon className="m-feature-icon" />
-                <h3>{title}</h3>
-                <p>{body}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Deployment */}
-      <section
-        className="m-section"
-        style={{ background: 'var(--bg-secondary)' }}
-        aria-labelledby="deploy-heading"
-      >
+      <section className="m-section" aria-labelledby="deploy-heading">
         <div className="m-container">
           <h2 id="deploy-heading" className="m-section-heading is-centered">
-            Deploy with the tools you already run.
+            Deploy with what you already have.
           </h2>
           <p className="m-section-subhead is-centered" style={{ marginTop: 16 }}>
-            Three paths to the first endpoint. Pick the one that fits your stack.
+            Three paths to the first endpoint. No proprietary tooling required.
           </p>
           <div className="m-deploy-grid">
             <div className="m-deploy-card">
-              <p className="m-deploy-card-eyebrow">Option A</p>
-              <h3>MSI / msiexec</h3>
+              <p className="m-deploy-card-eyebrow">MSI / msiexec</p>
+              <h3>Direct install</h3>
               <p>
-                Code-signed installer with embedded scheduled task. Works on any Windows 10/11
-                endpoint without additional tooling. Five-minute deployment from download to
-                first connected device.
+                Code-signed installer with embedded scheduled task. Works on any
+                Windows 10/11 endpoint. Five minutes from download to first connected device.
               </p>
               <code className="m-deploy-cmd">
                 msiexec /i ToastNotification.msi CLIENTID=&lt;id&gt; SERVERURL=&lt;url&gt;
               </code>
             </div>
             <div className="m-deploy-card">
-              <p className="m-deploy-card-eyebrow">Option B</p>
-              <h3>Intune LOB</h3>
+              <p className="m-deploy-card-eyebrow">Intune LOB</p>
+              <h3>Intune deployment</h3>
               <p>
-                Upload the MSI as a Line-of-Business app. CLIENTID and SERVERURL set as install
-                command parameters. Scope to any device group or user group. Automatic enrollment
-                on first run.
+                Upload as a Line-of-Business app. CLIENTID and SERVERURL set as
+                install command parameters. Scopes to any device or user group.
               </p>
               <code className="m-deploy-cmd">
                 msiexec /i "ToastNotification.msi" CLIENTID="..." SERVERURL="..." /qn
               </code>
             </div>
             <div className="m-deploy-card">
-              <p className="m-deploy-card-eyebrow">Option C</p>
-              <h3>RMM silent install</h3>
+              <p className="m-deploy-card-eyebrow">RMM silent install</p>
+              <h3>RMM deployment</h3>
               <p>
-                NinjaOne, Datto, ConnectWise, Kaseya&mdash;any RMM that can execute msiexec
-                with parameters. Silent install, no user interaction required, Velopack
-                auto-update keeps agents current.
+                NinjaOne, Datto, ConnectWise, Kaseya&mdash;any RMM that executes
+                msiexec with parameters. Silent install, Velopack auto-update
+                keeps agents current.
               </p>
               <code className="m-deploy-cmd">
                 msiexec /i ToastNotification.msi /qn CLIENTID=... SERVERURL=...
@@ -311,38 +279,43 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Pricing summary */}
+      {/* Pricing */}
       <section
         className="m-section"
+        style={{ background: 'var(--bg-secondary)' }}
         aria-labelledby="pricing-heading"
       >
         <div className="m-container m-pricing-summary">
           <h2 id="pricing-heading" className="m-section-heading is-centered">
-            Straightforward pricing.
+            Free for small shops. Fair for everyone else.
           </h2>
-          <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 520 }}>
-            $0.22 per managed device per month. 100-device minimum. 14-day free trial.
-            No tiers, no upsells, no feature paywalls.
+          <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 560 }}>
+            Up to 25 devices free, forever. No credit card. No trial timer.
+            Larger fleets: $0.22 per device per month.
           </p>
 
-          <table className="m-price-grid" aria-label="Indicative monthly cost by fleet size">
+          <table className="m-price-grid" aria-label="Pricing by fleet size">
             <thead>
               <tr>
-                <th scope="col">Fleet size</th>
-                <th scope="col">Monthly</th>
+                <th scope="col">Devices</th>
+                <th scope="col">Monthly cost</th>
               </tr>
             </thead>
             <tbody>
               {[
-                ['100 devices', '$22'],
-                ['300 devices', '$66'],
-                ['500 devices', '$110'],
-                ['1,000 devices', '$220'],
-                ['5,000 devices', '$1,100'],
+                ['1 – 25', 'Free'],
+                ['100', '$22'],
+                ['300', '$66'],
+                ['500', '$110'],
+                ['1,000', '$220'],
               ].map(([size, cost]) => (
                 <tr key={size}>
                   <td>{size}</td>
-                  <td><span className="m-mono">{cost}</span></td>
+                  <td>
+                    <span className="m-mono" style={cost === 'Free' ? { color: 'var(--accent)', fontWeight: 700 } : undefined}>
+                      {cost}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -355,21 +328,19 @@ export default function Home() {
       </section>
 
       {/* Final CTA */}
-      <section className="m-section" style={{ background: 'var(--bg-secondary)' }} aria-labelledby="final-cta-heading">
+      <section className="m-section" aria-labelledby="final-cta-heading">
         <div className="m-final-cta">
-          <h2 id="final-cta-heading">
-            Deploy in under ten minutes.
-          </h2>
+          <h2 id="final-cta-heading">Start in under ten minutes.</h2>
           <p>
-            Register a tenant, drop the signed MSI into Intune or your RMM,
-            and send your first branded notification to your first endpoint.
+            Register a tenant, deploy the signed MSI to one endpoint,
+            send your first notification. No payment required for small deployments.
           </p>
           <div className="m-final-cta-buttons">
             <Link to="/register" className="m-btn m-btn-primary">
-              Start 14-day trial
+              Get started free
             </Link>
-            <Link to="/pricing" className="m-btn m-btn-ghost">
-              Pricing details
+            <Link to="/security" className="m-btn m-btn-ghost">
+              Security posture
             </Link>
           </div>
         </div>

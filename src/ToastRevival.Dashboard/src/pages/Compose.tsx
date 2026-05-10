@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { notificationsApi, type SendNotificationRequest, type ActionButton, type TemplateDbRecord } from '../api/notifications';
+import { notificationsApi, type SendNotificationRequest, type ActionButton, type TemplateDbRecord, type SaveTemplateRequest } from '../api/notifications';
 import { devicesApi, type Device, type DeviceGroup } from '../api/devices';
 import ToastPreview, { CharCount } from '../components/ToastPreview';
 import BroadcastConfirmModal from '../components/BroadcastConfirmModal';
@@ -124,6 +124,12 @@ export default function Compose() {
   const [showConfirm,  setShowConfirm]  = useState(false);
   const [activeSection,setActiveSection]= useState<'template' | 'content' | 'target'>('content');
 
+  // Save as template
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName,     setTemplateName]     = useState('');
+  const [savingTemplate,   setSavingTemplate]   = useState(false);
+  const [saveTemplateMsg,  setSaveTemplateMsg]  = useState('');
+
   useEffect(() => {
     void devicesApi.list().then(setDevices).catch(() => {});
     void devicesApi.listGroups().then(setGroups).catch(() => {});
@@ -183,6 +189,31 @@ export default function Compose() {
     } finally {
       setSending(false);
       setShowConfirm(false);
+    }
+  };
+
+  const doSaveTemplate = async () => {
+    if (!templateName.trim()) return;
+    setSavingTemplate(true);
+    setSaveTemplateMsg('');
+    try {
+      const req: SaveTemplateRequest = {
+        name: templateName.trim(),
+        title: title || undefined,
+        bodyLine1: body1 || undefined,
+        bodyLine2: body2 || undefined,
+        actionButtonsJson: buttons.length > 0 ? JSON.stringify(normalizeButtons(buttons)) : undefined,
+        audioSetting: audio,
+        scenario: scenario || undefined,
+      };
+      await notificationsApi.saveTemplate(req);
+      setSaveTemplateMsg('Template saved.');
+      setTemplateName('');
+      setTimeout(() => { setShowSaveTemplate(false); setSaveTemplateMsg(''); }, 1500);
+    } catch {
+      setSaveTemplateMsg('Failed to save template.');
+    } finally {
+      setSavingTemplate(false);
     }
   };
 
@@ -264,7 +295,58 @@ export default function Compose() {
 
           {/* Content */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Content</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Content</h3>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 12, padding: '4px 10px' }}
+                onClick={() => { setShowSaveTemplate(s => !s); setSaveTemplateMsg(''); }}
+              >
+                Save as Template
+              </button>
+            </div>
+
+            {showSaveTemplate && (
+              <div style={{
+                display: 'flex', gap: 8, alignItems: 'center',
+                padding: '10px 14px',
+                background: 'rgba(0,201,167,0.05)',
+                border: '1px solid rgba(0,201,167,0.2)',
+                borderRadius: 6,
+              }}>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={e => setTemplateName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') void doSaveTemplate(); }}
+                  placeholder="Template name"
+                  maxLength={64}
+                  autoFocus
+                  style={{
+                    flex: 1,
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid rgba(15,23,42,0.12)',
+                    borderRadius: 4,
+                    color: 'var(--text-primary)',
+                    padding: '7px 10px',
+                    fontSize: 13,
+                  }}
+                />
+                <button
+                  className="btn btn-primary"
+                  style={{ fontSize: 12, padding: '7px 14px', minHeight: 0 }}
+                  onClick={() => void doSaveTemplate()}
+                  disabled={savingTemplate || !templateName.trim()}
+                >
+                  {savingTemplate ? <span className="spinner" /> : 'Save'}
+                </button>
+                {saveTemplateMsg && (
+                  <span style={{ fontSize: 12, color: saveTemplateMsg.includes('Failed') ? 'var(--status-error)' : 'var(--accent)' }}>
+                    {saveTemplateMsg}
+                  </span>
+                )}
+              </div>
+            )}
 
             <div className="field">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>

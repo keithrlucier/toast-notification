@@ -54,18 +54,29 @@ export interface NotificationHistoryItem {
   sentAt?: string;
 }
 
-/** Template record from the backend database — used to resolve slug → Guid for sends */
+/** Template record from the backend database */
 export interface TemplateDbRecord {
-  id: string;   // database Guid
-  slug: string; // 'announcement' | 'alert' | 'action-required' | etc.
+  id: string;
+  slug: string;
   name: string;
   category: string;
   titleTemplate: string | null;
   bodyLine1Template: string | null;
   bodyLine2Template: string | null;
+  actionButtonsJson: string | null;
   audioSetting: string | null;
   scenario: string;
   isDefault: boolean;
+}
+
+export interface SaveTemplateRequest {
+  name: string;
+  title?: string;
+  bodyLine1?: string;
+  bodyLine2?: string;
+  actionButtonsJson?: string;
+  audioSetting?: string;
+  scenario?: string;
 }
 
 export const notificationsApi = {
@@ -80,4 +91,10 @@ export const notificationsApi = {
 
   templates: () =>
     api.get<TemplateDbRecord[]>('/api/templates'),
+
+  saveTemplate: (req: SaveTemplateRequest) =>
+    api.post<TemplateDbRecord>('/api/templates', req),
+
+  deleteTemplate: (id: string) =>
+    api.delete(`/api/templates/${id}`),
 };

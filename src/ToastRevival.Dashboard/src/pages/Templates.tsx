@@ -1,6 +1,8 @@
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ToastPreview from '../components/ToastPreview';
-import type { ActionButton, SendNotificationRequest } from '../api/notifications';
+import type { ActionButton, SendNotificationRequest, TemplateDbRecord } from '../api/notifications';
+import { notificationsApi } from '../api/notifications';
 
 interface Template {
   id: string;
@@ -99,10 +101,22 @@ export const TEMPLATES: Template[] = [
   },
 ];
 
+function parseButtons(json: string | null | undefined): ActionButton[] | undefined {
+  if (!json) return undefined;
+  try { return JSON.parse(json) as ActionButton[]; } catch { return undefined; }
+}
+
 export default function Templates() {
   const navigate = useNavigate();
+  const [customTemplates, setCustomTemplates] = useState<TemplateDbRecord[]>([]);
 
-  const handleSelect = (template: Template) => {
+  useEffect(() => {
+    void notificationsApi.templates()
+      .then(ts => setCustomTemplates(ts.filter(t => !t.isDefault)))
+      .catch(() => {});
+  }, []);
+
+  const handleSelectBuiltin = (template: Template) => {
     const state: Partial<SendNotificationRequest> & { templateId?: string } = {
       templateId: template.id,
       title: template.defaults.title,
@@ -115,6 +129,24 @@ export default function Templates() {
     navigate('/compose', { state });
   };
 
+  const handleSelectCustom = (t: TemplateDbRecord) => {
+    const state: Partial<SendNotificationRequest> = {
+      title: t.titleTemplate ?? '',
+      bodyLine1: t.bodyLine1Template ?? '',
+      bodyLine2: t.bodyLine2Template ?? '',
+      actionButtons: parseButtons(t.actionButtonsJson),
+      audioSetting: t.audioSetting ?? 'ms-winsoundevent:Notification.Default',
+      scenario: t.scenario === 'default' ? '' : t.scenario,
+    };
+    navigate('/compose', { state });
+  };
+
+  const handleDelete = (id: string) => {
+    void notificationsApi.deleteTemplate(id).then(() => {
+      setCustomTemplates(prev => prev.filter(t => t.id !== id));
+    }).catch(() => {});
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -124,13 +156,39 @@ export default function Templates() {
         </div>
       </div>
 
+      {customTemplates.length > 0 && (
+        <>
+          <h2 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>
+            Saved
+          </h2>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+            gap: 20,
+            marginBottom: 32,
+          }}>
+            {customTemplates.map(t => (
+              <CustomTemplateCard
+                key={t.id}
+                template={t}
+                onSelect={handleSelectCustom}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+          <h2 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>
+            Built-in
+          </h2>
+        </>
+      )}
+
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
         gap: 20,
       }}>
         {TEMPLATES.map(template => (
-          <TemplateCard key={template.id} template={template} onSelect={handleSelect} />
+          <TemplateCard key={template.id} template={template} onSelect={handleSelectBuiltin} />
         ))}
       </div>
     </div>
@@ -163,7 +221,6 @@ function TemplateCard({ template, onSelect }: TemplateCardProps) {
         (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
       }}
     >
-      {/* Mini preview — scaled-down live CSS toast */}
       <div style={{ overflow: 'hidden', height: 140, position: 'relative' }}>
         <div style={{
           position: 'absolute',
@@ -184,7 +241,6 @@ function TemplateCard({ template, onSelect }: TemplateCardProps) {
         </div>
       </div>
 
-      {/* Info */}
       <div style={{
         padding: '16px 20px',
         borderTop: '1px solid rgba(15,23,42,0.10)',
@@ -208,6 +264,116 @@ function TemplateCard({ template, onSelect }: TemplateCardProps) {
         >
           Use
         </button>
+      </div>
+    </div>
+  );
+}
+
+interface CustomTemplateCardProps {
+  template: TemplateDbRecord;
+  onSelect: (t: TemplateDbRecord) => void;
+  onDelete: (id: string) => void;
+}
+
+function CustomTemplateCard({ template, onSelect, onDelete }: CustomTemplateCardProps) {
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const buttons = parseButtons(template.actionButtonsJson);
+
+  return (
+    <div
+      style={{
+        background: 'var(--bg-secondary)',
+        borderRadius: 'var(--radius-md)',
+        overflow: 'hidden',
+        border: '1px solid rgba(0,201,167,0.18)',
+        cursor: 'pointer',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
+      }}
+      onClick={() => onSelect(template)}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(0,201,167,0.5)';
+        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 0 0 1px rgba(0,201,167,0.2)';
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(0,201,167,0.18)';
+        (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
+      }}
+    >
+      <div style={{ overflow: 'hidden', height: 140, position: 'relative' }}>
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          transform: 'scale(0.55)',
+          transformOrigin: 'center center',
+          pointerEvents: 'none',
+        }}>
+          <div style={{ padding: 16 }}>
+            <ToastPreview
+              title={template.titleTemplate ?? ''}
+              bodyLine1={template.bodyLine1Template ?? undefined}
+              bodyLine2={template.bodyLine2Template ?? undefined}
+              actionButtons={buttons}
+              scenario={template.scenario === 'default' ? undefined : template.scenario}
+            />
+          </div>
+        </div>
+        <span style={{
+          position: 'absolute', top: 8, right: 8,
+          fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+          padding: '2px 6px', borderRadius: 4,
+          background: 'rgba(0,201,167,0.15)', color: 'var(--accent)',
+        }}>
+          Saved
+        </span>
+      </div>
+
+      <div style={{
+        padding: '16px 20px',
+        borderTop: '1px solid rgba(15,23,42,0.10)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 12,
+      }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {template.name}
+          </div>
+          {template.titleTemplate && (
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {template.titleTemplate}
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <button
+            className="btn btn-primary"
+            style={{ fontSize: 12, padding: '6px 12px' }}
+            onClick={e => { e.stopPropagation(); onSelect(template); }}
+          >
+            Use
+          </button>
+          {deleteArmed ? (
+            <button
+              ref={confirmRef}
+              className="btn btn-ghost"
+              style={{ fontSize: 12, padding: '6px 10px', color: 'var(--status-error)' }}
+              onClick={e => { e.stopPropagation(); onDelete(template.id); }}
+              onBlur={() => setDeleteArmed(false)}
+            >
+              Delete?
+            </button>
+          ) : (
+            <button
+              className="btn btn-ghost"
+              style={{ fontSize: 12, padding: '6px 10px', color: 'var(--text-dim)' }}
+              onClick={e => { e.stopPropagation(); setDeleteArmed(true); setTimeout(() => confirmRef.current?.focus(), 0); }}
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

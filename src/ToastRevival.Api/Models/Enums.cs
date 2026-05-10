@@ -2,7 +2,7 @@ namespace ToastRevival.Api.Models;
 
 public enum UserRole { Technician, Admin, SuperAdmin }
 public enum DeviceStatus { Active, Inactive, Decommissioned }
-public enum TemplateCategory { Announcement, Alert, ActionRequired, Reminder, Celebration, Maintenance }
+public enum TemplateCategory { Announcement, Alert, ActionRequired, Reminder, Celebration, Maintenance, Custom }
 public enum NotificationStatus { Queued, Sending, Sent, PartialFailure, Failed, PendingReview }
 public enum DeliveryStatus { Pending, Delivered, Clicked, Dismissed, Failed }
 public enum TargetType { Device, Group, All }

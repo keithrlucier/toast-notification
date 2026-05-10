@@ -22,7 +22,9 @@ public class TemplatesController : ControllerBase
     public async Task<ActionResult<IEnumerable<TemplateResponse>>> List()
     {
         var templates = await _db.NotificationTemplates
-            .OrderBy(t => t.Category)
+            .OrderBy(t => t.IsDefault ? 0 : 1)
+            .ThenBy(t => t.Category)
+            .ThenBy(t => t.Name)
             .Select(t => new TemplateResponse(
                 t.Id,
                 t.Name,
@@ -31,6 +33,7 @@ public class TemplatesController : ControllerBase
                 t.TitleTemplate,
                 t.BodyLine1Template,
                 t.BodyLine2Template,
+                t.ActionButtonsJson,
                 t.AudioSetting,
                 t.Scenario.ToString().ToLowerInvariant(),
                 t.IsDefault))
@@ -38,6 +41,80 @@ public class TemplatesController : ControllerBase
 
         return Ok(templates);
     }
+
+    [HttpPost]
+    public async Task<ActionResult<TemplateResponse>> Create([FromBody] CreateTemplateRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return BadRequest("Name is required.");
+
+        var tenantId = GetTenantId();
+        if (tenantId == Guid.Empty) return Unauthorized();
+
+        var template = new NotificationTemplate
+        {
+            TenantId       = tenantId,
+            Name           = req.Name.Trim(),
+            Category       = TemplateCategory.Custom,
+            TitleTemplate  = req.Title?.Trim(),
+            BodyLine1Template = req.BodyLine1?.Trim(),
+            BodyLine2Template = req.BodyLine2?.Trim(),
+            ActionButtonsJson = req.ActionButtonsJson,
+            AudioSetting   = req.AudioSetting,
+            Scenario       = ParseScenario(req.Scenario),
+            IsDefault      = false,
+            CreatedAt      = DateTime.UtcNow,
+            UpdatedAt      = DateTime.UtcNow,
+        };
+
+        _db.NotificationTemplates.Add(template);
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(List), new TemplateResponse(
+            template.Id,
+            template.Name,
+            "custom",
+            "Custom",
+            template.TitleTemplate,
+            template.BodyLine1Template,
+            template.BodyLine2Template,
+            template.ActionButtonsJson,
+            template.AudioSetting,
+            template.Scenario.ToString().ToLowerInvariant(),
+            false));
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId == Guid.Empty) return Unauthorized();
+
+        var template = await _db.NotificationTemplates
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        if (template is null) return NotFound();
+        if (template.IsDefault) return BadRequest("Default templates cannot be deleted.");
+
+        _db.NotificationTemplates.Remove(template);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    private Guid GetTenantId()
+    {
+        var claim = User.FindFirst("tenantId")?.Value ?? User.FindFirst("TenantId")?.Value;
+        return Guid.TryParse(claim, out var id) ? id : Guid.Empty;
+    }
+
+    private static ToastScenario ParseScenario(string? s) => s?.ToLowerInvariant() switch
+    {
+        "urgent"       => ToastScenario.Urgent,
+        "reminder"     => ToastScenario.Reminder,
+        "alarm"        => ToastScenario.Alarm,
+        "incomingcall" => ToastScenario.IncomingCall,
+        _              => ToastScenario.Default,
+    };
 
     internal static string ToSlug(TemplateCategory category) => category switch
     {

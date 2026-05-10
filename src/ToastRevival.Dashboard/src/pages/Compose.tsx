@@ -319,8 +319,11 @@ export default function Compose() {
                 type="url"
                 value={heroUrl}
                 onChange={e => setHeroUrl(e.target.value)}
-                placeholder="https://cdn.example.com/image.jpg (364×180px recommended)"
+                placeholder="https://cdn.example.com/image.jpg"
               />
+              <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
+                Recommended: 364 × 180 px. Upload via <a href="/assets" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Assets</a> to get a hosted URL.
+              </p>
             </div>
 
             {/* Action buttons */}

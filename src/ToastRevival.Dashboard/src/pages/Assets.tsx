@@ -184,6 +184,11 @@ export default function Assets() {
                 <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4, marginBottom: 0 }}>
                   Accepts .jpg, .jpeg, .png, .gif, .webp
                 </p>
+                <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2, marginBottom: 0 }}>
+                  {uploadType === 'HeroImage' ? 'Recommended: 364 × 180 px' :
+                   uploadType === 'Logo'      ? 'Recommended: 48 × 48 px (circle crop)' :
+                                               'Recommended: 16 × 16 px or 32 × 32 px'}
+                </p>
               </div>
             </>
           )}

@@ -38,6 +38,14 @@ export default function DeployCommand() {
             {copied ? '✓ Copied' : 'Copy'}
           </button>
           <a
+            href="/downloads/ToastNotification.msi"
+            download
+            className="btn btn-primary"
+            style={{ fontSize: 12, padding: '6px 14px', minHeight: 0, textDecoration: 'none' }}
+          >
+            ↓ Download MSI
+          </a>
+          <a
             href="https://www.microsoft.com/store/apps/9P5L0MRMFRRF"
             target="_blank"
             rel="noopener noreferrer"

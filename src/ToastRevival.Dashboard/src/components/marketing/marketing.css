@@ -1156,7 +1156,277 @@
   margin: 0;
 }
 
-/* Mono cells used in indicative cost tables */
+/* ─────────── Dark theme — scoped to marketing, does not touch dashboard ─────────── */
+
+.marketing-root {
+  --bg-primary:     #0A0E1A;
+  --bg-secondary:   #0F1525;
+  --bg-tertiary:    #162035;
+  --bg-surface:     #162035;
+  --text-primary:   #EFF3FF;
+  --text-secondary: #8B9BBF;
+  --text-dim:       #5A6A8A;
+  --accent:         #00C9A7;
+  --accent-hover:   #00B396;
+  --accent-pressed: #009E84;
+  --shadow-1:       0 1px 2px rgba(0,0,0,0.4);
+  --shadow-2:       0 8px 24px rgba(0,0,0,0.5);
+  --shadow-3:       0 16px 48px rgba(0,0,0,0.7);
+}
+
+/* ─────────── Cinematic hero ─────────── */
+
+.m-hero--cinematic {
+  position: relative;
+  overflow: hidden;
+  min-height: calc(100vh - 64px);
+  padding: 0;
+  display: block;
+  background: var(--bg-primary);
+}
+
+.m-hero-bg-img {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 70%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center left;
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+
+.m-hero-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    108deg,
+    #0A0E1A 26%,
+    rgba(10,14,26,0.9) 50%,
+    rgba(10,14,26,0.35) 75%,
+    rgba(10,14,26,0.08) 100%
+  );
+  pointer-events: none;
+}
+
+.m-hero-inner {
+  position: relative;
+  z-index: 2;
+  max-width: 640px;
+  padding: 120px 0 96px;
+  margin-left: max(32px, calc((100vw - 1200px) / 2 + 32px));
+}
+
+.m-hero--cinematic .m-hero-headline {
+  font-size: 68px;
+  font-weight: 800;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  margin: 16px 0 24px;
+}
+
+/* ─────────── Stats strip ─────────── */
+
+.m-stats-strip {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: var(--bg-secondary);
+}
+
+.m-stats-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 48px 32px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+}
+
+.m-stat-value {
+  font-size: 42px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-feature-settings: 'tnum';
+}
+
+.m-stat-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 10px;
+  line-height: 1.4;
+}
+
+/* ─────────── Case study ─────────── */
+
+.m-case-study {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.m-case-study-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  min-height: 440px;
+}
+
+.m-case-study-content {
+  padding: 56px 48px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+}
+
+.m-case-study-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+
+.m-case-study-content h2 {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.m-case-study-pull {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  border-left: 2px solid var(--accent);
+  padding-left: 20px;
+  margin: 0;
+}
+
+.m-case-study-attribution {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.m-case-study-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.m-case-stat-value {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.m-case-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ─────────── Deployment cards ─────────── */
+
+.m-deploy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  max-width: 1200px;
+  margin: 64px auto 0;
+}
+
+.m-deploy-card {
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius-md);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: border-color 200ms ease;
+}
+
+.m-deploy-card:hover {
+  border-color: rgba(0,201,167,0.25);
+}
+
+.m-deploy-card-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.m-deploy-card h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.m-deploy-card p {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.m-deploy-cmd {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  color: var(--accent);
+  word-break: break-all;
+  line-height: 1.6;
+}
+
+/* ─────────── Dark-mode responsive additions ─────────── */
+
+@media (max-width: 1023px) {
+  .m-stats-inner         { grid-template-columns: repeat(2, 1fr); }
+  .m-case-study          { grid-template-columns: 1fr; }
+  .m-case-study-img      { min-height: 280px; max-height: 320px; }
+  .m-deploy-grid         { grid-template-columns: 1fr; max-width: 480px; }
+  .m-hero--cinematic .m-hero-headline { font-size: 48px; }
+  .m-hero-inner          { padding: 80px 32px 64px; max-width: 100%; }
+}
+
+@media (max-width: 767px) {
+  .m-stats-inner         { grid-template-columns: repeat(2, 1fr); gap: 24px; padding: 32px 20px; }
+  .m-stat-value          { font-size: 32px; }
+  .m-case-study-content  { padding: 32px 24px; }
+  .m-hero--cinematic .m-hero-headline { font-size: 36px; }
+  .m-hero-bg-img         { width: 100%; opacity: 0.2; }
+  .m-hero-inner          { padding: 64px 20px 48px; margin-left: 0; }
+  .m-deploy-grid         { grid-template-columns: 1fr; }
+}
+
+/* ─────────── Mono cells used in indicative cost tables ─────────── */
+
 .m-mono {
   font-family: var(--font-mono);
   font-feature-settings: 'tnum';

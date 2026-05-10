@@ -67,35 +67,35 @@ const INCLUSIONS = [
 const FAQ = [
   {
     q: 'How is a "device" counted?',
-    a: 'A device is any Windows endpoint where the Toast Notification agent has been registered and is currently active. Decommissioning a device frees the slot; re-registering a machine after a clean install reuses it. Inactive devices that have not pinged in 30 days are not billed.',
+    a: 'A device is any Windows endpoint where the Toast Notification agent is registered and currently active. Decommissioning a device frees the slot immediately. Inactive devices that have not pinged in 30 days are not billed.',
   },
   {
-    q: 'What happens if my active device count changes mid-month?',
-    a: 'Active device count is synced to Stripe after registration and decommissioning. Billing uses the higher of active devices or the 100-device monthly minimum. Canceled subscriptions block new registrations until billing is restored.',
+    q: 'What happens if my device count changes mid-month?',
+    a: 'Device count is synced to Stripe on registration and decommission. Billing uses the higher of active devices or the 100-device monthly minimum. Canceled subscriptions block new registrations until billing is restored.',
   },
   {
     q: 'Is there a contract or annual commitment?',
-    a: 'No. Billing is monthly. Cancel from the Stripe billing portal at any time; service continues through the end of the current period. Annual billing with a discount can be arranged for fleets above 1,000 devices - contact procurement.',
+    a: 'No contract. Billing is monthly. Cancel from the Stripe billing portal at any time — service continues through the end of the current billing period.',
   },
   {
     q: 'Do you offer volume pricing?',
-    a: 'Per-device pricing is uniform up to 5,000 devices. Above 5,000 devices, custom volume pricing and dedicated infrastructure options are available. Contact us for a tailored quote.',
+    a: 'Per-device pricing is uniform up to 5,000 devices. Above 5,000 devices, contact us to discuss options.',
   },
   {
     q: 'How does the 14-day trial work?',
-    a: 'New tenants receive 14 days of full-feature access during Stripe checkout. Billing starts after the trial unless the subscription is canceled. Canceled tenants cannot register new devices until billing is restored.',
+    a: 'Every new tenant gets 14 days of full-feature access, started during Stripe checkout. Billing begins after the trial unless canceled. Trial tenants have access to all features — no locked capabilities.',
   },
   {
     q: 'What payment methods do you accept?',
-    a: 'Stripe handles billing - credit card and ACH for self-serve. NET-30 invoicing with a signed master service agreement is available for fleets above 1,000 devices.',
+    a: 'Credit card and ACH via Stripe. Self-serve billing portal included with every subscription.',
   },
   {
     q: 'Where is data stored?',
-    a: 'PostgreSQL 16 on AWS US-East for the public production environment. Notification payloads are HMAC-signed per tenant. Asset uploads are scanned by Azure Content Safety before persistence. Dedicated regional infrastructure is available on request.',
+    a: 'PostgreSQL 16 on AWS US-East-1. Notification payloads are HMAC-SHA256 signed per tenant. Asset uploads are scanned by Azure Content Safety before persistence.',
   },
   {
-    q: 'Do you support SSO, SAML, or HIPAA BAAs?',
-    a: 'Single sign-on (SAML / OIDC) is on the public roadmap. HIPAA-friendly architecture is in place; a BAA path is available during procurement. SOC 2 Type II preparation is in progress.',
+    q: 'Do you support SSO or SAML?',
+    a: 'SAML / OIDC single sign-on is on the roadmap. Not available yet. Email support@toastnotification.com if this is a hard requirement for your deployment.',
   },
 ];
 
@@ -135,8 +135,8 @@ export default function Pricing() {
             Pricing.
           </h1>
           <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 600, marginInline: 'auto' }}>
-            One plan. Per-device pricing. No premium tiers, no feature paywalls, no contract minimums beyond the
-            monthly seat floor.
+            One plan. Per-device pricing. Every feature included. No premium tiers, no feature paywalls,
+            no annual contract.
           </p>
 
           <div className="m-plan-card" aria-label="Standard plan">
@@ -261,16 +261,17 @@ export default function Pricing() {
       {/* Final CTA */}
       <section className="m-section" style={{ background: 'var(--bg-secondary)' }} aria-labelledby="pricing-cta-heading">
         <div className="m-final-cta">
-          <h2 id="pricing-cta-heading">Procurement-friendly. Engineering-grade.</h2>
+          <h2 id="pricing-cta-heading">Start the 14-day trial.</h2>
           <p>
-            Start a 14-day trial, or contact us for volume pricing, NET-30 terms, or a master service agreement.
+            Register a tenant, deploy the signed MSI, and send your first notification in under ten minutes.
+            Questions? Email <a href="mailto:support@toastnotification.com">support@toastnotification.com</a>.
           </p>
           <div className="m-final-cta-buttons">
             <Link to="/register" className="m-btn m-btn-primary">
               Start trial
             </Link>
-            <a href="mailto:sales@toastnotification.com?subject=Toast%20Notification%20procurement" className="m-btn m-btn-ghost">
-              Contact procurement
+            <a href="mailto:support@toastnotification.com?subject=Toast%20Notification" className="m-btn m-btn-ghost">
+              Contact us
             </a>
           </div>
         </div>

@@ -5,6 +5,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import SetPassword from './pages/SetPassword';
+import CheckEmail from './pages/CheckEmail';
 import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
 import Templates from './pages/Templates';
@@ -67,9 +69,11 @@ function RootIndex() {
 
 const router = createBrowserRouter([
   // Auth surfaces
-  { path: '/login',      element: <Login /> },
-  { path: '/register',   element: <Register /> },
-  { path: '/onboarding', element: <ProtectedRoute><Onboarding /></ProtectedRoute> },
+  { path: '/login',         element: <Login /> },
+  { path: '/register',      element: <Register /> },
+  { path: '/set-password',  element: <SetPassword /> },
+  { path: '/check-email',   element: <CheckEmail /> },
+  { path: '/onboarding',    element: <ProtectedRoute><Onboarding /></ProtectedRoute> },
 
   // Public marketing surfaces — single SPA, MarketingLayout chrome
   {

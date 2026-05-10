@@ -90,7 +90,7 @@ public static class EmailTemplates
         </p>
         """);
 
-    public static string PasswordReset(string fullName, string resetUrl) => Wrap($"""
+    public static string PasswordReset(string? fullName, string resetUrl) => Wrap($"""
         <h1 style="margin:0 0 8px;font-size:24px;font-weight:700;color:{TextMain};letter-spacing:-0.01em;">
           Reset your password
         </h1>

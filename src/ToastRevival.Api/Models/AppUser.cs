@@ -2,6 +2,13 @@ using Microsoft.AspNetCore.Identity;
 
 namespace ToastRevival.Api.Models;
 
+public enum RegistrationStep
+{
+    PendingSmsVerification = 0,
+    PendingPasswordSet = 1,
+    Complete = 2,
+}
+
 public class AppUser : IdentityUser<Guid>
 {
     public Guid TenantId { get; set; }
@@ -17,6 +24,12 @@ public class AppUser : IdentityUser<Guid>
 
     public DateTime? LastLogin { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Registration flow fields (M9.A)
+    public string? FullName { get; set; }
+    public string? SmsVerificationCode { get; set; }   // SHA-256 hashed 6-digit code
+    public DateTime? SmsCodeExpiry { get; set; }
+    public RegistrationStep RegistrationStep { get; set; } = RegistrationStep.Complete;
 
     public Tenant Tenant { get; set; } = null!;
 }

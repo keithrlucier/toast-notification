@@ -171,6 +171,10 @@ builder.Services.AddScoped<ILicenseService, LicenseService>();
 builder.Services.AddScoped<IStripeBillingSyncService, StripeBillingSyncService>();
 builder.Services.AddSingleton<IBillingConfigService, BillingConfigService>();
 
+// M9.A transactional messaging (Mailjet email + ClickSend SMS)
+builder.Services.AddHttpClient<IEmailService, MailjetEmailService>();
+builder.Services.AddHttpClient<ISmsService, ClickSendSmsService>();
+
 // CORS — dev allows any origin; production should lock this down via config
 builder.Services.AddCors(opts =>
     opts.AddDefaultPolicy(p =>

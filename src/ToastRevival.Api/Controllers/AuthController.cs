@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -19,14 +20,233 @@ public class AuthController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ITokenService _tokens;
     private readonly MfaService _mfa;
+    private readonly IEmailService _email;
+    private readonly ISmsService _sms;
+    private readonly IConfiguration _config;
 
-    public AuthController(UserManager<AppUser> userManager, AppDbContext db, ITokenService tokens, MfaService mfa)
+    public AuthController(
+        UserManager<AppUser> userManager,
+        AppDbContext db,
+        ITokenService tokens,
+        MfaService mfa,
+        IEmailService email,
+        ISmsService sms,
+        IConfiguration config)
     {
         _userManager = userManager;
         _db = db;
         _tokens = tokens;
         _mfa = mfa;
+        _email = email;
+        _sms = sms;
+        _config = config;
     }
+
+    // ─── New M9.A registration flow ────────────────────────────────────────────
+
+    /// <summary>
+    /// Step 1 of 3. Creates tenant + user (no password yet), sends ClickSend
+    /// SMS with a 6-digit verification code.
+    /// </summary>
+    [HttpPost("register/init")]
+    public async Task<ActionResult<RegisterInitResponse>> RegisterInit([FromBody] RegisterInitRequest req)
+    {
+        var subdomain = NormalizeSubdomain(req.Subdomain) ?? SlugifyTenantName(req.TenantName);
+        if (string.IsNullOrEmpty(subdomain))
+            return BadRequest("Tenant name must contain at least one alphanumeric character.");
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            if (!await _db.Tenants.AnyAsync(t => t.Subdomain == subdomain)) break;
+            if (req.Subdomain is not null) return Conflict("Subdomain already taken.");
+            subdomain = SlugifyTenantName(req.TenantName) + "-" + RandomSuffix();
+        }
+        if (await _db.Tenants.AnyAsync(t => t.Subdomain == subdomain))
+            return Conflict("Could not allocate a unique subdomain.");
+
+        if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == req.Email))
+            return Conflict("An account with that email already exists.");
+
+        using var tx = await _db.Database.BeginTransactionAsync();
+
+        var tenant = new Tenant
+        {
+            Name       = req.TenantName,
+            Subdomain  = subdomain,
+            SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+        };
+        _db.Tenants.Add(tenant);
+        await _db.SaveChangesAsync();
+
+        var code       = GenerateSmsCode();
+        var codeHash   = HashSmsCode(code);
+        var codeExpiry = DateTime.UtcNow.AddMinutes(10);
+
+        var user = new AppUser
+        {
+            TenantId             = tenant.Id,
+            FullName             = req.FullName.Trim(),
+            Email                = req.Email,
+            UserName             = req.Email,
+            PhoneNumber          = req.Mobile,
+            Role                 = UserRole.SuperAdmin,
+            SecurityStamp        = Guid.NewGuid().ToString(),
+            SmsVerificationCode  = codeHash,
+            SmsCodeExpiry        = codeExpiry,
+            RegistrationStep     = RegistrationStep.PendingSmsVerification,
+        };
+
+        var result = await _userManager.CreateAsync(user);
+        if (!result.Succeeded)
+        {
+            await tx.RollbackAsync();
+            return BadRequest(new { errors = result.Errors.Select(e => e.Description).ToArray() });
+        }
+
+        try
+        {
+            foreach (var template in TemplatesController.BuildDefaultTemplates(tenant.Id))
+                _db.NotificationTemplates.Add(template);
+            await _db.SaveChangesAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            return StatusCode(500, "Registration failed during template initialization.");
+        }
+
+        await tx.CommitAsync();
+
+        await _sms.SendAsync(req.Mobile, $"Your Toast Notification verification code is: {code}. It expires in 10 minutes.");
+
+        return Ok(new RegisterInitResponse(user.Id, "sms_pending"));
+    }
+
+    /// <summary>
+    /// Step 2 of 3. Verifies the 6-digit SMS code. On success, marks phone
+    /// confirmed and sends the Mailjet magic-token email for password setup.
+    /// </summary>
+    [HttpPost("register/verify-sms")]
+    public async Task<IActionResult> VerifySms([FromBody] VerifySmsRequest req)
+    {
+        var user = await _db.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == req.UserId);
+
+        if (user is null || user.RegistrationStep != RegistrationStep.PendingSmsVerification)
+            return BadRequest("Invalid or already-completed verification.");
+
+        if (user.SmsCodeExpiry < DateTime.UtcNow)
+            return BadRequest("Verification code expired. Please restart registration.");
+
+        if (user.SmsVerificationCode != HashSmsCode(req.Code.Trim()))
+            return Unauthorized("Incorrect verification code.");
+
+        user.PhoneNumberConfirmed  = true;
+        user.SmsVerificationCode   = null;
+        user.SmsCodeExpiry         = null;
+        user.RegistrationStep      = RegistrationStep.PendingPasswordSet;
+        await _db.SaveChangesAsync();
+
+        var token      = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+        var baseUrl    = _config["App:BaseUrl"] ?? "https://toastnotification.com";
+        var encodedTok = Uri.EscapeDataString(token);
+        var link       = $"{baseUrl}/set-password?userId={user.Id}&token={encodedTok}";
+        var html       = EmailTemplates.SetPassword(user.FullName ?? user.Email!, link);
+
+        await _email.SendAsync(user.Email!, user.FullName ?? user.Email!, "Set your password — Toast Notification", html);
+
+        return Ok(new { step = "email_sent" });
+    }
+
+    /// <summary>
+    /// Step 3 of 3. Confirms email token, sets password, returns JWT.
+    /// </summary>
+    [HttpPost("register/set-password")]
+    public async Task<ActionResult<AuthResponse>> SetPassword([FromBody] SetPasswordRequest req)
+    {
+        var user = await _db.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == req.UserId);
+
+        if (user is null || user.RegistrationStep != RegistrationStep.PendingPasswordSet)
+            return BadRequest("Invalid request or registration step.");
+
+        var confirmResult = await _userManager.ConfirmEmailAsync(user, req.Token);
+        if (!confirmResult.Succeeded)
+            return BadRequest("Link is invalid or has expired. Please contact support.");
+
+        var addPwResult = await _userManager.AddPasswordAsync(user, req.Password);
+        if (!addPwResult.Succeeded)
+            return BadRequest(new { errors = addPwResult.Errors.Select(e => e.Description).ToArray() });
+
+        user.RegistrationStep = RegistrationStep.Complete;
+        user.LastLogin        = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        var jwt       = _tokens.CreateUserToken(user);
+        var refresh   = _tokens.CreateRefreshToken();
+        var expiresAt = DateTime.UtcNow.AddMinutes(60);
+
+        return Ok(new AuthResponse(jwt, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
+    }
+
+    /// <summary>
+    /// Initiates self-service password reset. Sends Mailjet email with reset link.
+    /// </summary>
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req)
+    {
+        var user = await _db.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Email == req.Email);
+
+        // Always return 200 to prevent email enumeration
+        if (user is null || user.RegistrationStep != RegistrationStep.Complete)
+            return Ok(new { message = "If an account exists for that email, a reset link has been sent." });
+
+        var token      = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var baseUrl    = _config["App:BaseUrl"] ?? "https://toastnotification.com";
+        var encodedTok = Uri.EscapeDataString(token);
+        var link       = $"{baseUrl}/reset-password?userId={user.Id}&token={encodedTok}";
+        var html       = EmailTemplates.PasswordReset(user.FullName, link);
+
+        await _email.SendAsync(user.Email!, user.FullName ?? user.Email!, "Reset your password — Toast Notification", html);
+
+        return Ok(new { message = "If an account exists for that email, a reset link has been sent." });
+    }
+
+    /// <summary>
+    /// Completes password reset via token from email.
+    /// </summary>
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest req)
+    {
+        var user = await _db.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == req.UserId);
+
+        if (user is null)
+            return BadRequest("Invalid reset link.");
+
+        var result = await _userManager.ResetPasswordAsync(user, req.Token, req.Password);
+        if (!result.Succeeded)
+            return BadRequest(new { errors = result.Errors.Select(e => e.Description).ToArray() });
+
+        return Ok(new { message = "Password updated. You can now sign in." });
+    }
+
+    // ─── Helpers ───────────────────────────────────────────────────────────────
+
+    private static string GenerateSmsCode()
+    {
+        // Cryptographically random 6-digit code, zero-padded
+        var bytes = new byte[4];
+        RandomNumberGenerator.Fill(bytes);
+        var n = (int)(BitConverter.ToUInt32(bytes) % 1_000_000);
+        return n.ToString("D6");
+    }
+
+    private static string HashSmsCode(string code) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code.Trim())));
+
+
 
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest req)

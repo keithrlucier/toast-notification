@@ -55,13 +55,12 @@ public class BillingController : ControllerBase
 
         return Ok(new
         {
-            planName         = "Standard",
-            pricePerDevice   = BillingPlanRules.PricePerDevice,
-            minimumDevices   = BillingPlanRules.MinimumBillableDevices,
-            monthlyFloor     = BillingPlanRules.MonthlyFloor,
+            planName          = "Standard",
+            pricePerDevice    = BillingPlanRules.PricePerDevice,
+            freeTierLimit     = BillingPlanRules.FreeTierDeviceLimit,
             deviceCount,
             billableDevices,
-            currentBill      = billableDevices * BillingPlanRules.PricePerDevice,
+            currentBill       = billableDevices * BillingPlanRules.PricePerDevice,
             billingStatus    = tenant.BillingStatus.ToString(),
             licenseStart     = tenant.LicenseStart,
             licenseEnd       = tenant.LicenseEnd,

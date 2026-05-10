@@ -20,8 +20,13 @@ public class LicenseService : ILicenseService
 
         if (tenant is null) return false;
 
-        // Canceled billing = hard block on new registrations
-        if (tenant.BillingStatus == BillingStatus.Canceled) return false;
+        // Free tier: devices 1-25 always allowed, no Stripe required.
+        if (tenant.ConsumedCount <= BillingPlanRules.FreeTierDeviceLimit)
+            return true;
+
+        // Above free tier: a real Stripe subscription must exist and not be canceled.
+        if (string.IsNullOrEmpty(tenant.StripeSubscriptionId)) return false;
+        if (tenant.BillingStatus == BillingStatus.Canceled)    return false;
 
         return true;
     }

@@ -8,6 +8,8 @@ import Register from './pages/Register';
 import SetPassword from './pages/SetPassword';
 import CheckEmail from './pages/CheckEmail';
 import VerifySms from './pages/VerifySms';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
 import Templates from './pages/Templates';
@@ -73,9 +75,11 @@ const router = createBrowserRouter([
   // Auth surfaces
   { path: '/login',         element: <Login /> },
   { path: '/register',      element: <Register /> },
-  { path: '/set-password',  element: <SetPassword /> },
-  { path: '/verify-sms',   element: <VerifySms /> },
-  { path: '/check-email',   element: <CheckEmail /> },
+  { path: '/set-password',    element: <SetPassword /> },
+  { path: '/verify-sms',     element: <VerifySms /> },
+  { path: '/check-email',    element: <CheckEmail /> },
+  { path: '/forgot-password', element: <ForgotPassword /> },
+  { path: '/reset-password',  element: <ResetPassword /> },
   { path: '/onboarding',    element: <ProtectedRoute><Onboarding /></ProtectedRoute> },
 
   // Public marketing surfaces — single SPA, MarketingLayout chrome

@@ -29,8 +29,7 @@ public class BillingConfigService : IBillingConfigService
             priceId,
             IsConfiguredPriceId(priceId),
             BillingPlanRules.PricePerDevice,
-            BillingPlanRules.MinimumBillableDevices,
-            BillingPlanRules.MonthlyFloor);
+            BillingPlanRules.FreeTierDeviceLimit);
     }
 
     public Task<BillingConfigSnapshot> UpdatePerDevicePriceIdAsync(

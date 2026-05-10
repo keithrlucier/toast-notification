@@ -7,8 +7,7 @@ public interface IBillingConfigService
 }
 
 public sealed record BillingConfigSnapshot(
-    string PerDevicePriceId,
-    bool IsConfigured,
+    string  PerDevicePriceId,
+    bool    IsConfigured,
     decimal PricePerDevice,
-    int MinimumDevices,
-    decimal MonthlyFloor);
+    int     FreeTierDeviceLimit);

@@ -21,7 +21,11 @@ public class TemplatesController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<TemplateResponse>>> List()
     {
+        var tenantId = GetTenantId();
+        if (tenantId == Guid.Empty) return Unauthorized();
+
         var templates = await _db.NotificationTemplates
+            .Where(t => t.TenantId == tenantId)
             .OrderBy(t => t.IsDefault ? 0 : 1)
             .ThenBy(t => t.Category)
             .ThenBy(t => t.Name)
@@ -73,8 +77,8 @@ public class TemplatesController : ControllerBase
         return CreatedAtAction(nameof(List), new TemplateResponse(
             template.Id,
             template.Name,
-            "custom",
-            "Custom",
+            ToSlug(TemplateCategory.Custom),
+            TemplateCategory.Custom.ToString(),
             template.TitleTemplate,
             template.BodyLine1Template,
             template.BodyLine2Template,
@@ -91,7 +95,7 @@ public class TemplatesController : ControllerBase
         if (tenantId == Guid.Empty) return Unauthorized();
 
         var template = await _db.NotificationTemplates
-            .FirstOrDefaultAsync(t => t.Id == id);
+            .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
 
         if (template is null) return NotFound();
         if (template.IsDefault) return BadRequest("Default templates cannot be deleted.");

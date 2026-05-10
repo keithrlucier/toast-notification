@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { notificationsApi, type SendNotificationRequest, type ActionButton, type TemplateDbRecord, type SaveTemplateRequest } from '../api/notifications';
 import { devicesApi, type Device, type DeviceGroup } from '../api/devices';
@@ -124,11 +124,11 @@ export default function Compose() {
   const [showConfirm,  setShowConfirm]  = useState(false);
   const [activeSection,setActiveSection]= useState<'template' | 'content' | 'target'>('content');
 
-  // Save as template
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName,     setTemplateName]     = useState('');
-  const [savingTemplate,   setSavingTemplate]   = useState(false);
-  const [saveTemplateMsg,  setSaveTemplateMsg]  = useState('');
+  const [saveState,        setSaveState]        = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); }, []);
 
   useEffect(() => {
     void devicesApi.list().then(setDevices).catch(() => {});
@@ -193,12 +193,12 @@ export default function Compose() {
   };
 
   const doSaveTemplate = async () => {
-    if (!templateName.trim()) return;
-    setSavingTemplate(true);
-    setSaveTemplateMsg('');
+    const name = templateName.trim();
+    if (!name) return;
+    setSaveState('saving');
     try {
       const req: SaveTemplateRequest = {
-        name: templateName.trim(),
+        name,
         title: title || undefined,
         bodyLine1: body1 || undefined,
         bodyLine2: body2 || undefined,
@@ -207,13 +207,11 @@ export default function Compose() {
         scenario: scenario || undefined,
       };
       await notificationsApi.saveTemplate(req);
-      setSaveTemplateMsg('Template saved.');
+      setSaveState('saved');
       setTemplateName('');
-      setTimeout(() => { setShowSaveTemplate(false); setSaveTemplateMsg(''); }, 1500);
+      saveTimerRef.current = setTimeout(() => { setShowSaveTemplate(false); setSaveState('idle'); }, 1500);
     } catch {
-      setSaveTemplateMsg('Failed to save template.');
-    } finally {
-      setSavingTemplate(false);
+      setSaveState('error');
     }
   };
 
@@ -300,7 +298,7 @@ export default function Compose() {
               <button
                 className="btn btn-ghost"
                 style={{ fontSize: 12, padding: '4px 10px' }}
-                onClick={() => { setShowSaveTemplate(s => !s); setSaveTemplateMsg(''); }}
+                onClick={() => { setShowSaveTemplate(s => !s); setSaveState('idle'); }}
               >
                 Save as Template
               </button>
@@ -336,13 +334,13 @@ export default function Compose() {
                   className="btn btn-primary"
                   style={{ fontSize: 12, padding: '7px 14px', minHeight: 0 }}
                   onClick={() => void doSaveTemplate()}
-                  disabled={savingTemplate || !templateName.trim()}
+                  disabled={saveState === 'saving' || !templateName.trim()}
                 >
-                  {savingTemplate ? <span className="spinner" /> : 'Save'}
+                  {saveState === 'saving' ? <span className="spinner" /> : 'Save'}
                 </button>
-                {saveTemplateMsg && (
-                  <span style={{ fontSize: 12, color: saveTemplateMsg.includes('Failed') ? 'var(--status-error)' : 'var(--accent)' }}>
-                    {saveTemplateMsg}
+                {(saveState === 'saved' || saveState === 'error') && (
+                  <span style={{ fontSize: 12, color: saveState === 'error' ? 'var(--status-error)' : 'var(--accent)' }}>
+                    {saveState === 'saved' ? 'Template saved.' : 'Failed to save template.'}
                   </span>
                 )}
               </div>

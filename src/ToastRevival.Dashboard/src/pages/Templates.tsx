@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ToastPreview from '../components/ToastPreview';
-import type { ActionButton, SendNotificationRequest, TemplateDbRecord } from '../api/notifications';
-import { notificationsApi } from '../api/notifications';
+import { notificationsApi, parseButtons, type ActionButton, type SendNotificationRequest, type TemplateDbRecord } from '../api/notifications';
 
 interface Template {
   id: string;
@@ -100,11 +99,6 @@ export const TEMPLATES: Template[] = [
     },
   },
 ];
-
-function parseButtons(json: string | null | undefined): ActionButton[] | undefined {
-  if (!json) return undefined;
-  try { return JSON.parse(json) as ActionButton[]; } catch { return undefined; }
-}
 
 export default function Templates() {
   const navigate = useNavigate();

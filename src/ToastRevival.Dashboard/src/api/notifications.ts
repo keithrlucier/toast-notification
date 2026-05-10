@@ -79,6 +79,11 @@ export interface SaveTemplateRequest {
   scenario?: string;
 }
 
+export function parseButtons(json: string | null | undefined): ActionButton[] | undefined {
+  if (!json) return undefined;
+  try { return JSON.parse(json) as ActionButton[]; } catch { return undefined; }
+}
+
 export const notificationsApi = {
   list: (page = 1, pageSize = 25) =>
     api.get<NotificationHistoryItem[]>(`/api/notifications?page=${page}&pageSize=${pageSize}`),

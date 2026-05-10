@@ -44,7 +44,8 @@ public class SystemController : ControllerBase
         BillingConfigSnapshot snapshot;
         try
         {
-            snapshot = await _billingConfig.UpdatePerDevicePriceIdAsync(
+            snapshot = await _billingConfig.UpdateStripeConfigAsync(
+                null, null,
                 request.PerDevicePriceId,
                 HttpContext.RequestAborted);
         }

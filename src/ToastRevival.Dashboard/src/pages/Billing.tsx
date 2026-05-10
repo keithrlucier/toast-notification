@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { billingApi, type BillingPlan, type Invoice } from '../api/billing';
-import { ApiError } from '../api/client';
+import { api, ApiError } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 
 const STATUS_COLOR: Record<string, string> = {
   Active: 'var(--status-success)',
@@ -27,7 +28,19 @@ function formatDate(value: string | null): string {
   });
 }
 
+interface StripeSnapshot {
+  hasSecretKey: boolean;
+  hasWebhookSecret: boolean;
+  maskedSecretKey: string | null;
+  maskedWebhookSecret: string | null;
+  perDevicePriceId: string;
+  isConfigured: boolean;
+}
+
 export default function Billing() {
+  const { user } = useAuth();
+  const isPlatformAdmin = user?.isPlatformAdmin ?? false;
+
   const [plan, setPlan] = useState<BillingPlan | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,18 +49,30 @@ export default function Billing() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [searchParams] = useSearchParams();
 
+  // Superadmin Stripe config state
+  const [stripeSnap, setStripeSnap]   = useState<StripeSnapshot | null>(null);
+  const [secretKey, setSecretKey]     = useState('');
+  const [webhookSec, setWebhookSec]   = useState('');
+  const [priceId, setPriceId]         = useState('');
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveError, setSaveError]     = useState('');
+  const [saveOk, setSaveOk]           = useState(false);
+
   const load = useCallback(async () => {
     setError('');
     try {
-      const [p, inv] = await Promise.all([billingApi.getPlan(), billingApi.getInvoices()]);
-      setPlan(p);
-      setInvoices(inv.invoices);
+      const calls: Promise<unknown>[] = [billingApi.getPlan(), billingApi.getInvoices()];
+      if (isPlatformAdmin) calls.push(api.get<StripeSnapshot>('/api/billing/admin/stripe-config'));
+      const [p, inv, snap] = await Promise.all(calls);
+      setPlan(p as BillingPlan);
+      setInvoices((inv as { invoices: Invoice[] }).invoices);
+      if (snap) setStripeSnap(snap as StripeSnapshot);
     } catch {
       setError('Failed to load billing information.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isPlatformAdmin]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -72,6 +97,30 @@ export default function Billing() {
     } catch {
       setError('Could not open the billing portal. Please try again.');
       setPortalLoading(false);
+    }
+  };
+
+  const handleStripeConfigSave = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaveError('');
+    setSaveOk(false);
+    setSaveLoading(true);
+    try {
+      const snap = await api.post<StripeSnapshot>('/api/billing/admin/stripe-config', {
+        secretKey:       secretKey       || null,
+        webhookSecret:   webhookSec      || null,
+        perDevicePriceId: priceId        || null,
+      });
+      setStripeSnap(snap);
+      setSecretKey('');
+      setWebhookSec('');
+      setPriceId('');
+      setSaveOk(true);
+      setTimeout(() => setSaveOk(false), 3000);
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : 'Save failed.');
+    } finally {
+      setSaveLoading(false);
     }
   };
 
@@ -141,8 +190,8 @@ export default function Billing() {
                   </span>
                 </div>
                 <p style={{ margin: '8px 0 0', maxWidth: 560, color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.55 }}>
-                  {money(plan.pricePerDevice)} per active device each month with a {plan.minimumDevices}-device minimum.
-                  The 14-day trial starts during checkout.
+                  {money(plan.pricePerDevice)} per active device per month.
+                  First {plan.freeTierLimit} devices are free. The 14-day trial starts during Stripe checkout.
                 </p>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -161,7 +210,7 @@ export default function Billing() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16, marginBottom: 24 }}>
             <Metric label="Active Devices" value={plan.deviceCount.toLocaleString()} />
-            <Metric label="Billing Floor" value={money(plan.monthlyFloor)} />
+            <Metric label="Free Tier" value={`${plan.freeTierLimit} devices`} />
             <Metric label="Billable Devices" value={plan.billableDevices.toLocaleString()} />
             <Metric label={plan.trialEnd ? 'Trial Ends' : 'Renews'} value={formatDate(plan.trialEnd ?? plan.licenseEnd)} />
           </div>
@@ -181,6 +230,86 @@ export default function Billing() {
             </div>
           )}
         </>
+      )}
+
+      {/* Stripe Configuration — platform admin only */}
+      {isPlatformAdmin && (
+        <section style={{ marginBottom: 32 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>
+            Stripe Configuration
+          </h2>
+          <div className="card">
+            {/* Status row */}
+            <div style={{ display: 'flex', gap: 24, marginBottom: 24, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Secret key',      ok: stripeSnap?.hasSecretKey,      masked: stripeSnap?.maskedSecretKey },
+                { label: 'Webhook secret',  ok: stripeSnap?.hasWebhookSecret,  masked: stripeSnap?.maskedWebhookSecret },
+                { label: 'Price ID',        ok: stripeSnap?.isConfigured,      masked: stripeSnap?.perDevicePriceId || null },
+              ].map(({ label, ok, masked }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: ok ? 'var(--status-success)' : 'var(--status-error)',
+                    flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{label}</span>
+                  {masked && (
+                    <code style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-dim)' }}>
+                      {masked}
+                    </code>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleStripeConfigSave}>
+              {saveError && <div className="error-banner" style={{ marginBottom: 16 }}>{saveError}</div>}
+              {saveOk    && <div className="success-banner" style={{ marginBottom: 16 }}>Saved. API reloaded.</div>}
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                Leave a field blank to keep the current value. Changes take effect immediately without a server restart.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                <div className="field">
+                  <label>Secret key <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(sk_live_...)</span></label>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={secretKey}
+                    onChange={e => setSecretKey(e.target.value)}
+                    placeholder={stripeSnap?.hasSecretKey ? stripeSnap.maskedSecretKey ?? 'Set' : 'Not configured'}
+                  />
+                </div>
+                <div className="field">
+                  <label>Webhook secret <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(whsec_...)</span></label>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={webhookSec}
+                    onChange={e => setWebhookSec(e.target.value)}
+                    placeholder={stripeSnap?.hasWebhookSecret ? stripeSnap.maskedWebhookSecret ?? 'Set' : 'Not configured'}
+                  />
+                </div>
+              </div>
+              <div className="field" style={{ marginBottom: 16, maxWidth: 420 }}>
+                <label>Per-device price ID <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(price_...)</span></label>
+                <input
+                  type="text"
+                  value={priceId}
+                  onChange={e => setPriceId(e.target.value)}
+                  placeholder={stripeSnap?.isConfigured ? stripeSnap.perDevicePriceId : 'Not configured'}
+                />
+              </div>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={saveLoading || (!secretKey && !webhookSec && !priceId)}
+                style={{ minWidth: 120 }}
+              >
+                {saveLoading ? 'Saving...' : 'Save configuration'}
+              </button>
+            </form>
+          </div>
+        </section>
       )}
 
       <section>

@@ -69,6 +69,32 @@ public class BillingController : ControllerBase
         });
     }
 
+    // ── GET  /api/billing/admin/stripe-config ────────────────────────────────
+    // ── POST /api/billing/admin/stripe-config ────────────────────────────────
+
+    [HttpGet("admin/stripe-config")]
+    public IActionResult GetStripeConfig()
+    {
+        if (!IsPlatformAdmin()) return Forbid();
+        return Ok(_billingConfig.GetSnapshot());
+    }
+
+    [HttpPost("admin/stripe-config")]
+    public async Task<IActionResult> UpdateStripeConfig([FromBody] UpdateStripeConfigRequest req)
+    {
+        if (!IsPlatformAdmin()) return Forbid();
+        try
+        {
+            var snapshot = await _billingConfig.UpdateStripeConfigAsync(
+                req.SecretKey, req.WebhookSecret, req.PerDevicePriceId);
+            return Ok(snapshot);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
     // ── POST /api/billing/checkout ────────────────────────────────────────────
 
     [HttpPost("checkout")]
@@ -406,11 +432,11 @@ public class BillingController : ControllerBase
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private bool IsAdmin()
-    {
-        var role = Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
-        return role >= UserRole.Admin;
-    }
+    private bool IsAdmin() =>
+        Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) && r >= UserRole.Admin;
+
+    private bool IsPlatformAdmin() =>
+        User.FindFirstValue("platformAdmin") == "true";
 
     private async Task<string> CreateStripeCustomerAsync(Tenant tenant)
     {
@@ -422,6 +448,11 @@ public class BillingController : ControllerBase
         });
         return customer.Id;
     }
+
+    public record UpdateStripeConfigRequest(
+        string? SecretKey,
+        string? WebhookSecret,
+        string? PerDevicePriceId);
 
     private static BillingStatus ResolveBillingStatus(string? stripeStatus) => stripeStatus switch
     {

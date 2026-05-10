@@ -27,6 +27,10 @@ internal sealed class PayloadButton
 {
     [JsonPropertyName("label")]     public string Label { get; set; } = "";
     [JsonPropertyName("action")]    public string Action { get; set; } = "";
+    [JsonPropertyName("actionId")]  public string? ActionId { get; set; }
+    [JsonPropertyName("style")]     public string? Style { get; set; }
+    [JsonPropertyName("type")]      public string? Type { get; set; }
+    [JsonPropertyName("url")]       public string? Url { get; set; }
     [JsonPropertyName("isPrimary")] public bool IsPrimary { get; set; }
 }
 

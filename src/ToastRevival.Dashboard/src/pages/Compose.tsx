@@ -28,9 +28,65 @@ const SCENARIO_OPTIONS: ScenarioOption[] = [
 ];
 
 const BUTTON_STYLES = ['Default', 'Success', 'Critical'] as const;
+const BUTTON_TYPES = [
+  { label: 'Track click', value: 'Action' },
+  { label: 'Open URL', value: 'Url' },
+] as const;
 
 const TITLE_MAX  = 48;
 const BODY_MAX   = 90;
+
+function slugifyActionId(label: string, fallback: string) {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+  return slug || fallback;
+}
+
+function isUrlButton(button: ActionButton) {
+  return button.type === 'Url' || Boolean(button.url?.trim());
+}
+
+function normalizeButtons(buttons: ActionButton[]): ActionButton[] {
+  return buttons.map((button, index) => {
+    const label = button.label.trim();
+    const actionId = slugifyActionId(button.actionId || label, `button_${index + 1}`);
+    const type: ActionButton['type'] = isUrlButton(button) ? 'Url' : 'Action';
+    return {
+      ...button,
+      label,
+      actionId,
+      type,
+      url: type === 'Url' ? button.url?.trim() : undefined,
+    };
+  });
+}
+
+function validateButtons(buttons: ActionButton[]) {
+  for (let i = 0; i < buttons.length; i++) {
+    const button = buttons[i];
+    const label = button.label.trim();
+    if (!label) return `Button ${i + 1} needs a label.`;
+    if (label.length > 32) return `Button ${i + 1} label must be 32 characters or fewer.`;
+
+    if (isUrlButton(button)) {
+      const url = button.url?.trim() ?? '';
+      if (!url) return `Button "${label}" needs a URL.`;
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+          return `Button "${label}" URL must start with http:// or https://.`;
+        }
+      } catch {
+        return `Button "${label}" URL is not valid.`;
+      }
+    }
+  }
+  return '';
+}
 
 export default function Compose() {
   const location = useLocation();
@@ -95,7 +151,7 @@ export default function Compose() {
     bodyLine2: body2 || undefined,
     heroImageUrl: heroUrl || undefined,
     logoUrl: logoUrl || undefined,
-    actionButtons: buttons.length > 0 ? buttons : undefined,
+    actionButtons: buttons.length > 0 ? normalizeButtons(buttons) : undefined,
     audioSetting: audio,
     scenario: scenario || undefined,
     targetType: targetMode,
@@ -106,6 +162,8 @@ export default function Compose() {
 
   const handleSend = () => {
     if (!title.trim()) { setError('Title is required.'); return; }
+    const buttonError = validateButtons(buttons);
+    if (buttonError) { setError(buttonError); return; }
     if (targetMode === 'Device' && selectedDevices.length === 0) { setError('Select at least one device.'); return; }
     if (targetMode === 'Group' && selectedGroups.length === 0)   { setError('Select at least one group.'); return; }
     setError('');
@@ -130,7 +188,7 @@ export default function Compose() {
 
   const addButton = () => {
     if (buttons.length >= 3) return;
-    setButtons(prev => [...prev, { label: 'Button', actionId: `btn${prev.length + 1}`, style: 'Default' }]);
+    setButtons(prev => [...prev, { label: 'Open Link', actionId: `url_${prev.length + 1}`, style: 'Default', type: 'Url', url: '' }]);
   };
 
   const updateButton = (i: number, patch: Partial<ActionButton>) =>
@@ -279,38 +337,53 @@ export default function Compose() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {buttons.map((btn, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div
+                    key={i}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(140px, 1fr) 110px 100px auto',
+                      gap: 8,
+                      alignItems: 'center',
+                      padding: 10,
+                      border: '1px solid rgba(15,23,42,0.10)',
+                      borderRadius: 6,
+                      background: 'rgba(15,23,42,0.02)',
+                    }}
+                  >
                     <input
                       type="text"
                       value={btn.label}
                       onChange={e => updateButton(i, { label: e.target.value })}
                       placeholder="Button label"
+                      maxLength={40}
                       style={{
-                        flex: 1,
                         background: 'var(--bg-tertiary)',
                         border: '1px solid rgba(15,23,42,0.12)',
                         borderRadius: 4,
                         color: 'var(--text-primary)',
                         padding: '8px 10px',
                         fontSize: 13,
+                        minWidth: 0,
                       }}
                     />
-                    <input
-                      type="text"
-                      value={btn.actionId}
-                      onChange={e => updateButton(i, { actionId: e.target.value })}
-                      placeholder="action-id"
+                    <select
+                      value={isUrlButton(btn) ? 'Url' : 'Action'}
+                      onChange={e => updateButton(i, {
+                        type: e.target.value as 'Action' | 'Url',
+                        url: e.target.value === 'Url' ? (btn.url ?? '') : undefined,
+                      })}
                       style={{
-                        width: 100,
                         background: 'var(--bg-tertiary)',
                         border: '1px solid rgba(15,23,42,0.12)',
                         borderRadius: 4,
-                        color: 'var(--text-dim)',
+                        color: 'var(--text-primary)',
                         padding: '8px 10px',
                         fontSize: 12,
-                        fontFamily: 'var(--font-mono)',
+                        cursor: 'pointer',
                       }}
-                    />
+                    >
+                      {BUTTON_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
                     <select
                       value={btn.style ?? 'Default'}
                       onChange={e => updateButton(i, { style: e.target.value as 'Default' | 'Success' | 'Critical' })}
@@ -336,6 +409,42 @@ export default function Compose() {
                         <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                       </svg>
                     </button>
+
+                    <input
+                      type="text"
+                      value={btn.actionId}
+                      onChange={e => updateButton(i, { actionId: e.target.value })}
+                      placeholder="action-id"
+                      style={{
+                        gridColumn: isUrlButton(btn) ? '1 / 2' : '1 / 5',
+                        background: 'var(--bg-tertiary)',
+                        border: '1px solid rgba(15,23,42,0.12)',
+                        borderRadius: 4,
+                        color: 'var(--text-dim)',
+                        padding: '8px 10px',
+                        fontSize: 12,
+                        fontFamily: 'var(--font-mono)',
+                        minWidth: 0,
+                      }}
+                    />
+                    {isUrlButton(btn) && (
+                      <input
+                        type="url"
+                        value={btn.url ?? ''}
+                        onChange={e => updateButton(i, { url: e.target.value })}
+                        placeholder="https://teams.microsoft.com/l/meetup-join/..."
+                        style={{
+                          gridColumn: '2 / 5',
+                          background: 'var(--bg-tertiary)',
+                          border: '1px solid rgba(15,23,42,0.12)',
+                          borderRadius: 4,
+                          color: 'var(--text-primary)',
+                          padding: '8px 10px',
+                          fontSize: 13,
+                          minWidth: 0,
+                        }}
+                      />
+                    )}
                   </div>
                 ))}
                 {buttons.length === 0 && (

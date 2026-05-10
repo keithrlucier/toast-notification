@@ -76,6 +76,11 @@ public class NotificationsController : ControllerBase
                 });
         }
 
+        if (!TryNormalizeActionButtons(req.ActionButtons, out var actionButtonsJson, out var actionButtonsError))
+        {
+            return BadRequest(actionButtonsError);
+        }
+
         // D7 Blocklist check — fast, in-process, happens before any external call
         var blocklistHit = await _blocklist.CheckAsync(req.Title, req.BodyLine1, req.BodyLine2);
 
@@ -134,8 +139,7 @@ public class NotificationsController : ControllerBase
             BodyLine2 = req.BodyLine2,
             HeroImageUrl = req.HeroImageUrl,
             LogoUrl = req.LogoUrl,
-            ActionButtonsJson = req.ActionButtons is not null
-                ? JsonSerializer.Serialize(req.ActionButtons) : null,
+            ActionButtonsJson = actionButtonsJson,
             AudioSetting = req.AudioSetting,
             Scenario = req.Scenario,
             TargetType = req.TargetType,
@@ -398,6 +402,139 @@ public class NotificationsController : ControllerBase
     }
 
     private static string EscapeCsvTitle(string value) => value.Replace("\"", "\"\"");
+
+    private static bool TryNormalizeActionButtons(object? rawButtons, out string? normalizedJson, out string? error)
+    {
+        normalizedJson = null;
+        error = null;
+
+        if (rawButtons is null) return true;
+
+        JsonElement root;
+        try
+        {
+            root = rawButtons is JsonElement element
+                ? element
+                : JsonSerializer.SerializeToElement(rawButtons);
+        }
+        catch
+        {
+            error = "Action buttons must be a JSON array.";
+            return false;
+        }
+
+        if (root.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return true;
+        if (root.ValueKind != JsonValueKind.Array)
+        {
+            error = "Action buttons must be a JSON array.";
+            return false;
+        }
+
+        var normalized = new List<Dictionary<string, object?>>();
+        var index = 0;
+
+        foreach (var item in root.EnumerateArray())
+        {
+            index++;
+            if (index > 3)
+            {
+                error = "A notification can include at most 3 action buttons.";
+                return false;
+            }
+
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                error = $"Action button {index} must be an object.";
+                return false;
+            }
+
+            var label = GetString(item, "label")?.Trim();
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                error = $"Action button {index} needs a label.";
+                return false;
+            }
+            if (label.Length > 32)
+            {
+                error = $"Action button {index} label must be 32 characters or fewer.";
+                return false;
+            }
+
+            var actionId = GetString(item, "actionId")?.Trim();
+            if (string.IsNullOrWhiteSpace(actionId))
+                actionId = GetString(item, "action")?.Trim();
+            if (string.IsNullOrWhiteSpace(actionId))
+                actionId = $"button_{index}";
+            if (actionId.Length > 64)
+            {
+                error = $"Action button {index} action ID must be 64 characters or fewer.";
+                return false;
+            }
+
+            var style = NormalizeButtonStyle(GetString(item, "style"));
+            var type = NormalizeButtonType(GetString(item, "type"));
+            var url = GetString(item, "url")?.Trim();
+            if (!string.IsNullOrWhiteSpace(url)) type = "Url";
+
+            var button = new Dictionary<string, object?>
+            {
+                ["label"] = label,
+                ["actionId"] = actionId,
+                ["action"] = actionId,
+                ["style"] = style,
+                ["type"] = type,
+            };
+
+            if (type == "Url")
+            {
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    error = $"Action button {index} URL is required.";
+                    return false;
+                }
+                if (url.Length > 2048)
+                {
+                    error = $"Action button {index} URL must be 2048 characters or fewer.";
+                    return false;
+                }
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+                    || parsed.Scheme is not ("http" or "https"))
+                {
+                    error = $"Action button {index} URL must be an absolute http:// or https:// URL.";
+                    return false;
+                }
+
+                button["url"] = parsed.AbsoluteUri;
+            }
+
+            normalized.Add(button);
+        }
+
+        normalizedJson = normalized.Count == 0 ? null : JsonSerializer.Serialize(normalized);
+        return true;
+    }
+
+    private static string? GetString(JsonElement item, string name)
+    {
+        foreach (var prop in item.EnumerateObject())
+        {
+            if (string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)
+                && prop.Value.ValueKind == JsonValueKind.String)
+            {
+                return prop.Value.GetString();
+            }
+        }
+
+        return null;
+    }
+
+    private static string NormalizeButtonStyle(string? value) =>
+        string.Equals(value, "Success", StringComparison.OrdinalIgnoreCase) ? "Success" :
+        string.Equals(value, "Critical", StringComparison.OrdinalIgnoreCase) ? "Critical" :
+        "Default";
+
+    private static string NormalizeButtonType(string? value) =>
+        string.Equals(value, "Url", StringComparison.OrdinalIgnoreCase) ? "Url" : "Action";
 
     private async Task<List<Guid>> ResolveTargetDeviceIds(SendNotificationRequest req, Guid tenantId)
     {

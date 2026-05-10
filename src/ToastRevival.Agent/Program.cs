@@ -208,9 +208,11 @@ namespace ToastRevival.Agent
                 }
 
                 var action = parsed.GetValueOrDefault("action") ?? "click";
+                var url = parsed.GetValueOrDefault("url");
 
                 using var postCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 var ok = await InteractionFallback.PostAsync(config, notificationId, action, postCts.Token);
+                ToastUrlLauncher.OpenIfAllowed(url);
 
                 DiagLog.Write($"ActivationMode EXIT {(ok ? 0 : 8)}: posted={ok}; notificationId={notificationId}; action={action}");
                 return ok ? 0 : 8;

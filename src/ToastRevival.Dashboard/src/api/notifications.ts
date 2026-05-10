@@ -9,6 +9,8 @@ export interface ActionButton {
   label: string;
   actionId: string;
   style?: 'Default' | 'Success' | 'Critical';
+  type?: 'Action' | 'Url';
+  url?: string;
 }
 
 export interface SendNotificationRequest {

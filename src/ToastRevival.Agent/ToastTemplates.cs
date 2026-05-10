@@ -239,20 +239,24 @@ internal static class ToastTemplateBuilder
 
         if (p.ActionButtons is not null)
         {
+            var index = 0;
             foreach (var b in p.ActionButtons)
             {
+                index++;
                 if (string.IsNullOrWhiteSpace(b.Label)) continue;
 
+                var action = ButtonAction(b, index);
                 var button = new AppNotificationButton(b.Label)
                     .AddArgument("source", "hub")
                     .AddArgument("notificationId", notificationId)
-                    .AddArgument("action", b.Action ?? "");
+                    .AddArgument("action", action);
 
-                if (b.IsPrimary)
+                if (TryHttpUri(b.Url, out var buttonUri))
                 {
-                    button.SetButtonStyle(AppNotificationButtonStyle.Success);
+                    button.AddArgument("url", Uri.EscapeDataString(buttonUri.AbsoluteUri));
                 }
 
+                ApplyButtonStyle(button, b);
                 builder.AddButton(button);
             }
         }
@@ -270,6 +274,41 @@ internal static class ToastTemplateBuilder
         }
         uri = null!;
         return false;
+    }
+
+    private static bool TryHttpUri(string? value, out Uri uri)
+    {
+        if (!string.IsNullOrWhiteSpace(value)
+            && Uri.TryCreate(value, UriKind.Absolute, out var parsed)
+            && parsed.Scheme is "http" or "https")
+        {
+            uri = parsed;
+            return true;
+        }
+
+        uri = null!;
+        return false;
+    }
+
+    private static string ButtonAction(PayloadButton button, int index)
+    {
+        if (!string.IsNullOrWhiteSpace(button.Action)) return button.Action.Trim();
+        if (!string.IsNullOrWhiteSpace(button.ActionId)) return button.ActionId.Trim();
+        return $"button_{index}";
+    }
+
+    private static void ApplyButtonStyle(AppNotificationButton button, PayloadButton source)
+    {
+        if (string.Equals(source.Style, "Critical", StringComparison.OrdinalIgnoreCase))
+        {
+            button.SetButtonStyle(AppNotificationButtonStyle.Critical);
+            return;
+        }
+
+        if (source.IsPrimary || string.Equals(source.Style, "Success", StringComparison.OrdinalIgnoreCase))
+        {
+            button.SetButtonStyle(AppNotificationButtonStyle.Success);
+        }
     }
 
     private static bool TryParseScenario(string? value, out AppNotificationScenario scenario)

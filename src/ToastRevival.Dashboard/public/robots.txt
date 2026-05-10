@@ -5,9 +5,13 @@
 User-agent: *
 Allow: /
 Allow: /pricing
+Allow: /security
 Allow: /docs
+Allow: /llms
 Allow: /llms.txt
 Allow: /sitemap.xml
+Allow: /og-card.png
+Allow: /favicon.svg
 
 # Auth surfaces — login forms render no content of value to a search index.
 Disallow: /login

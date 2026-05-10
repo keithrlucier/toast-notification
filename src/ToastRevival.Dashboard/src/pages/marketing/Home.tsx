@@ -8,10 +8,10 @@ import {
 import { useSeo, softwareApplicationLd } from '../../lib/seo';
 
 const STACK = [
-  { label: '.NET 8 / ASP.NET Core', value: 'Backend API' },
-  { label: 'PostgreSQL 16', value: 'AWS us-east-1' },
-  { label: 'Windows App SDK 1.7', value: 'Native agent' },
-  { label: 'Zero third-party tracking', value: 'No analytics' },
+  { label: '25 devices free forever', value: 'No credit card required' },
+  { label: '$0.22 per device/month', value: 'For larger fleets' },
+  { label: 'Signed before delivery', value: 'Agent verifies each payload' },
+  { label: 'Audit evidence built in', value: 'Delivery, clicks, dismissals, export' },
 ];
 
 const CAPABILITIES = [
@@ -23,9 +23,9 @@ const CAPABILITIES = [
   },
   {
     Icon: FeatureLockKey,
-    title: 'Signed, scanned, and logged on every send.',
+    title: 'Signed, checked, and logged on every send.',
     body:
-      'Per-tenant HMAC-SHA256 payload signing verified before every render. Azure Content Safety on every notification before publish. Append-only audit log. CSV and PDF export — the kind of evidence a compliance team will actually accept.',
+      'Per-tenant HMAC-SHA256 payload signing verified before every render. Tenant blocklists and configured content-safety checks run before delivery. Audit log, CSV export, and PDF export for compliance evidence.',
   },
   {
     Icon: FeatureCloudArrow,
@@ -42,12 +42,12 @@ const CAPABILITIES = [
 ];
 
 const COMPLIANCE = [
-  { label: 'Transport', value: "TLS 1.3, HSTS, Let's Encrypt" },
-  { label: 'Payload integrity', value: 'HMAC-SHA256 per tenant, verified on every endpoint' },
+  { label: 'Transport', value: 'TLS 1.2/1.3, HSTS, HTTPS redirect' },
+  { label: 'Payload integrity', value: 'HMAC-SHA256 per tenant, verified by the agent' },
   { label: 'Auth', value: 'JWT — 60-min user, 365-day device' },
-  { label: 'Content scan', value: 'Azure Content Safety on every send' },
-  { label: 'At-rest encryption', value: 'AES-256 database, DPAPI on agent config' },
-  { label: 'Tenancy', value: 'EF Core global query filters enforced on every read' },
+  { label: 'Content controls', value: 'Tenant blocklists plus configured content checks' },
+  { label: 'Data protection', value: 'Encrypted storage, DPAPI on agent config' },
+  { label: 'Tenancy', value: 'Tenant-scoped queries and controller predicates' },
   { label: 'Code signing', value: 'Sectigo OV, Thales HSM' },
   { label: 'MFA', value: 'TOTP enforced on broadcast sends' },
 ];
@@ -101,8 +101,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Honest stack strip */}
-      <div className="m-stats-strip" aria-label="Technical stack">
+      {/* Proof-point strip */}
+      <div className="m-stats-strip" aria-label="Platform highlights">
         <div className="m-stats-inner">
           {STACK.map(({ label, value }) => (
             <div key={label} className="m-stat">
@@ -129,8 +129,8 @@ export default function Home() {
             <p>
               Toast Notification fills that gap. It&rsquo;s purpose-built notification
               infrastructure&mdash;not a feature inside something else. One code-signed agent,
-              one multi-tenant API, one dashboard. Built on an open-source .NET 8 stack running
-              on AWS with no hidden dependencies.
+              one multi-tenant service, one dashboard. Signed delivery, audit evidence, and no
+              hidden client-side tracking.
             </p>
             <p>
               <Link to="/security" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>
@@ -206,7 +206,7 @@ export default function Home() {
         <div className="m-container m-compliance">
           <div className="m-compliance-copy">
             <h2 id="compliance-heading" className="m-section-heading">
-              Security architecture.<br />No marketing.
+              Security architecture.<br />Plainly documented.
             </h2>
             <p className="m-section-subhead" style={{ marginTop: 16, maxWidth: 480 }}>
               Eight controls enforced on every notification, for every tenant.
@@ -215,7 +215,7 @@ export default function Home() {
             </p>
             <p className="m-compliance-note">
               Pen-tested May 2026. Full architecture details, logging policy,
-              and AWS infrastructure docs on the{' '}
+              and current service boundaries on the{' '}
               <Link to="/security">security page</Link>.
             </p>
           </div>

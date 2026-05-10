@@ -38,6 +38,7 @@ const DocsIntune = lazy(() => import('./pages/marketing/docs/DocsIntune'));
 const DocsRmm = lazy(() => import('./pages/marketing/docs/DocsRmm'));
 const DocsApi = lazy(() => import('./pages/marketing/docs/DocsApi'));
 const Security = lazy(() => import('./pages/marketing/Security'));
+const Llms = lazy(() => import('./pages/marketing/Llms'));
 
 function MarketingFallback() {
   return (
@@ -93,6 +94,7 @@ const router = createBrowserRouter([
       { path: '/',          element: <RootIndex /> },
       { path: '/pricing',   element: <Suspense fallback={<MarketingFallback />}><Pricing /></Suspense> },
       { path: '/security',  element: <Suspense fallback={<MarketingFallback />}><Security /></Suspense> },
+      { path: '/llms',      element: <Suspense fallback={<MarketingFallback />}><Llms /></Suspense> },
       {
         element: (
           <Suspense fallback={<MarketingFallback />}>

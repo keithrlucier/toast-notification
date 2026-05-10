@@ -45,11 +45,11 @@ const INCLUSIONS = [
   {
     heading: 'Security',
     items: [
-      "TLS 1.3, HSTS, Let's Encrypt",
+      'TLS 1.2/1.3, HSTS, HTTPS redirect',
       'JWT auth - 60-min user, 365-day device tokens',
-      'Per-tenant HMAC-SHA256 payload signing, verified by every endpoint',
-      'Azure Content Safety on every send',
-      'AES-256 at rest. DPAPI on agent config. Multi-tenant query-filter isolation.',
+      'Per-tenant HMAC-SHA256 payload signing, verified by the Windows agent',
+      'Tenant blocklists plus configured content-safety checks',
+      'Encrypted storage. DPAPI on agent config. Tenant-scoped query isolation.',
       'Device enrollment keys for restricted registration',
     ],
   },
@@ -95,7 +95,7 @@ const FAQ = [
   },
   {
     q: 'Where is data stored?',
-    a: 'PostgreSQL 16 on AWS US-East-1. Notification payloads are HMAC-SHA256 signed per tenant. Asset uploads are scanned by Azure Content Safety before persistence.',
+    a: 'Production data is stored in the United States. Notification payloads are HMAC-SHA256 signed per tenant. Tenant blocklists are enforced before delivery; configured content-safety checks score eligible text and asset inputs.',
   },
   {
     q: 'Do you support SSO or SAML?',

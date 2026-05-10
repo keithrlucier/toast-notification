@@ -69,13 +69,12 @@ export default function DocsIndex() {
 
       <h2 id="how-the-platform-fits-together">How the platform fits together</h2>
       <p>
-        Toast Notification has three components. The <strong>Windows Agent</strong> is a signed .NET 8 / Windows App SDK
-        application that installs from a signed MSI or MSIX, registers itself with the API, and renders notifications
-        through the native Windows App Notification surface. The <strong>multi-tenant API</strong> is an ASP.NET Core 8
-        service backed by PostgreSQL; it issues JWTs, signs every payload with a per-tenant HMAC-SHA256 key, fans
-        notifications out over SignalR, and tracks delivery and interaction state. The <strong>admin dashboard</strong>{' '}
-        is a React SPA at <code>toastnotification.com</code> for tenant administrators to compose notifications, manage
-        device groups, review audit logs, and configure billing.
+        Toast Notification has three components. The <strong>Windows Agent</strong> installs from a signed MSI or MSIX,
+        registers itself with the service, and renders notifications through the native Windows notification surface.
+        The <strong>multi-tenant service</strong> issues JWTs, signs every payload with a per-tenant HMAC-SHA256 key,
+        delivers notifications in real time, and tracks delivery and interaction state. The <strong>admin dashboard</strong>{' '}
+        at <code>toastnotification.com</code> lets tenant administrators compose notifications, manage device groups,
+        review audit logs, and configure billing.
       </p>
 
       <h2 id="endpoint-conventions">Endpoint conventions</h2>
@@ -89,7 +88,7 @@ export default function DocsIndex() {
           by <code>POST /api/devices/register</code> and expire after 365 days.
         </li>
         <li>
-          Tenant isolation is enforced by EF Core query filters on every read. Cross-tenant requests are not possible
+          Tenant isolation is enforced on tenant-facing reads and writes. Cross-tenant requests are not permitted
           through any public endpoint.
         </li>
         <li>
@@ -100,9 +99,9 @@ export default function DocsIndex() {
 
       <h2 id="security-posture">Security posture</h2>
       <ul>
-        <li>TLS 1.3 with HSTS via Let's Encrypt. Certificate auto-renewal handled server-side.</li>
+        <li>TLS 1.2/1.3 with HSTS and HTTPS redirect. Certificate renewal is handled server-side.</li>
         <li>Per-tenant HMAC-SHA256 payload signing. The agent verifies every notification before render.</li>
-        <li>Azure Content Safety scans every notification before fan-out. Blocked sends are logged.</li>
+        <li>Tenant blocklists are enforced before delivery. Configured content-safety checks score eligible text and asset inputs.</li>
         <li>TOTP MFA enforced on broadcast (target = all devices) sends.</li>
         <li>Append-only audit log with CSV and PDF export for incident review and compliance attestation.</li>
       </ul>

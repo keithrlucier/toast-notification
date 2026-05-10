@@ -3,9 +3,9 @@ import { useSeo, breadcrumbLd } from '../../lib/seo';
 
 export default function Security() {
   useSeo({
-    title: 'Security posture',
+    title: 'Security architecture',
     description:
-      'Toast Notification security architecture: TLS 1.3, HMAC-SHA256 payload signing, Azure Content Safety, EF Core tenant isolation, Sectigo OV code signing, pen-test results, logging policy, AWS infrastructure.',
+      'Toast Notification security architecture: HTTPS transport, HMAC-SHA256 payload signing, tenant isolation, MFA controls, audit logging, code signing, and responsible disclosure.',
     path: '/security',
     jsonLd: breadcrumbLd([
       { name: 'Home', path: '/' },
@@ -18,215 +18,207 @@ export default function Security() {
       <div className="m-security-inner">
 
         <header className="m-security-header">
-          <p className="m-eyebrow">Security posture</p>
-          <h1>We wrote this ourselves.<br />No consultant. No template.</h1>
+          <p className="m-eyebrow">Security architecture</p>
+          <h1>Security controls for managed Windows notifications.</h1>
           <p className="m-security-lede">
-            This page documents what we actually built, how it actually works, and what we
-            actually tested. If something is missing, incomplete, or wrong —{' '}
+            Toast Notification is designed for MSPs that need tenant isolation, signed
+            endpoint delivery, audit evidence, and clear operational boundaries. For security
+            questions or coordinated disclosure, contact{' '}
             <a href="mailto:security@toastnotification.com">security@toastnotification.com</a>.
           </p>
           <div className="m-security-meta">
-            <span>Last reviewed: May 2026</span>
-            <span>Pen-tested: May 2026</span>
-            <span>Stack: .NET 8 / ASP.NET Core 8 / PostgreSQL 16</span>
-            <span>Infrastructure: AWS us-east-1</span>
+            <span>Last architecture review: May 2026</span>
+            <span>Security test review: May 2026</span>
+            <span>Controls: signed delivery, MFA elevation, audit export</span>
+            <span>Production data region: United States</span>
           </div>
         </header>
 
-        {/* Infrastructure */}
-        <section className="m-security-section" aria-labelledby="infra-heading">
-          <h2 id="infra-heading">Infrastructure</h2>
+        <section className="m-security-section" aria-labelledby="platform-heading">
+          <h2 id="platform-heading">Platform architecture</h2>
           <p>
-            The production environment runs on AWS Lightsail in <strong>us-east-1</strong>.
-            All data — notification payloads, tenant records, audit logs, device registrations —
-            is stored in the United States. There is no multi-region replication and we don&rsquo;t
-            claim otherwise.
+            Toast Notification separates the public application tier from the database tier.
+            The database is reachable only from the application tier and is not exposed
+            directly to the public internet. The current production service is hosted in the
+            United States and is single-region.
           </p>
           <ul>
-            <li><strong>API server (TOASTWEB1)</strong> — Ubuntu 22.04, nginx TLS termination, ASP.NET Core 8 Kestrel backend. Let&rsquo;s Encrypt certificates, auto-renewed. HSTS enforced with a 1-year max-age.</li>
-            <li><strong>Database server (TOASTDATA1)</strong> — PostgreSQL 16 on a separate private-network instance. Not exposed to the public internet. Connection is private LAN only.</li>
-            <li><strong>Agent</strong> — .NET 8 / Windows App SDK 1.7, runs as a per-user scheduled task. Code-signed with a Sectigo OV certificate on a Thales hardware security module. Available via signed MSI, Intune LOB, RMM deployment, and the Microsoft Store (listing 9P5L0MRMFRRF).</li>
+            <li><strong>Application tier</strong> &mdash; TLS termination, static dashboard delivery, API routing, authentication, targeting, and audit workflows.</li>
+            <li><strong>Data tier</strong> &mdash; private application-only access for tenant records, users, devices, notification records, assets, and audit logs.</li>
+            <li><strong>Windows agent</strong> &mdash; installed per endpoint and distributed through signed installer channels.</li>
           </ul>
         </section>
 
-        {/* Transport */}
         <section className="m-security-section" aria-labelledby="transport-heading">
           <h2 id="transport-heading">Transport security</h2>
           <ul>
-            <li>TLS 1.3 enforced. TLS 1.0 and 1.1 disabled at the nginx level.</li>
-            <li>HSTS with <code>max-age=31536000; includeSubDomains</code> at the server scope. All HTTP traffic redirects to HTTPS.</li>
-            <li>Certificates issued by Let&rsquo;s Encrypt. Auto-renewed via certbot. Current expiry documented in CONTEXT.md.</li>
-            <li>SignalR (used for real-time agent↔backend communication) passes JWT as a URL query parameter on WebSocket handshake — this is the standard pattern for SignalR. The <code>OnMessageReceived</code> handler extracts and validates it before any hub code runs.</li>
+            <li>HTTPS is enforced for production traffic. TLS 1.2 and TLS 1.3 are supported; TLS 1.0 and TLS 1.1 are rejected.</li>
+            <li>HTTP requests redirect to HTTPS. HSTS is set with <code>max-age=31536000; includeSubDomains</code>.</li>
+            <li>Public certificates are managed with automated renewal.</li>
+            <li>SignalR WebSocket connections authenticate with JWTs during the connection handshake. Tokens are validated before hub code handles device events.</li>
+            <li>Static site and API responses include defensive browser headers: <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>, <code>Referrer-Policy</code>, and <code>Permissions-Policy</code>.</li>
           </ul>
         </section>
 
-        {/* Authentication */}
         <section className="m-security-section" aria-labelledby="auth-heading">
-          <h2 id="auth-heading">Authentication &amp; tokens</h2>
+          <h2 id="auth-heading">Authentication and authorization</h2>
           <ul>
-            <li><strong>User JWTs</strong> — HMAC-SHA256, 60-minute expiry, zero clock skew tolerance. Issued by ASP.NET Core Identity, validated on every request.</li>
-            <li><strong>Device JWTs</strong> — 365-day expiry, bound to a specific device ID claim. Devices cannot impersonate users and users cannot use device tokens.</li>
-            <li><strong>MFA tokens</strong> — 15-minute expiry, include a <code>mfa=true</code> claim. Required for broadcast-to-all sends (target type = All). TOTP via OtpNet 1.4.0, RFC 6238 compliant.</li>
-            <li><strong>Replay prevention</strong> — <code>LastTotpStep</code> is persisted on the user record after every successful TOTP verify. Any code whose matched 30-second step ≤ the stored value is rejected.</li>
-            <li><strong>Registration flow</strong> — mobile verified via ClickSend SMS (6-digit code, SHA-256 hashed at rest, 10-minute expiry). Password set via ASP.NET Identity email confirmation token delivered through Mailjet.</li>
+            <li><strong>User tokens</strong> &mdash; HMAC-SHA256 JWTs with 60-minute expiry and zero clock-skew tolerance.</li>
+            <li><strong>Device tokens</strong> &mdash; tenant-scoped JWTs bound to a device ID. Device credentials cannot be used as user credentials.</li>
+            <li><strong>MFA elevation</strong> &mdash; broadcast-to-all sends require a short-lived token containing an MFA claim.</li>
+            <li><strong>TOTP replay control</strong> &mdash; accepted TOTP time steps are persisted; codes from the same or an earlier 30-second step are rejected.</li>
+            <li><strong>Registration</strong> &mdash; SMS verification codes are hashed at rest with SHA-256 and expire after 10 minutes. Password setup uses ASP.NET Identity email-confirmation tokens.</li>
           </ul>
         </section>
 
-        {/* Payload signing */}
         <section className="m-security-section" aria-labelledby="signing-heading">
           <h2 id="signing-heading">Payload signing</h2>
           <p>
-            Every notification payload is signed with a per-tenant HMAC-SHA256 key before it
-            leaves the server. The agent verifies the signature before rendering. A payload
-            that fails verification is silently dropped and logged.
+            Notification payloads are signed with a tenant-specific HMAC-SHA256 key before
+            delivery. The Windows agent verifies the signature before rendering a notification.
+            Payloads that fail verification are dropped and logged.
           </p>
           <p>
-            This means a compromised agent binary on one endpoint cannot be used to inject
-            unsigned notifications into another tenant&rsquo;s fleet. The signing key is
-            tenant-specific and stored server-side only — agents never hold signing keys,
-            only verification material.
+            Registered agents store their endpoint configuration using Windows DPAPI scoped to
+            the current user. This protects the service-to-agent delivery path from unsigned
+            or modified payloads while keeping tenant signing material separate per tenant.
           </p>
         </section>
 
-        {/* Tenant isolation */}
         <section className="m-security-section" aria-labelledby="tenancy-heading">
           <h2 id="tenancy-heading">Tenant isolation</h2>
           <p>
-            All database reads go through EF Core global query filters that enforce
-            <code>TenantId</code> scoping. A tenant admin cannot query another
-            tenant&rsquo;s data. This is enforced at the ORM layer, not just the
-            application layer.
+            Tenant data is scoped by tenant ID throughout the API. Database reads use tenant
+            filters, and tenant-facing controllers apply tenant predicates before returning
+            data. Platform-administration views are separate from tenant-administration views.
           </p>
           <p>
-            The one exception is <code>AuditLog</code>, which intentionally has no global
-            query filter — platform administrators need a cross-tenant audit view. Per-tenant
-            controllers that read audit data explicitly apply a <code>tenantId</code> predicate
-            before any other filter. This was the subject of FIX-M8C-001, identified and patched
-            during our May 2026 pen-test.
+            Audit-log access was specifically reviewed in May 2026 because it supports both
+            tenant-level reporting and platform-level administration. Tenant audit endpoints
+            now scope every query to the caller&rsquo;s tenant before applying date filters or
+            export formatting.
           </p>
         </section>
 
-        {/* Content moderation */}
         <section className="m-security-section" aria-labelledby="moderation-heading">
-          <h2 id="moderation-heading">Content moderation</h2>
+          <h2 id="moderation-heading">Content controls</h2>
           <p>
-            Every notification is scanned by <strong>Azure Content Safety</strong> before it
-            is queued for delivery. Notifications that trigger moderation are placed in a
-            pending review queue and are not delivered until a platform administrator reviews
-            and approves them. Tenants can see that a notification is in moderation;
-            they cannot bypass it.
+            Tenant blocklists are enforced before notification delivery. The platform also
+            includes a moderation pipeline for notification text and image inputs. Where
+            external content-safety credentials are configured, inputs are scored before
+            queueing; review decisions place notifications into an approval queue instead of
+            delivering them immediately.
           </p>
         </section>
 
-        {/* Encryption at rest */}
         <section className="m-security-section" aria-labelledby="atrest-heading">
-          <h2 id="atrest-heading">Encryption at rest</h2>
+          <h2 id="atrest-heading">Data protection</h2>
           <ul>
-            <li><strong>Database</strong> — PostgreSQL 16 on AWS. Data at rest encrypted via AWS-managed AES-256 volume encryption.</li>
-            <li><strong>Agent configuration</strong> — CLIENTID, SERVERURL, and device credentials stored on the endpoint using Windows DPAPI, scoped to the current user. Not readable by other users on the same machine.</li>
-            <li><strong>API keys</strong> — Stored as salted SHA-256 hashes. The raw key is shown exactly once at creation. It cannot be recovered.</li>
+            <li><strong>Database storage</strong> &mdash; production data is stored on encrypted infrastructure storage.</li>
+            <li><strong>Agent configuration</strong> &mdash; tenant ID, server URL, device JWT, and tenant signing material are stored with Windows DPAPI protection.</li>
+            <li><strong>API keys</strong> &mdash; stored as SHA-256 hashes. The raw key is shown once at creation and cannot be recovered later.</li>
+            <li><strong>SMS verification codes</strong> &mdash; stored as SHA-256 hashes with a 10-minute expiry.</li>
           </ul>
         </section>
 
-        {/* Logging */}
         <section className="m-security-section" aria-labelledby="logging-heading">
-          <h2 id="logging-heading">Logging &amp; audit trail</h2>
+          <h2 id="logging-heading">Logging and audit trail</h2>
           <p>
-            Toast Notification maintains an <strong>append-only audit log</strong> for every
-            tenant. Writes cannot be deleted by tenant users or administrators. The following
-            events are recorded:
+            Toast Notification maintains tenant audit records at the application layer. Tenant
+            users cannot delete or alter audit entries. The following events are recorded:
           </p>
           <ul>
-            <li>Notification created, sent, delivered, clicked, dismissed, failed</li>
-            <li>User login, logout, MFA enroll, MFA verify</li>
-            <li>Device registration, heartbeat, decommission</li>
-            <li>Template created, modified, deleted</li>
-            <li>API key created, revoked</li>
-            <li>Asset uploaded, moderated, deleted</li>
+            <li>Notification created, sent, delivered, clicked, dismissed, and failed</li>
+            <li>User login, logout, MFA enrollment, and MFA verification</li>
+            <li>Device registration, heartbeat, and decommission</li>
+            <li>Template created, modified, and deleted</li>
+            <li>API key created and revoked</li>
+            <li>Asset uploaded, moderated, and deleted</li>
             <li>Tenant settings modified</li>
           </ul>
           <p>
-            Audit records include timestamp (UTC), actor (user ID or device ID), action, and
-            affected resource. Logs are exportable as CSV or PDF. Platform administrators
-            have a cross-tenant audit view; tenant administrators see only their own tenant.
+            Audit records include timestamp in UTC, actor, action, and affected resource.
+            Tenant administrators see their own tenant&rsquo;s records. Platform administrators
+            have a separate cross-tenant operational view.
           </p>
           <p>
-            <strong>Infrastructure logs</strong> (nginx access logs, systemd journal) are
-            retained on-server and are not currently shipped to a SIEM. This is an honest
-            gap — if you need a SIEM feed, contact us.
+            Customer-facing SIEM export is not currently part of the standard service.
           </p>
         </section>
 
-        {/* Code signing */}
         <section className="m-security-section" aria-labelledby="codesign-heading">
           <h2 id="codesign-heading">Code signing</h2>
           <p>
-            The Windows agent MSI and MSIX are signed with an <strong>Organization Validation
-            (OV) certificate</strong> issued by Sectigo. Signing is performed on a Thales
-            hardware security module — the private key cannot be extracted.
-            The published Store listing passes Windows certification review.
+            Windows agent packages are signed with an Organization Validation certificate
+            issued to Toast2IT, LLC. Signing uses hardware-backed key storage; the private key
+            is not exportable.
           </p>
           <p>
-            The <code>WinVerifyTrust</code> API is called on the agent binary during startup
-            to verify its own signature before loading. A tampered binary will fail this check
-            and refuse to run.
+            The agent validates its own signature before following its managed update path. A
+            binary that fails signature validation does not continue through that update
+            redirect flow.
           </p>
         </section>
 
-        {/* Pen test */}
-        <section className="m-security-section" aria-labelledby="pentest-heading">
-          <h2 id="pentest-heading">Pen-test results — May 2026</h2>
+        <section className="m-security-section" aria-labelledby="testing-heading">
+          <h2 id="testing-heading">Security testing - May 2026</h2>
           <p>
-            We ran a structured security pen-test against the production API in May 2026,
-            covering the following lanes:
+            The May 2026 security review covered these areas of the API and agent delivery
+            model:
           </p>
           <ul>
-            <li><strong>Tenant isolation</strong> — device list, device by ID, notification send targeting, catch-up endpoint, audit log, hub group events. All passed except one finding.</li>
-            <li><strong>Auth bypass</strong> — expired JWT, wrong signing key, missing device ID claim, user JWT on device endpoints, broadcast without MFA claim. All rejected correctly.</li>
-            <li><strong>Content injection</strong> — XSS in body, oversized title, Unicode boundary, <code>&lt;/script&gt;</code> in body. All handled by Azure Content Safety or input validation.</li>
-            <li><strong>Privilege escalation</strong> — Technician inviting users, Admin changing own role, Admin targeting other-tenant users, Technician broadcasting to 100+ devices, Admin without platform admin claim accessing system endpoints. All rejected correctly.</li>
+            <li><strong>Tenant isolation</strong> &mdash; device lists, device lookups, notification targeting, catch-up delivery, audit-log reads, and hub group events.</li>
+            <li><strong>Authentication bypass</strong> &mdash; expired JWTs, invalid signing keys, missing device claims, user tokens on device endpoints, and broadcast sends without MFA elevation.</li>
+            <li><strong>Content injection</strong> &mdash; script payloads, oversized titles, Unicode boundary cases, and HTML/script delimiters in notification body fields.</li>
+            <li><strong>Privilege escalation</strong> &mdash; role-restricted user invitations, role changes, cross-tenant user targeting, high-volume sends, and platform-admin-only endpoints.</li>
           </ul>
 
           <div className="m-security-finding">
-            <p className="m-security-finding-label">Finding patched in this session</p>
+            <p className="m-security-finding-label">Closed finding</p>
             <p>
-              <strong>FIX-M8C-001 — AuditController cross-tenant read (MEDIUM)</strong>
+              <strong>Audit-log tenant isolation</strong>
             </p>
             <p>
-              The <code>AuditController.List</code> and <code>AuditController.Export</code>
-              endpoints were missing a <code>tenantId</code> predicate. An authenticated
-              tenant admin could read audit log entries from other tenants by calling
-              <code>GET /api/audit</code> without any filter parameter.
+              A medium-severity tenant-isolation issue was identified in the per-tenant
+              audit-log list and export endpoints. The issue allowed an authenticated tenant
+              administrator to retrieve audit rows outside their tenant through those audit
+              endpoints.
             </p>
             <p>
-              <strong>Fix:</strong> Both endpoints now extract <code>tenantId</code> from
-              the JWT claim and apply <code>.Where(l =&gt; l.TenantId == tenantId)</code>
-              before any timestamp filter. A regression test was added that seeds two tenants,
-              seeds audit rows for both, and asserts that Tenant A cannot see Tenant B&rsquo;s rows.
+              The endpoints now scope every audit query to the caller&rsquo;s tenant ID before
+              applying date filters or export formatting. Regression coverage verifies that one
+              tenant cannot retrieve another tenant&rsquo;s audit rows.
             </p>
           </div>
 
           <p>
-            No other findings. The pen-test was conducted against the live production API using
-            the same test harness committed to the repository at{' '}
-            <code>tests/ToastRevival.Api.Tests/SecurityTests.cs</code> (20 test cases).
+            The review did not document any unresolved high- or critical-severity findings.
+            Security regression coverage remains part of the API test suite.
           </p>
         </section>
 
-        {/* Responsible disclosure */}
+        <section className="m-security-section" aria-labelledby="limits-heading">
+          <h2 id="limits-heading">Current boundaries</h2>
+          <ul>
+            <li>The production service is single-region.</li>
+            <li>Customer-facing SIEM export is not part of the standard service.</li>
+            <li>External content-safety scoring depends on configured provider credentials; tenant blocklists remain enforced by the API.</li>
+          </ul>
+        </section>
+
         <section className="m-security-section" aria-labelledby="disclosure-heading">
           <h2 id="disclosure-heading">Responsible disclosure</h2>
           <p>
-            Found something? Email{' '}
+            To report a vulnerability, email{' '}
             <a href="mailto:security@toastnotification.com">security@toastnotification.com</a>.
-            We&rsquo;ll respond within 48 hours. We don&rsquo;t have a bug bounty program
-            (we&rsquo;re a small operation) but we&rsquo;ll credit you publicly if you want
-            and we&rsquo;ll fix it fast.
+            Include the affected endpoint or component, reproduction steps, impact, and any
+            relevant screenshots or request IDs. We target an initial response within 48 hours.
           </p>
           <p>
-            Please don&rsquo;t run automated scanners against the production environment.
-            The test suite at <code>tests/ToastRevival.Api.Tests/SecurityTests.cs</code> is
-            the right place to probe the security surface in a controlled way.
+            Toast Notification does not currently operate a paid bug bounty program. Please do
+            not run destructive tests, high-volume scanners, spam campaigns, or social
+            engineering against production systems. We will coordinate reasonable validation
+            windows for good-faith reports.
           </p>
         </section>
 

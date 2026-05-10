@@ -46,6 +46,11 @@ function ensureLink(rel: string): HTMLLinkElement {
   return el;
 }
 
+function publicUrl(path: string): string {
+  if (path === '/' || path.includes('.') || path.endsWith('/')) return `${SITE_URL}${path}`;
+  return `${SITE_URL}${path}/`;
+}
+
 /**
  * Imperative head manager for marketing pages. No deps.
  *
@@ -68,7 +73,7 @@ export function useSeo(options: SeoOptions) {
 
   useEffect(() => {
     const fullTitle = appendSiteName && !title.includes(SITE_NAME) ? `${title} - ${SITE_NAME}` : title;
-    const url = `${SITE_URL}${path}`;
+    const url = publicUrl(path);
 
     document.title = fullTitle;
 
@@ -86,6 +91,7 @@ export function useSeo(options: SeoOptions) {
     ensureMeta('meta[name="twitter:title"]', 'name', 'twitter:title').setAttribute('content', fullTitle);
     ensureMeta('meta[name="twitter:description"]', 'name', 'twitter:description').setAttribute('content', description);
     ensureMeta('meta[name="twitter:image"]', 'name', 'twitter:image').setAttribute('content', image);
+    ensureMeta('meta[name="twitter:url"]', 'name', 'twitter:url').setAttribute('content', url);
 
     let script: HTMLScriptElement | null = null;
     if (jsonLd) {
@@ -193,7 +199,7 @@ export function techArticleLd(opts: {
     headline: opts.headline,
     description: opts.description,
     inLanguage: 'en',
-    url: `${SITE_URL}${opts.path}`,
+    url: publicUrl(opts.path),
     isPartOf: {
       '@type': 'WebSite',
       name: SITE_NAME,
@@ -215,7 +221,7 @@ export function breadcrumbLd(crumbs: Array<{ name: string; path: string }>): Rec
       '@type': 'ListItem',
       position: i + 1,
       name: c.name,
-      item: `${SITE_URL}${c.path}`,
+      item: publicUrl(c.path),
     })),
   };
 }

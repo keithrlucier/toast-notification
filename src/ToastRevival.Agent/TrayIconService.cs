@@ -13,7 +13,7 @@ namespace ToastRevival.Agent;
 /// and quit.
 ///
 /// Diana's M2.C spec:
-///   Connected       #00C9A7 teal, static
+///   Connected       #F59E0B amber, static
 ///   Reconnecting    #F59E0B amber, 700ms pulse between 100% and 55% brightness
 ///   Disconnected    #F59E0B amber, static
 ///   Error           #DC2626 red, static
@@ -95,7 +95,7 @@ internal sealed class TrayIconService : IDisposable
         _uiContext = SynchronizationContext.Current;
 
         _connectingIcon      = CreateBellIcon(16, Color.FromArgb(0x7A, 0x7A, 0x92));
-        _connectedIcon       = CreateBellIcon(16, Color.FromArgb(0x00, 0xC9, 0xA7));
+        _connectedIcon       = CreateBellIcon(16, Color.FromArgb(0xF5, 0x9E, 0x0B));
         _reconnectingIcon    = CreateBellIcon(16, Color.FromArgb(0xF5, 0x9E, 0x0B));
         _reconnectingDimIcon = CreateBellIcon(16, Color.FromArgb(0x86, 0x57, 0x06)); // ~55% brightness of amber
         _disconnectedIcon    = CreateBellIcon(16, Color.FromArgb(0xF5, 0x9E, 0x0B), strikethrough: true);

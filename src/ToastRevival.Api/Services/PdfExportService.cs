@@ -13,7 +13,7 @@ public interface IPdfExportService
 
 public class PdfExportService : IPdfExportService
 {
-    private const string Teal   = "#00C9A7";
+    private const string Amber  = "#F59E0B";
     private const string Dark   = "#1A1D27";
     private const string Light  = "#F5F7F9";
     private const string White  = "#FFFFFF";
@@ -33,7 +33,7 @@ public class PdfExportService : IPdfExportService
                 page.Header().Column(col =>
                 {
                     col.Item()
-                        .BorderBottom(3).BorderColor(Teal).PaddingBottom(8)
+                        .BorderBottom(3).BorderColor(Amber).PaddingBottom(8)
                         .Row(row =>
                         {
                             row.RelativeItem()
@@ -66,7 +66,7 @@ public class PdfExportService : IPdfExportService
                         foreach (var h in new[] { "Timestamp", "Action", "Resource Type", "Resource ID", "User", "IP Address" })
                         {
                             header.Cell()
-                                .Background(Teal).Padding(6)
+                                .Background(Amber).Padding(6)
                                 .Text(h).Bold().FontColor(White).FontSize(8);
                         }
                     });
@@ -113,7 +113,7 @@ public class PdfExportService : IPdfExportService
                 page.Header().Column(col =>
                 {
                     col.Item()
-                        .BorderBottom(3).BorderColor(Teal).PaddingBottom(8)
+                        .BorderBottom(3).BorderColor(Amber).PaddingBottom(8)
                         .Row(row =>
                         {
                             row.RelativeItem()
@@ -157,7 +157,7 @@ public class PdfExportService : IPdfExportService
                             foreach (var h in new[] { "Device Name", "Status", "Delivered At", "Action", "Error" })
                             {
                                 header.Cell()
-                                    .Background(Teal).Padding(6)
+                                    .Background(Amber).Padding(6)
                                     .Text(h).Bold().FontColor(White).FontSize(8);
                             }
                         });

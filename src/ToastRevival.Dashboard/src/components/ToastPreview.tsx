@@ -77,7 +77,7 @@ export default function ToastPreview({
             width: 16,
             height: 16,
             borderRadius: 3,
-            background: '#00C9A7',
+            background: '#F59E0B',
             flexShrink: 0,
             overflow: 'hidden',
             display: 'flex',

@@ -12,7 +12,7 @@
 
   Brand palette (matches https://toastnotification.com marketing site):
     --panel-dark   #0A0F1A   tile background
-    --brand-teal   #00C9A7   bell fill (Connected, Connecting halo)
+    --brand-amber  #F59E0B   bell fill (Connected, Connecting halo)
     --state-amber  #F59E0B   Reconnecting / Disconnected
     --state-red    #DC2626   Error
     --state-dim    #7A7A92   Connecting (tray only)
@@ -36,7 +36,7 @@
   <g transform="translate(0,0)" font-family="Inter, Segoe UI, sans-serif" font-size="10">
     <text x="0" y="14" fill="#F0F0F5">Tray icons (5 states · native 16px)</text>
 
-    <g transform="translate(0,30)" color="#00C9A7"><use href="#bell" width="32" height="32"/></g>
+    <g transform="translate(0,30)" color="#F59E0B"><use href="#bell" width="32" height="32"/></g>
     <text x="0" y="78" fill="#9090A8">Connected</text>
 
     <g transform="translate(60,30)" color="#F59E0B"><use href="#bell" width="32" height="32"/></g>
@@ -67,23 +67,23 @@
     <!-- Square 44×44. Real asset rendered at exact size. -->
     <g transform="translate(0,30)">
       <rect width="44" height="44" fill="#0A0F1A"/>
-      <g color="#00C9A7" transform="translate(4,4)"><use href="#bell" width="36" height="36"/></g>
+      <g color="#F59E0B" transform="translate(4,4)"><use href="#bell" width="36" height="36"/></g>
     </g>
     <text x="0" y="92" fill="#9090A8">Square44 · 44×44</text>
 
     <!-- Square 150×150 with halo. -->
     <g transform="translate(60,30)">
       <rect width="80" height="80" fill="#0A0F1A"/>
-      <ellipse cx="40" cy="40" rx="32" ry="32" fill="#00C9A7" fill-opacity="0.16"/>
-      <g color="#00C9A7" transform="translate(14,14)"><use href="#bell" width="52" height="52"/></g>
+      <ellipse cx="40" cy="40" rx="32" ry="32" fill="#F59E0B" fill-opacity="0.16"/>
+      <g color="#F59E0B" transform="translate(14,14)"><use href="#bell" width="52" height="52"/></g>
     </g>
     <text x="60" y="124" fill="#9090A8">Square150 · 150×150</text>
 
     <!-- Wide 310×150 (scaled to 165×80 for layout). -->
     <g transform="translate(160,30)">
       <rect width="165" height="80" fill="#0A0F1A"/>
-      <ellipse cx="36" cy="40" rx="28" ry="28" fill="#00C9A7" fill-opacity="0.16"/>
-      <g color="#00C9A7" transform="translate(11,15)"><use href="#bell" width="50" height="50"/></g>
+      <ellipse cx="36" cy="40" rx="28" ry="28" fill="#F59E0B" fill-opacity="0.16"/>
+      <g color="#F59E0B" transform="translate(11,15)"><use href="#bell" width="50" height="50"/></g>
       <text x="74" y="38" fill="#F0F0F5" font-weight="700" font-size="14">Toast</text>
       <text x="74" y="56" fill="#F0F0F5" font-weight="400" font-size="11">Notification</text>
     </g>
@@ -92,7 +92,7 @@
     <!-- StoreLogo 50×50. -->
     <g transform="translate(345,30)">
       <rect width="50" height="50" fill="#0A0F1A"/>
-      <g color="#00C9A7" transform="translate(5,5)"><use href="#bell" width="40" height="40"/></g>
+      <g color="#F59E0B" transform="translate(5,5)"><use href="#bell" width="40" height="40"/></g>
     </g>
     <text x="345" y="92" fill="#9090A8">StoreLogo · 50×50</text>
   </g>

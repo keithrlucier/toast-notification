@@ -5,7 +5,7 @@ public static class EmailTemplates
     private const string BgOuter  = "#0A0E1A";
     private const string BgCard   = "#0F1525";
     private const string BgBorder = "#1E2D45";
-    private const string Teal     = "#00C9A7";
+    private const string Amber    = "#F59E0B";
     private const string TextMain = "#EFF3FF";
     private const string TextSub  = "#8B9BBF";
     private const string TextDim  = "#5A6A8A";
@@ -30,8 +30,8 @@ public static class EmailTemplates
                       <tr>
                         <td style="padding-right:10px;">
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 3C8.5 3 6 6 6 9.5V14L4 17H20L18 14V9.5C18 6 15.5 3 12 3Z" stroke="{Teal}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M10 17C10 18.1 10.9 19 12 19C13.1 19 14 18.1 14 17" stroke="{Teal}" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M12 3C8.5 3 6 6 6 9.5V14L4 17H20L18 14V9.5C18 6 15.5 3 12 3Z" stroke="{Amber}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M10 17C10 18.1 10.9 19 12 19C13.1 19 14 18.1 14 17" stroke="{Amber}" stroke-width="2" stroke-linecap="round"/>
                           </svg>
                         </td>
                         <td style="font-size:16px;font-weight:600;color:{TextMain};letter-spacing:-0.01em;">Toast Notification</td>
@@ -75,7 +75,7 @@ public static class EmailTemplates
           <tr>
             <td align="center">
               <a href="{setPasswordUrl}"
-                 style="display:inline-block;background:{Teal};color:#0A0E1A;font-size:15px;font-weight:700;
+                 style="display:inline-block;background:{Amber};color:#0A0E1A;font-size:15px;font-weight:700;
                         text-decoration:none;padding:14px 32px;border-radius:4px;letter-spacing:-0.01em;">
                 Set your password
               </a>
@@ -102,7 +102,7 @@ public static class EmailTemplates
           <tr>
             <td align="center">
               <a href="{resetUrl}"
-                 style="display:inline-block;background:{Teal};color:#0A0E1A;font-size:15px;font-weight:700;
+                 style="display:inline-block;background:{Amber};color:#0A0E1A;font-size:15px;font-weight:700;
                         text-decoration:none;padding:14px 32px;border-radius:4px;letter-spacing:-0.01em;">
                 Reset password
               </a>

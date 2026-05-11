@@ -7,7 +7,7 @@ param(
 #
 # Brand expression matches the marketing site (https://toastnotification.com):
 #   Background  #0A0F1A   near-black panel
-#   Accent      #00C9A7   brand teal
+#   Accent      #F59E0B   brand amber
 #   Wordmark    #F0F0F5   warm white, "Toast Notification" (Wide tile only)
 #
 # All four assets share a single brand bell silhouette. Same path data as the
@@ -32,8 +32,8 @@ if (-not $OutputDir) {
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 $panelDark   = [System.Drawing.Color]::FromArgb(10, 15, 26)    # #0A0F1A near-black
-$brandTeal   = [System.Drawing.Color]::FromArgb(0, 201, 167)   # #00C9A7 brand teal
-$tealGlow    = [System.Drawing.Color]::FromArgb(40, 0, 201, 167) # 16% alpha for halo
+$brandAmber   = [System.Drawing.Color]::FromArgb(245, 158, 11)   # #F59E0B brand amber
+$amberGlow    = [System.Drawing.Color]::FromArgb(40, 245, 158, 11) # 16% alpha for halo
 $textPrimary = [System.Drawing.Color]::FromArgb(240, 240, 245) # #F0F0F5 wordmark
 
 <#
@@ -114,7 +114,7 @@ function New-PanelTile {
     # Subtle teal halo behind the bell -- softens the high-contrast bell-on-panel
     # at large sizes (150+). Skipped at 44/50 because the halo just adds noise.
     if ($shortest -ge 100) {
-        $haloBrush = New-Object System.Drawing.SolidBrush($tealGlow)
+        $haloBrush = New-Object System.Drawing.SolidBrush($amberGlow)
         $haloPad   = [single]($shortest * 0.06)
         $graphics.FillEllipse($haloBrush,
             ($bellX - $haloPad), ($bellY - $haloPad),
@@ -123,7 +123,7 @@ function New-PanelTile {
     }
 
     $bell = New-BellPath -X $bellX -Y $bellY -W $bellW -H $bellH
-    $brush = New-Object System.Drawing.SolidBrush($brandTeal)
+    $brush = New-Object System.Drawing.SolidBrush($brandAmber)
     $graphics.FillPath($brush, $bell)
     $brush.Dispose()
     $bell.Dispose()
@@ -156,7 +156,7 @@ function New-WidePanelTile {
     $bellX    = [single]($bellPad + 4)
     $bellY    = [single](($Height - $bellSize) / 2)
 
-    $haloBrush = New-Object System.Drawing.SolidBrush($tealGlow)
+    $haloBrush = New-Object System.Drawing.SolidBrush($amberGlow)
     $haloPad   = [single]($Height * 0.05)
     $graphics.FillEllipse($haloBrush,
         ($bellX - $haloPad), ($bellY - $haloPad),
@@ -164,7 +164,7 @@ function New-WidePanelTile {
     $haloBrush.Dispose()
 
     $bell = New-BellPath -X $bellX -Y $bellY -W $bellSize -H $bellSize
-    $brush = New-Object System.Drawing.SolidBrush($brandTeal)
+    $brush = New-Object System.Drawing.SolidBrush($brandAmber)
     $graphics.FillPath($brush, $bell)
     $brush.Dispose()
     $bell.Dispose()

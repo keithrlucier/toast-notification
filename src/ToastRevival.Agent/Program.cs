@@ -388,90 +388,100 @@ namespace ToastRevival.Agent
     {
         public static async Task<int> RunAsync(string[] _)
         {
-            var config = ConfigStore.TryLoad();
-            if (config is null)
+            // Registration retry loop: if the hub tells us this device was deleted,
+            // config.json is cleared and we loop back to re-register immediately
+            // without waiting for the next logon.
+            while (true)
             {
-                DiagLog.Write("PrimaryMode: no DeviceConfig — running first-run registration.");
-                config = await TryFirstRunRegistrationAsync();
+                var config = ConfigStore.TryLoad();
                 if (config is null)
                 {
-                    Console.Error.WriteLine("Toast Notification agent is not configured. Set TOAST_TENANT_ID and TOAST_SERVER_URL, or have the installer drop bootstrap.json next to the exe.");
-                    DiagLog.Write("PrimaryMode EXIT 9: agent not configured.");
-                    return 9;
+                    DiagLog.Write("PrimaryMode: no DeviceConfig — running first-run registration.");
+                    config = await TryFirstRunRegistrationAsync();
+                    if (config is null)
+                    {
+                        DiagLog.Write("PrimaryMode EXIT 9: agent not configured.");
+                        return 9;
+                    }
                 }
-            }
 
-            try
-            {
-                // Keep Register() after AgentHubClient construction. The constructor subscribes to
-                // NotificationInvoked, and Windows App SDK throws COMException 0x80070490 if the
-                // event is subscribed after registration.
-                await using var client = new AgentHubClient(config);
-
-                AppNotificationManager.Default.Register();
-                DiagLog.Write("PrimaryMode: Register() returned.");
-
-                // Tray icon is visible from process start (Connecting state) so the
-                // user sees the agent in their tray at logon before the hub connects.
-                using var tray = new TrayIconService(config.ServerUrl);
-                client.ConnectionStateChanged += (_, state) => tray.UpdateState(state);
-
-                // Ctrl+C / SIGTERM and tray Quit both cancel shutdown.
-                using var shutdown = new CancellationTokenSource();
-                Console.CancelKeyPress += (_, e) =>
-                {
-                    e.Cancel = true;
-                    try { shutdown.Cancel(); } catch (ObjectDisposedException) { }
-                };
-                tray.QuitRequested    += () => shutdown.Cancel();
-                tray.ReconnectRequested += async () =>
-                {
-                    try { await client.ReconnectAsync(); }
-                    catch (Exception ex) { DiagLog.Write($"ReconnectRequested: {ex.GetType().Name}: {ex.Message}"); }
-                };
-                tray.SendTestRequested += () =>
-                {
-                    try
-                    {
-                        var assets = new FileSystemToastAssets(AppContext.BaseDirectory);
-                        var tmpl   = ToastTemplateCatalog.All[ToastTemplateKey.Announcement];
-                        var note   = ToastTemplateBuilder.Build(tmpl, assets, "Test Notification", "Toast Notification agent is connected and working.");
-                        AppNotificationManager.Default.Show(note);
-                        DiagLog.Write("PrimaryMode: test notification sent from tray.");
-                    }
-                    catch (Exception ex)
-                    {
-                        DiagLog.Write($"PrimaryMode: test notification failed: {ex.GetType().Name}: {ex.Message}");
-                    }
-                };
-
-                // Wire auto-update: download completes → show tray "Update Available" item.
-                UpdateService.UpdateReady += version => tray.ShowUpdateAvailable(version);
-                tray.ApplyUpdateRequested += () =>
-                {
-                    try { UpdateService.ApplyUpdateAndRestart(); }
-                    catch (Exception ex) { DiagLog.Write($"PrimaryMode: ApplyUpdate failed: {ex.GetType().Name}: {ex.Message}"); }
-                };
-
-                // Background update check loop — non-blocking fire-and-forget.
-                // Cancels cleanly when shutdown is triggered.
-                var updateTask = Task.Run(() => UpdateService.RunUpdateLoopAsync(shutdown.Token));
-
-                await client.StartAsync(shutdown.Token);
-                Console.WriteLine($"Toast Notification agent online (deviceId={config.DeviceId}). Ctrl+C to exit.");
-
+                var reregister = false;
                 try
                 {
-                    await Task.Delay(Timeout.InfiniteTimeSpan, shutdown.Token);
-                }
-                catch (OperationCanceledException) { /* shutdown */ }
+                    // Keep Register() after AgentHubClient construction. The constructor subscribes
+                    // to NotificationInvoked, and Windows App SDK throws COMException 0x80070490
+                    // if the event is subscribed after registration.
+                    await using var client = new AgentHubClient(config);
 
-                DiagLog.Write("PrimaryMode EXIT 0: clean shutdown.");
-                return 0;
-            }
-            finally
-            {
-                try { AppNotificationManager.Default.Unregister(); } catch { /* best-effort */ }
+                    AppNotificationManager.Default.Register();
+                    DiagLog.Write("PrimaryMode: Register() returned.");
+
+                    using var tray = new TrayIconService(config.ServerUrl);
+                    client.ConnectionStateChanged += (_, state) => tray.UpdateState(state);
+
+                    using var shutdown = new CancellationTokenSource();
+                    Console.CancelKeyPress += (_, e) =>
+                    {
+                        e.Cancel = true;
+                        try { shutdown.Cancel(); } catch (ObjectDisposedException) { }
+                    };
+                    tray.QuitRequested      += () => shutdown.Cancel();
+                    tray.ReconnectRequested += async () =>
+                    {
+                        try { await client.ReconnectAsync(); }
+                        catch (Exception ex) { DiagLog.Write($"ReconnectRequested: {ex.GetType().Name}: {ex.Message}"); }
+                    };
+                    tray.SendTestRequested += () =>
+                    {
+                        try
+                        {
+                            var assets = new FileSystemToastAssets(AppContext.BaseDirectory);
+                            var tmpl   = ToastTemplateCatalog.All[ToastTemplateKey.Announcement];
+                            var note   = ToastTemplateBuilder.Build(tmpl, assets,
+                                "Toast Notification",
+                                "Agent is connected. Notifications from your admin will appear here.");
+                            AppNotificationManager.Default.Show(note);
+                            DiagLog.Write("PrimaryMode: test notification sent from tray.");
+                        }
+                        catch (Exception ex)
+                        {
+                            DiagLog.Write($"PrimaryMode: test notification failed: {ex.GetType().Name}: {ex.Message}");
+                        }
+                    };
+
+                    UpdateService.UpdateReady += version => tray.ShowUpdateAvailable(version);
+                    tray.ApplyUpdateRequested += () =>
+                    {
+                        try { UpdateService.ApplyUpdateAndRestart(); }
+                        catch (Exception ex) { DiagLog.Write($"PrimaryMode: ApplyUpdate failed: {ex.GetType().Name}: {ex.Message}"); }
+                    };
+
+                    var updateTask = Task.Run(() => UpdateService.RunUpdateLoopAsync(shutdown.Token));
+
+                    client.OnDecommissioned += () =>
+                    {
+                        reregister = true;
+                        shutdown.Cancel();
+                    };
+
+                    await client.StartAsync(shutdown.Token);
+                    DiagLog.Write($"PrimaryMode: agent online (deviceId={config.DeviceId})");
+
+                    try { await Task.Delay(Timeout.InfiniteTimeSpan, shutdown.Token); }
+                    catch (OperationCanceledException) { }
+                }
+                finally
+                {
+                    try { AppNotificationManager.Default.Unregister(); } catch { /* best-effort */ }
+                }
+
+                if (!reregister)
+                {
+                    DiagLog.Write("PrimaryMode EXIT 0: clean shutdown.");
+                    return 0;
+                }
+
+                DiagLog.Write("PrimaryMode: device decommissioned — re-registering immediately.");
             }
         }
 

@@ -13,6 +13,11 @@
 
     <SummaryInformation Description="Toast Notification Agent installer" />
 
+    <Icon Id="ProductIcon" SourceFile="$(var.PublishDir)\ToastNotification.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
+    <Property Id="ARPHELPLINK"    Value="https://toastnotification.com/docs/getting-started" />
+    <Property Id="ARPURLINFOABOUT" Value="https://toastnotification.com" />
+
     <!-- EULA dialog (WixUI_Minimal: one screen with license acceptance). -->
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
     <ui:WixUI Id="WixUI_Minimal" />

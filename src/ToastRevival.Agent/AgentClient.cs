@@ -99,6 +99,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
     private static readonly TimeSpan DedupWindow = TimeSpan.FromHours(1);
 
     public event EventHandler<AgentConnectionState>? ConnectionStateChanged;
+    public event Action? OnDecommissioned;
 
     private readonly DeviceConfig _config;
     private readonly HubConnection _hub;
@@ -154,16 +155,9 @@ internal sealed class AgentHubClient : IAsyncDisposable
         _hub.On<string, string>("ReceiveNotification", OnReceiveNotificationAsync);
         _hub.On("DeviceDecommissioned", () =>
         {
-            DiagLog.Write("DeviceDecommissioned: clearing config and restarting for immediate re-registration.");
+            DiagLog.Write("DeviceDecommissioned: clearing config for immediate re-registration.");
             try { File.Delete(ConfigStore.GetConfigPath()); } catch { /* best-effort */ }
-            // Restart this process so it re-registers without waiting for next logon.
-            try
-            {
-                var exe = Environment.ProcessPath
-                    ?? Path.Combine(AppContext.BaseDirectory, "ToastNotification.Agent.exe");
-                System.Diagnostics.Process.Start(exe);
-            }
-            catch (Exception ex) { DiagLog.Write($"DeviceDecommissioned: restart failed: {ex.Message}"); }
+            OnDecommissioned?.Invoke();
             _shutdown.Cancel();
         });
         _hub.Reconnecting += ex =>

@@ -18,17 +18,11 @@
     <ui:WixUI Id="WixUI_Minimal" />
 
     <!--
-      INFO-M2C-002: OS floor enforcement. Windows 10 build 19041 (2004, May 2020)
-      is the minimum supported version — WinUI 3 and AppNotificationManager require
-      it. VersionNT64 is the 64-bit OS version in MMNN format; 19041 decimal.
-      This prevents the agent from being silently installed on unsupported OS
-      versions and exiting at runtime with code 2.
+      OS floor is enforced at runtime by Program.cs — OperatingSystem.IsWindowsVersionAtLeast(10,0,19041).
+      MSI Launch conditions using VersionNT/VersionNT64 return the compatibility-shim
+      version (603) on Windows 10/11 when no Windows 10 manifest entry is present,
+      making any >= 1000 check always fail. Runtime enforcement is the correct gate.
     -->
-    <!--
-      VersionNT64 is major*100+minor: Windows 10/11 = 1000. This catches pre-Win10
-      (7=601, 8.1=603). Precise build-19041 floor is enforced at runtime by Program.cs.
-    -->
-    <Launch Condition="VersionNT64 &gt;= 1000" Message="Toast Notification Agent requires Windows 10 or later." />
 
     <MediaTemplate EmbedCab="yes" />
 

@@ -157,12 +157,26 @@
                   Impersonate="no"
                   Return="ignore" />
 
+    <!--
+      Uninstall: wipe the per-user config directory so a reinstall triggers
+      fresh device registration instead of reusing a stale/decommissioned deviceId.
+      Runs impersonated (user context) so %LOCALAPPDATA% resolves to the correct
+      profile. Return="ignore" — directory may not exist and that is fine.
+    -->
+    <CustomAction Id="DeleteUserConfig"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]cmd.exe&quot; /c rd /s /q &quot;%LOCALAPPDATA%\Toast2IT\Toast Notification&quot;"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+
     <InstallExecuteSequence>
       <!-- Write bootstrap.json first; schedule task fires into a configured agent. -->
-      <Custom Action="WriteBootstrapJson"   After="InstallFiles"        Condition="NOT REMOVE AND CLIENTID &lt;&gt; &quot;&quot; AND SERVERURL &lt;&gt; &quot;&quot;" />
-      <Custom Action="InstallScheduledTask" After="WriteBootstrapJson"  Condition="NOT REMOVE" />
-      <Custom Action="UninstallScheduledTask" Before="DeleteBootstrapJson" Condition="REMOVE=&quot;ALL&quot;" />
-      <Custom Action="DeleteBootstrapJson"  Before="RemoveFiles"        Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="WriteBootstrapJson"     After="InstallFiles"          Condition="NOT REMOVE AND CLIENTID &lt;&gt; &quot;&quot; AND SERVERURL &lt;&gt; &quot;&quot;" />
+      <Custom Action="InstallScheduledTask"   After="WriteBootstrapJson"    Condition="NOT REMOVE" />
+      <Custom Action="UninstallScheduledTask" Before="DeleteUserConfig"     Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="DeleteUserConfig"       Before="DeleteBootstrapJson"  Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="DeleteBootstrapJson"    Before="RemoveFiles"          Condition="REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>
 
   </Package>

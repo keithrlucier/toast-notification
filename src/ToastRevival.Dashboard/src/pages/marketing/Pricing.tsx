@@ -53,15 +53,6 @@ const INCLUSIONS = [
       'Device enrollment keys for restricted registration',
     ],
   },
-  {
-    heading: 'Branding & ops',
-    items: [
-      'Tenant logo, primary color, and default audio/scenario',
-      'API keys with revocation',
-      'Stripe billing portal for self-serve plan and payment management',
-      'Email support, business-hours response',
-    ],
-  },
 ];
 
 const FAQ = [

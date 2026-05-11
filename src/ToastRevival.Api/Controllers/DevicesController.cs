@@ -96,7 +96,7 @@ public class DevicesController : ControllerBase
             device.Id.ToString(), new { device.DeviceName, device.Username },
             HttpContext.Connection.RemoteIpAddress?.ToString());
 
-        return Ok(new DeviceTokenResponse(jwt, device.Id, req.TenantId, tenant.SigningKey));
+        return Ok(new DeviceTokenResponse(jwt, device.Id, req.TenantId, tenant.SigningKey, tenant.Name));
     }
 
     [Authorize]

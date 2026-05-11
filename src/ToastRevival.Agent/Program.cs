@@ -413,6 +413,10 @@ namespace ToastRevival.Agent
                     // if the event is subscribed after registration.
                     await using var client = new AgentHubClient(config);
 
+                    // Set notification attribution to tenant name before Register() so toasts
+                    // show the tenant name (e.g. "Colo Solutions") instead of "ToastNotification".
+                    NotificationDisplayName.Apply(config.TenantName);
+
                     AppNotificationManager.Default.Register();
                     DiagLog.Write("PrimaryMode: Register() returned.");
 

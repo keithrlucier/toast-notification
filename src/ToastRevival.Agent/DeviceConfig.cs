@@ -15,7 +15,8 @@ internal sealed record DeviceConfig(
     [property: JsonPropertyName("serverUrl")]  string  ServerUrl,
     [property: JsonPropertyName("deviceId")]   Guid    DeviceId,
     [property: JsonPropertyName("deviceToken")]string  DeviceToken,
-    [property: JsonPropertyName("signingKey")] string  SigningKey);
+    [property: JsonPropertyName("signingKey")] string  SigningKey,
+    [property: JsonPropertyName("tenantName")] string? TenantName = null);
 
 /// <summary>
 /// Bootstrap config dropped next to the exe by the MSI/MSIX installer (D9).

@@ -57,7 +57,7 @@ internal static class RegistrationService
             DiagLog.Write($"Registration OK: deviceId={dto.DeviceId}");
             return new DeviceConfig(
                 bootstrap.TenantId, bootstrap.ServerUrl,
-                dto.DeviceId, dto.Token, dto.SigningKey);
+                dto.DeviceId, dto.Token, dto.SigningKey, dto.TenantName);
         }
         catch (Exception ex)
         {
@@ -66,7 +66,7 @@ internal static class RegistrationService
         }
     }
 
-    private record DeviceTokenResponse(string Token, Guid DeviceId, Guid TenantId, string SigningKey);
+    private record DeviceTokenResponse(string Token, Guid DeviceId, Guid TenantId, string SigningKey, string? TenantName = null);
 }
 
 /// <summary>

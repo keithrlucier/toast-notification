@@ -166,10 +166,10 @@ WS-014: payload unsigned`}
             <div style={{ padding: '32px', background: 'var(--bg-secondary)', borderRadius: '16px', border: '1px solid rgba(56, 189, 248, 0.3)', minWidth: '300px', flex: '1', maxWidth: '400px', position: 'relative' }}>
               <div style={{ position: 'absolute', top: '-14px', left: '50%', transform: 'translateX(-50%)', background: '#38bdf8', color: '#0f172a', padding: '6px 16px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>Production Fleet</div>
               <div style={{ fontSize: '24px', fontWeight: 600, color: '#f8fafc', marginBottom: '8px' }}>$0.22</div>
-              <div style={{ fontSize: '16px', fontWeight: 400, color: '#94a3b8', marginBottom: '16px' }}>per device / month</div>
+              <div style={{ fontSize: '16px', fontWeight: 400, color: '#94a3b8', marginBottom: '16px' }}>per signed-in user / month</div>
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, textAlign: 'left', color: '#cbd5e1', fontSize: '15px' }}>
-                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>✓ Starts at device 26</li>
-                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>✓ Pay only for active agents</li>
+                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>✓ $22/mo minimum (100 users)</li>
+                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>✓ 1 device = 1 signed-in user</li>
                 <li style={{ padding: '12px 0' }}>✓ Cancel anytime</li>
               </ul>
             </div>

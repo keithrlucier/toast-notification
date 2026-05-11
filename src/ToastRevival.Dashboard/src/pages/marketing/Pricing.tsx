@@ -67,7 +67,7 @@ const INCLUSIONS = [
 const FAQ = [
   {
     q: 'How is a "device" counted?',
-    a: 'A device is any Windows endpoint where the Toast Notification agent is registered and currently active. Decommissioning a device frees the slot immediately. Inactive devices that have not pinged in 30 days are not billed.',
+    a: 'The app is licensed per signed-in user. A single computer with two active users consumes two device licenses. Decommissioning a device frees the slot immediately. Inactive devices that have not pinged in 30 days are not billed.',
   },
   {
     q: 'How does device counting work on Terminal Server / RDS?',

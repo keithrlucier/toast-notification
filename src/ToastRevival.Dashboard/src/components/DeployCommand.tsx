@@ -6,15 +6,13 @@ interface TenantSettingsLite {
   enrollmentKey: string | null;
 }
 
-// Module-level cache — enrollment key is immutable for the session, so we only
-// fetch once regardless of how many times DeployCommand mounts.
 let _enrollmentKeyCache: Promise<string | null> | null = null;
 
 function getEnrollmentKey(): Promise<string | null> {
   if (!_enrollmentKeyCache) {
     _enrollmentKeyCache = api.get<TenantSettingsLite>('/api/tenant/settings')
       .then(res => res.enrollmentKey ?? null)
-      .catch(() => null); // non-fatal
+      .catch(() => null);
   }
   return _enrollmentKeyCache;
 }
@@ -24,27 +22,26 @@ export default function DeployCommand() {
   const [copied, setCopied] = useState(false);
   const [enrollmentKey, setEnrollmentKey] = useState<string | null>(null);
 
-  // M9.C / INFO-M1-003: pull the per-tenant enrollment key so MSPs can paste
-  // it into their RMM script. Admin-only on the server side; non-admin users
-  // see a deploy command without ENROLLMENTKEY (their device installs will be
-  // rejected unless an admin shares the key out-of-band).
   useEffect(() => {
     let cancelled = false;
     getEnrollmentKey().then(key => { if (!cancelled) setEnrollmentKey(key); });
     return () => { cancelled = true; };
   }, []);
 
-  const tenantId  = user?.tenantId ?? '<your-tenant-id>';
-  const serverUrl = window.location.origin;
-  const enrollmentLine = enrollmentKey
-    ? ` ^\n  ENROLLMENTKEY=${enrollmentKey}`
-    : '';
-  const command   =
-    `msiexec /i ToastNotification.msi /qn ^\n  CLIENTID=${tenantId}${enrollmentLine} ^\n  SERVERURL=${serverUrl}`;
+  const tenantId   = user?.tenantId ?? '<your-tenant-id>';
+  const serverUrl  = window.location.origin;
+  const msiUrl     = `${serverUrl}/downloads/ToastNotification.msi`;
+  const enrollmentPart = enrollmentKey ? ` ENROLLMENTKEY=${enrollmentKey}` : '';
+
+  // Full one-liner: download from our server then silent-install with tenant credentials.
+  // $f and $env:TEMP are PowerShell variables — not JS template expressions.
+  const oneLiner =
+    `$f="$env:TEMP\\ToastNotification.msi"; ` +
+    `Invoke-WebRequest "${msiUrl}" -OutFile $f; ` +
+    `msiexec /i $f /qn CLIENTID=${tenantId} SERVERURL=${serverUrl}${enrollmentPart}`;
 
   const copy = () => {
-    // collapse caret-newline-spaces back into single spaces for clipboard
-    navigator.clipboard.writeText(command.replace(/ \^\n\s+/g, ' ')).then(() => {
+    navigator.clipboard.writeText(oneLiner).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -60,7 +57,7 @@ export default function DeployCommand() {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--accent)' }}>
-          Deploy command
+          Deploy agents
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
@@ -71,7 +68,7 @@ export default function DeployCommand() {
             {copied ? '✓ Copied' : 'Copy'}
           </button>
           <a
-            href="/downloads/ToastNotification.msi"
+            href={msiUrl}
             download
             className="btn btn-primary"
             style={{ fontSize: 12, padding: '6px 14px', minHeight: 0, textDecoration: 'none' }}
@@ -99,7 +96,7 @@ export default function DeployCommand() {
 
       <pre style={{
         fontFamily: 'var(--font-mono)',
-        fontSize: 13,
+        fontSize: 12,
         lineHeight: 1.7,
         color: 'var(--text-primary)',
         background: 'var(--bg-tertiary)',
@@ -109,8 +106,9 @@ export default function DeployCommand() {
         overflowX: 'auto',
         whiteSpace: 'pre',
         border: '1px solid rgba(255,255,255,0.06)',
+        wordBreak: 'break-all',
       }}>
-        {command}
+        {oneLiner}
       </pre>
 
       <div style={{ marginTop: 12, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
@@ -131,7 +129,8 @@ export default function DeployCommand() {
       </div>
 
       <p style={{ marginTop: 10, fontSize: 12, color: 'var(--text-dim)' }}>
-        Drop this in your RMM, Intune, or run it directly.
+        Paste into PowerShell on any endpoint — downloads and installs silently.
+        Drop the same command in your RMM or Intune for mass deployment.
         Agents appear in the device list within seconds of first launch.
       </p>
     </div>

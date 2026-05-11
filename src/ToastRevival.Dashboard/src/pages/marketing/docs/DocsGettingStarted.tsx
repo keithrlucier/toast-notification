@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { CodeBlock, Callout } from '../../../components/marketing/CodeBlock';
+import { CodeBlock } from '../../../components/marketing/CodeBlock';
 import { useSeo, techArticleLd, breadcrumbLd } from '../../../lib/seo';
 
 export default function DocsGettingStarted() {

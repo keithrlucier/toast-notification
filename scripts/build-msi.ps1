@@ -28,6 +28,14 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)" }
 
 if (-not (Test-Path $publishDir)) { throw "Publish directory not found: $publishDir" }
 
+# Strip all non-English locale resource folders. Both .NET and Windows App SDK
+# publish satellite assemblies for every supported locale. We only ship English.
+$stripped = 0
+Get-ChildItem $publishDir -Directory |
+    Where-Object { $_.Name -match '^\w{2,3}(-\w+)*$' -and $_.Name -notlike 'en*' } |
+    ForEach-Object { Remove-Item $_.FullName -Recurse -Force; $stripped++ }
+if ($stripped -gt 0) { Write-Host "==> Stripped $stripped non-English locale folders." }
+
 New-Item -ItemType Directory -Force -Path $installerOut | Out-Null
 
 $wix = Get-Command wix.exe -ErrorAction SilentlyContinue

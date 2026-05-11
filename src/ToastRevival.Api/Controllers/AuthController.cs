@@ -468,6 +468,65 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Sends a one-time SMS code to the caller's confirmed phone number.
+    /// Used to elevate the session for broadcast-to-all sends.
+    /// Returns the masked phone number so the UI can confirm the destination.
+    /// </summary>
+    [HttpPost("mfa/send-sms")]
+    [Authorize]
+    [EnableRateLimiting("login-sms-per-ip")]
+    public async Task<ActionResult> MfaSendSms()
+    {
+        var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
+
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
+        if (user is null) return Unauthorized();
+
+        if (!user.PhoneNumberConfirmed || string.IsNullOrWhiteSpace(user.PhoneNumber))
+            return BadRequest("No verified phone number on this account.");
+
+        var code = GenerateSmsCode();
+        user.SmsVerificationCode = HashSmsCode(code);
+        user.SmsCodeExpiry       = DateTime.UtcNow.AddMinutes(10);
+        await _db.SaveChangesAsync();
+
+        await _sms.SendAsync(user.PhoneNumber, $"Your Toast Notification verification code is: {code}. It expires in 10 minutes.");
+
+        return Ok(new { masked = MaskPhone(user.PhoneNumber) });
+    }
+
+    /// <summary>
+    /// Verifies an SMS code sent via POST /api/auth/mfa/send-sms.
+    /// Returns a short-lived MFA-elevated JWT (15 min, mfa=true claim).
+    /// </summary>
+    [HttpPost("mfa/verify-sms")]
+    [Authorize]
+    [EnableRateLimiting("login-sms-per-ip")]
+    public async Task<ActionResult<MfaVerifyResponse>> MfaVerifySms([FromBody] MfaVerifyRequest req)
+    {
+        var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
+
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
+        if (user is null) return Unauthorized();
+
+        if (user.SmsCodeExpiry is null || user.SmsCodeExpiry < DateTime.UtcNow)
+            return Unauthorized("Verification code expired.");
+
+        if (user.SmsVerificationCode != HashSmsCode(req.Code.Trim()))
+            return Unauthorized("Incorrect verification code.");
+
+        user.SmsVerificationCode = null;
+        user.SmsCodeExpiry       = null;
+        await _db.SaveChangesAsync();
+
+        var expiresAt = DateTime.UtcNow.AddMinutes(15);
+        var mfaToken  = _tokens.CreateMfaToken(user);
+        return Ok(new MfaVerifyResponse(mfaToken, expiresAt));
+    }
+
+    /// <summary>
     /// Generates a TOTP secret for the calling user and returns the base32
     /// secret + an otpauth:// URI suitable for QR code display.
     /// The secret is saved to AppUser.MfaSecret — existing TOTP sessions on

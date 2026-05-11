@@ -67,4 +67,10 @@ export const authApi = {
 
   mfaVerify: (req: MfaVerifyRequest) =>
     api.post<MfaVerifyResponse>('/api/auth/mfa/verify', req),
+
+  mfaSendSms: () =>
+    api.post<{ masked: string }>('/api/auth/mfa/send-sms'),
+
+  mfaVerifySms: (req: MfaVerifyRequest) =>
+    api.post<MfaVerifyResponse>('/api/auth/mfa/verify-sms', req),
 };

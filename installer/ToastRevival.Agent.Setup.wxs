@@ -124,6 +124,21 @@
                   Impersonate="no"
                   Return="check" />
 
+    <!--
+      Run the agent immediately after install so the device registers without
+      requiring a logoff/logon cycle. schtasks /Run fires the task in the
+      logged-on user's session (LeastPrivilege, unelevated) — the same context
+      the LogonTrigger would use. Return="ignore" because if no interactive
+      session exists (e.g. silent RMM push) the run fails cleanly and the
+      LogonTrigger handles first-run at next logon.
+    -->
+    <CustomAction Id="StartAgentNow"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Run /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <CustomAction Id="KillAgent"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[System64Folder]taskkill.exe&quot; /F /IM ToastNotification.Agent.exe /T"
@@ -186,6 +201,7 @@
       <!-- Write bootstrap.json first; schedule task fires into a configured agent. -->
       <Custom Action="WriteBootstrapJson"     After="InstallFiles"          Condition="NOT REMOVE AND CLIENTID &lt;&gt; &quot;&quot; AND SERVERURL &lt;&gt; &quot;&quot;" />
       <Custom Action="InstallScheduledTask"   After="WriteBootstrapJson"    Condition="NOT REMOVE" />
+      <Custom Action="StartAgentNow"          After="InstallScheduledTask"  Condition="NOT REMOVE" />
       <Custom Action="KillAgent"              Before="UninstallScheduledTask" Condition="REMOVE=&quot;ALL&quot;" />
       <Custom Action="UninstallScheduledTask" Before="DeleteUserConfig"      Condition="REMOVE=&quot;ALL&quot;" />
       <Custom Action="DeleteUserConfig"       Before="DeleteBootstrapJson"  Condition="REMOVE=&quot;ALL&quot;" />

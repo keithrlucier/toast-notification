@@ -8,6 +8,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot       = Split-Path -Parent $PSScriptRoot
 $projectPath    = Join-Path $repoRoot "src\ToastRevival.Agent\ToastRevival.Agent.csproj"
+$agentSrcDir    = Join-Path $repoRoot "src\ToastRevival.Agent"
 $publishDir     = Join-Path $repoRoot "artifacts\ToastRevival.Agent\$RuntimeIdentifier-self-contained"
 $installerSrc   = Join-Path $repoRoot "installer\ToastRevival.Agent.Setup.wxs"
 $logonTaskXml   = Join-Path $repoRoot "installer\ToastNotificationLogon.xml"
@@ -54,6 +55,7 @@ Write-Host "==> Building MSI ($Version) -> $msiPath"
     -d "ProductVersion=$Version" `
     -d "LogonTaskXmlPath=$logonTaskXml" `
     -d "LicenseRtf=$licenseRtf" `
+    -d "AgentSrcDir=$agentSrcDir" `
     -o $msiPath
 if ($LASTEXITCODE -ne 0) { throw "wix build failed (exit $LASTEXITCODE)" }
 

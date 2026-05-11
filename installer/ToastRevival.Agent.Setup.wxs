@@ -13,7 +13,7 @@
 
     <SummaryInformation Description="Toast Notification Agent installer" />
 
-    <Icon Id="ProductIcon" SourceFile="$(var.PublishDir)\ToastNotification.ico" />
+    <Icon Id="ProductIcon" SourceFile="$(var.AgentSrcDir)\ToastNotification.ico" />
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
     <Property Id="ARPHELPLINK"    Value="https://toastnotification.com/docs/getting-started" />
     <Property Id="ARPURLINFOABOUT" Value="https://toastnotification.com" />

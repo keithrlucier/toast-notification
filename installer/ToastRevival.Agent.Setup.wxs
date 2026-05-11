@@ -60,9 +60,8 @@
         <Shortcut Id="StartMenuAgentShortcut"
                   Name="Toast Notification"
                   Target="[INSTALLFOLDER]ToastNotification.Agent.exe"
-                  Arguments="--template alert --no-wait"
                   WorkingDirectory="INSTALLFOLDER"
-                  Description="Run the Toast Notification agent (alert toast)." />
+                  Description="Launch the Toast Notification agent." />
         <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
         <RegistryValue Root="HKMU"
                        Key="Software\Toast2IT\Toast Notification\Install"

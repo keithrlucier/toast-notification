@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { notificationsApi, type SendNotificationRequest, type ActionButton, type TemplateDbRecord, type SaveTemplateRequest } from '../api/notifications';
 import { devicesApi, type Device, type DeviceGroup } from '../api/devices';
+import { assetsApi, getModerationStatus, type AssetRecord } from '../api/assets';
 import ToastPreview, { CharCount } from '../components/ToastPreview';
 import BroadcastConfirmModal from '../components/BroadcastConfirmModal';
 import { TEMPLATES } from './Templates';
@@ -98,7 +99,7 @@ export default function Compose() {
   const [body1,    setBody1]    = useState(prefill?.bodyLine1 ?? '');
   const [body2,    setBody2]    = useState(prefill?.bodyLine2 ?? '');
   const [heroUrl,  setHeroUrl]  = useState(prefill?.heroImageUrl ?? '');
-  const logoUrl = prefill?.logoUrl ?? '';
+  const [logoUrl,  setLogoUrl]  = useState(prefill?.logoUrl ?? '');
   const [audio,    setAudio]    = useState(prefill?.audioSetting ?? 'ms-winsoundevent:Notification.Default');
   const [scenario, setScenario] = useState(prefill?.scenario ?? '');
   const [buttons,  setButtons]  = useState<ActionButton[]>(prefill?.actionButtons ?? []);
@@ -123,6 +124,8 @@ export default function Compose() {
   const [success,      setSuccess]      = useState('');
   const [showConfirm,  setShowConfirm]  = useState(false);
   const [activeSection,setActiveSection]= useState<'template' | 'content' | 'target'>('content');
+
+  const [pickerTarget, setPickerTarget] = useState<'hero' | 'logo' | null>(null);
 
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName,     setTemplateName]     = useState('');
@@ -393,7 +396,17 @@ export default function Compose() {
             </div>
 
             <div className="field">
-              <label htmlFor="heroUrl">Hero image URL</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label htmlFor="heroUrl">Hero image URL</label>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12, padding: '4px 8px' }}
+                  onClick={() => setPickerTarget('hero')}
+                >
+                  Browse
+                </button>
+              </div>
               <input
                 id="heroUrl"
                 type="url"
@@ -402,7 +415,31 @@ export default function Compose() {
                 placeholder="https://cdn.example.com/image.jpg"
               />
               <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
-                Recommended: 364 × 180 px. Upload via <a href="/assets" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Assets</a> to get a hosted URL.
+                Recommended: 364 × 180 px. Upload via <Link to="/assets" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Assets</Link> to get a hosted URL.
+              </p>
+            </div>
+
+            <div className="field">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label htmlFor="logoUrl">Logo URL</label>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12, padding: '4px 8px' }}
+                  onClick={() => setPickerTarget('logo')}
+                >
+                  Browse
+                </button>
+              </div>
+              <input
+                id="logoUrl"
+                type="url"
+                value={logoUrl}
+                onChange={e => setLogoUrl(e.target.value)}
+                placeholder="https://cdn.example.com/logo.png"
+              />
+              <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
+                Recommended: 48 × 48 px. Shown as the app icon in the notification.
               </p>
             </div>
 
@@ -674,6 +711,18 @@ export default function Compose() {
           onCancel={() => setShowConfirm(false)}
         />
       )}
+
+      {pickerTarget && (
+        <AssetPickerModal
+          target={pickerTarget}
+          onSelect={url => {
+            if (pickerTarget === 'hero') setHeroUrl(url);
+            else setLogoUrl(url);
+            setPickerTarget(null);
+          }}
+          onClose={() => setPickerTarget(null)}
+        />
+      )}
     </div>
   );
 }
@@ -771,6 +820,173 @@ function ChevronIcon({ open }: { open: boolean }) {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: 'var(--text-dim)' }}>
       <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/* Asset picker modal */
+
+type PickerFilter = 'all' | 'HeroImage' | 'Logo' | 'Icon';
+
+interface AssetPickerModalProps {
+  target: 'hero' | 'logo';
+  onSelect: (url: string) => void;
+  onClose: () => void;
+}
+
+function AssetPickerModal({ target, onSelect, onClose }: AssetPickerModalProps) {
+  const [assets, setAssets] = useState<AssetRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState('');
+  const [typeFilter, setTypeFilter] = useState<PickerFilter>(
+    target === 'hero' ? 'HeroImage' : 'Logo'
+  );
+
+  useEffect(() => {
+    assetsApi.list()
+      .then(setAssets)
+      .catch(() => setFetchError('Failed to load assets.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = typeFilter === 'all'
+    ? assets
+    : assets.filter(a => a.type === typeFilter);
+
+  const FILTER_LABELS: { value: PickerFilter; label: string }[] = [
+    { value: 'all',       label: 'All' },
+    { value: 'HeroImage', label: 'Hero' },
+    { value: 'Logo',      label: 'Logo' },
+    { value: 'Icon',      label: 'Icon' },
+  ];
+
+  return (
+    <div
+      className="modal-overlay"
+      onClick={onClose}
+    >
+      <div
+        className="modal"
+        style={{ maxWidth: 680, width: '90vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column', gap: 0 }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>
+            Select {target === 'hero' ? 'Hero Image' : 'Logo'}
+          </h2>
+          <button
+            className="btn btn-ghost"
+            style={{ padding: '4px 10px', fontSize: 14 }}
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Type filter */}
+        <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexShrink: 0 }}>
+          {FILTER_LABELS.map(f => (
+            <button
+              key={f.value}
+              className={`btn ${typeFilter === f.value ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: 12, padding: '5px 12px' }}
+              onClick={() => setTypeFilter(f.value)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {fetchError && (
+          <div className="error-banner" style={{ marginBottom: 12, flexShrink: 0 }}>{fetchError}</div>
+        )}
+
+        {/* Asset grid */}
+        <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+          {loading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+              <span className="spinner" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <p style={{ fontSize: 14, color: 'var(--text-dim)', textAlign: 'center', padding: 40 }}>
+              No assets found.{' '}
+              <Link
+                to="/assets"
+                onClick={onClose}
+                style={{ color: 'var(--accent)', textDecoration: 'none' }}
+              >
+                Upload images in Assets
+              </Link>{' '}
+              to get started.
+            </p>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+              gap: 10,
+              paddingBottom: 4,
+            }}>
+              {filtered.map(asset => {
+                const blocked = getModerationStatus(asset.moderationResultJson) === 'Block';
+                return (
+                  <button
+                    key={asset.id}
+                    disabled={blocked}
+                    onClick={() => onSelect(asset.url)}
+                    style={{
+                      background: 'var(--bg-tertiary)',
+                      border: '2px solid transparent',
+                      borderRadius: 'var(--radius-md)',
+                      overflow: 'hidden',
+                      cursor: blocked ? 'not-allowed' : 'pointer',
+                      opacity: blocked ? 0.45 : 1,
+                      textAlign: 'left',
+                      padding: 0,
+                      transition: 'border-color 0.15s',
+                    }}
+                    onMouseEnter={e => {
+                      if (!blocked)
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)';
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = 'transparent';
+                    }}
+                  >
+                    <div style={{ height: 84, overflow: 'hidden', background: 'rgba(0,0,0,0.15)' }}>
+                      <img
+                        src={asset.url}
+                        alt={asset.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    </div>
+                    <div style={{ padding: '7px 9px' }}>
+                      <div style={{
+                        fontSize: 12,
+                        fontWeight: 500,
+                        color: 'var(--text-primary)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {asset.name}
+                      </div>
+                      <div style={{ fontSize: 11, color: blocked ? 'var(--status-error)' : 'var(--text-dim)', marginTop: 2 }}>
+                        {blocked ? 'Blocked' : asset.type.replace('HeroImage', 'Hero')}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="modal-actions" style={{ flexShrink: 0, paddingTop: 16, marginTop: 8 }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

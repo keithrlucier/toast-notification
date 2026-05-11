@@ -41,7 +41,10 @@ public class AssetsController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<AssetResponse>>> List()
     {
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+
         var assets = await _db.AssetLibrary
+            .Where(a => a.TenantId == tenantId)
             .OrderByDescending(a => a.UploadedAt)
             .Select(a => new AssetResponse(
                 a.Id, a.Name, a.Type.ToString(), a.Url,
@@ -144,7 +147,7 @@ public class AssetsController : ControllerBase
         var userId   = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
         var asset = await _db.AssetLibrary.FindAsync(id);
-        if (asset is null) return NotFound();
+        if (asset is null || asset.TenantId != tenantId) return NotFound();
 
         // Delete file from disk — reconstruct path from tenantId + assetId (not from raw URL)
         // to prevent path traversal from a corrupted DB value

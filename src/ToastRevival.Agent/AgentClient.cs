@@ -152,6 +152,12 @@ internal sealed class AgentHubClient : IAsyncDisposable
             .Build();
 
         _hub.On<string, string>("ReceiveNotification", OnReceiveNotificationAsync);
+        _hub.On("DeviceDecommissioned", () =>
+        {
+            DiagLog.Write("DeviceDecommissioned: server rejected this device — clearing config for re-registration.");
+            try { File.Delete(ConfigStore.GetConfigPath()); } catch { /* best-effort */ }
+            _shutdown.Cancel();
+        });
         _hub.Reconnecting += ex =>
         {
             DiagLog.Write($"Hub reconnecting: {ex?.GetType().Name}: {ex?.Message}");

@@ -38,6 +38,21 @@ public class NotificationHub : Hub
             var deviceId = GetDeviceId();
             if (deviceId.HasValue)
             {
+                // Reject decommissioned devices — their JWT is still cryptographically valid but
+                // the device has been removed from the tenant. Tell the agent so it can clear its
+                // local config and re-register as a new device on next launch.
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var device = await db.Devices.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(d => d.Id == deviceId.Value);
+
+                if (device is null || device.Status == DeviceStatus.Decommissioned)
+                {
+                    await Clients.Caller.SendAsync("DeviceDecommissioned");
+                    Context.Abort();
+                    return;
+                }
+
                 ConnectedDevices[deviceId.Value] = Context.ConnectionId;
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"device-{deviceId}");
 

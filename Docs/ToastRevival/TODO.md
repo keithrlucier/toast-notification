@@ -42,7 +42,7 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 
 - [x] **Tray icon SVGs** (Diana) — Resolved 2026-05-10 (M9.C). Production bell glyph in `TrayIconService.CreateBellIcon` replaces M0A's circles. 5 state colors preserved; Disconnected + Error get diagonal slash. Same path data as Store tiles. SVG canon: `Docs/ToastRevival/Design/sources/tray-icons-and-tiles.svg`.
 
-- [x] **Microsoft Store tile assets** — Resolved 2026-05-10 (M9.C). Production brand: near-black `#0A0F1A` panel, brand-teal `#00C9A7` bell, two-line wordmark on Wide310. PNGs at `src/ToastRevival.Agent/Images/{Square44,Square150,Wide310x150,StoreLogo}.png`. Renderer at `scripts/generate-msix-tile-assets.ps1`.
+- [x] **Microsoft Store tile assets** — Resolved 2026-05-10 (M9.C). Production brand: near-black `#0A0F1A` panel, brand-amber `#F59E0B` bell, two-line wordmark on Wide310. PNGs at `src/ToastRevival.Agent/Images/{Square44,Square150,Wide310x150,StoreLogo}.png`. Renderer at `scripts/generate-msix-tile-assets.ps1`.
 
 ---
 
@@ -60,7 +60,7 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 - [x] **INFO-M8C-001** (session 3) — SecurityTests hub isolation test: `Task.Delay(500ms)` → 20ms predicate-poll, 300ms timeout.
 - [x] **INFO-M7C-003** (session 3) — Docs route paths centralized to `src/routes/docsRoutes.ts`; App.tsx + DocsLayout.tsx both import `DOCS_PATHS`.
 - [x] **INFO-M9C-002** (session 3) — `DeployCommand.tsx` enrollment-key fetch module-level cached; `/api/tenant/settings` fires at most once per page load.
-- [x] **Home page redesign** (session 3) — technical hero (copy-left / code-block-right), terminal msg.exe comparison, bento grid platform architecture, accurate pricing cards (free ≤25 / standard $0.22 starts at 26). No fake stats, no trial claim. `bento.css` new file. Deployed 2026-05-10.
+- [x] **Home page redesign** (session 3) — technical hero (copy-left / code-block-right), terminal msg.exe comparison, bento grid platform architecture, accurate pricing cards (free 1–25 / standard $22/mo flat 26–100 / growth $44/mo flat 101–200 / enterprise 200+). No fake stats, no trial claim. `bento.css` new file. Deployed 2026-05-10.
 - [x] M9.C — enrollment-key auto-gen on new tenants + regenerate endpoint + DeployCommand surface (closes INFO-M1-003 forward-only); agent multi-page drain loop with `limit=500` (closes INFO-M9B-001 source-only); production bell tray icons + Store tile assets (closes Diana M9 GA blockers); INFO-M2B-003 already-shipped doc fix; Azure Content Safety env confirmation
 - [x] M9.B pending endpoint pagination — `?limit=<int>` query param, default 100, clamp [1, 500], wire shape preserved, integration test (510-row Postgres seed) shipped with the change
 - [x] M9.A registration flow — ClickSend SMS verify → Mailjet magic token email → set password → logged in

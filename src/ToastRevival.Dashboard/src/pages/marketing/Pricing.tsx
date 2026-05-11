@@ -1,15 +1,69 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown } from '../../components/marketing/FeatureIcons';
-import { useSeo, pricingProductLd, breadcrumbLd } from '../../lib/seo';
+import { useSeo, breadcrumbLd } from '../../lib/seo';
+
+const PLANS = [
+  {
+    name: 'Free',
+    range: '1 – 25 devices',
+    price: '$0',
+    unit: 'forever',
+    tagline: 'Every feature. No credit card. No time limit.',
+    cta: 'Get started free',
+    ctaHref: '/register',
+    ctaStyle: 'primary' as const,
+    highlight: false,
+  },
+  {
+    name: 'Standard',
+    range: '26 – 100 devices',
+    price: '$22',
+    unit: '/ month',
+    tagline: 'One flat rate. Up to 100 devices. No per-device math.',
+    cta: 'Get started',
+    ctaHref: '/register',
+    ctaStyle: 'accent' as const,
+    highlight: true,
+  },
+  {
+    name: 'Growth',
+    range: '101 – 200 devices',
+    price: '$44',
+    unit: '/ month',
+    tagline: 'One flat rate. Up to 200 devices.',
+    cta: 'Get started',
+    ctaHref: '/register',
+    ctaStyle: 'primary' as const,
+    highlight: false,
+  },
+  {
+    name: 'Enterprise',
+    range: '200+ devices',
+    price: 'Contact us',
+    unit: '',
+    tagline: 'Volume pricing for large deployments.',
+    cta: 'Get in touch',
+    ctaHref: 'mailto:support@toastnotification.com?subject=Enterprise%20Pricing',
+    ctaStyle: 'ghost' as const,
+    highlight: false,
+  },
+];
+
+const BLOCKS = [
+  { block: 'Free',       devices: '1 – 25',    monthly: '$0',          note: 'No credit card required.' },
+  { block: 'Standard',  devices: '26 – 100',   monthly: '$22 / mo',    note: 'Flat rate. All features.' },
+  { block: 'Growth',    devices: '101 – 200',  monthly: '$44 / mo',    note: 'Flat rate. All features.' },
+  { block: 'Enterprise',devices: '200+',       monthly: 'Contact us',  note: 'Volume pricing.' },
+];
 
 const INCLUSIONS = [
   {
     heading: 'Notifications',
     items: [
-      'Six pre-built templates (Announcement, Alert, Action Required, Reminder, Celebration, Maintenance)',
+      'Six pre-built templates — Announcement, Alert, Action Required, Reminder, Celebration, Maintenance',
       'Title, body, hero image, logo, action buttons, audio',
-      'Scenario routing - Default, Reminder, Alarm, IncomingCall, Urgent',
+      'Scenario routing — Default, Reminder, Alarm, IncomingCall, Urgent',
       'Tenant-uploadable asset library with image moderation',
       'Notification scheduling and recurring sends',
     ],
@@ -18,7 +72,7 @@ const INCLUSIONS = [
     heading: 'Targeting',
     items: [
       'Per-device, per-group, or whole-tenant broadcast',
-      'TOTP MFA enforcement on broadcast (TargetType=All) sends',
+      'TOTP MFA enforcement on broadcast sends',
       'Device groups with explicit membership management',
       'Tenant blocklist for sender content',
     ],
@@ -27,9 +81,9 @@ const INCLUSIONS = [
     heading: 'Deployment',
     items: [
       'Code-signed MSI with embedded scheduled task',
-      'Code-signed MSIX through the Microsoft Store (listing 9PFD6004DVTN)',
+      'Code-signed MSIX through the Microsoft Store',
       'Intune LOB compatible',
-      'RMM silent install with CLIENTID and SERVERURL properties',
+      'RMM silent install with CLIENTID, SERVERURL, and ENROLLMENTKEY properties',
       'Velopack auto-update with enterprise opt-out registry toggle',
     ],
   },
@@ -46,58 +100,61 @@ const INCLUSIONS = [
     heading: 'Security',
     items: [
       'TLS 1.2/1.3, HSTS, HTTPS redirect',
-      'JWT auth - 60-min user, 365-day device tokens',
+      'JWT auth — 60-min user tokens, 365-day device tokens',
       'Per-tenant HMAC-SHA256 payload signing, verified by the Windows agent',
-      'Tenant blocklists plus configured content-safety checks',
-      'Encrypted storage. DPAPI on agent config. Tenant-scoped query isolation.',
       'Device enrollment keys for restricted registration',
+      'Encrypted agent config via DPAPI. Tenant-scoped query isolation.',
+    ],
+  },
+  {
+    heading: 'Administration',
+    items: [
+      'Multi-user admin portal with role-based access',
+      'Self-service Stripe billing portal',
+      'Device inventory with last-seen and version tracking',
+      'Template gallery with live preview',
+      'Moderation queue and content-safety scanning',
     ],
   },
 ];
 
 const FAQ = [
   {
+    q: 'How does block pricing work?',
+    a: 'You pay a flat monthly rate based on which block your active device count falls into — not per device. 1–25 devices is always free. 26–100 devices is $22/month regardless of whether you have 30 or 100 devices. 101–200 is $44/month. Blocks give you a cost ceiling, not a per-seat invoice.',
+  },
+  {
     q: 'How is a "device" counted?',
-    a: 'The app is licensed per signed-in user. A single computer with two active users consumes two device licenses. Decommissioning a device frees the slot immediately. Inactive devices that have not pinged in 30 days are not billed.',
+    a: 'The app is licensed per signed-in user session. A single machine with two active users consumes two device slots. Decommissioning a device frees the slot immediately. Devices that have not pinged in 30 days are not counted as active.',
   },
   {
     q: 'How does device counting work on Terminal Server / RDS?',
-    a: 'Each logged-on user session counts as one device. If ten users are active on a single Terminal Server, that is ten devices. This is intentional — each user receives notifications in their own session, so each session consumes one slot. There is no special TS mode or per-server licensing.',
+    a: 'Each logged-on user session counts as one device. Ten users active on a single Terminal Server is ten device slots. Each session receives notifications independently, so each session consumes one slot. There is no special TS mode or per-server licensing.',
   },
   {
-    q: 'What happens if my device count changes mid-month?',
-    a: 'Device count is synced to Stripe on registration and decommission. Billing uses the higher of active devices or the 100-device monthly minimum. Canceled subscriptions block new registrations until billing is restored.',
+    q: 'What happens if my device count crosses a block boundary mid-month?',
+    a: 'Billing moves to the next block at the start of the following billing cycle. You are never charged retroactively for crossing a threshold mid-month. Stripe billing is managed through your self-service portal.',
   },
   {
     q: 'Is there a contract or annual commitment?',
     a: 'No contract. Billing is monthly. Cancel from the Stripe billing portal at any time — service continues through the end of the current billing period.',
   },
   {
-    q: 'Do you offer volume pricing?',
-    a: 'Per-device pricing is uniform up to 5,000 devices. Above 5,000 devices, contact us to discuss options.',
+    q: 'What payment methods do you accept?',
+    a: 'Credit card and ACH via Stripe. Self-serve billing portal included with every paid subscription.',
   },
   {
-    q: 'What payment methods do you accept?',
-    a: 'Credit card and ACH via Stripe. Self-serve billing portal included with every subscription.',
+    q: 'Do you offer volume pricing above 200 devices?',
+    a: 'Yes. Email support@toastnotification.com with your estimated device count and we will put together a quote.',
   },
   {
     q: 'Where is data stored?',
-    a: 'Production data is stored in the United States. Notification payloads are HMAC-SHA256 signed per tenant. Tenant blocklists are enforced before delivery; configured content-safety checks score eligible text and asset inputs.',
+    a: 'Production data is stored in the United States. Notification payloads are HMAC-SHA256 signed per tenant. Content-safety checks score eligible inputs before delivery.',
   },
   {
     q: 'Do you support SSO or SAML?',
-    a: 'SAML / OIDC single sign-on is on the roadmap. Not available yet. Email support@toastnotification.com if this is a hard requirement for your deployment.',
+    a: 'SAML / OIDC single sign-on is on the roadmap. Not available yet. Email support@toastnotification.com if this is a hard requirement.',
   },
-];
-
-const COSTS = [
-  { devices: '1 – 25', monthly: 'Free', annual: 'Free', note: 'No credit card.' },
-  { devices: '100', monthly: '$22', annual: '$264' },
-  { devices: '250', monthly: '$55', annual: '$660' },
-  { devices: '500', monthly: '$110', annual: '$1,320' },
-  { devices: '1,000', monthly: '$220', annual: '$2,640' },
-  { devices: '5,000', monthly: '$1,100', annual: '$13,200' },
-  { devices: '5,000+', monthly: 'Contact us', annual: 'Custom', note: 'Volume pricing.' },
 ];
 
 export default function Pricing() {
@@ -106,10 +163,9 @@ export default function Pricing() {
   useSeo({
     title: 'Pricing',
     description:
-      '$0.22 per managed device per month. 100-device subscription minimum. One plan, no tiers, no upsells.',
+      'Simple block pricing. 1–25 devices free. $22/month up to 100 devices. $44/month up to 200 devices. Every feature included on every plan.',
     path: '/pricing',
     jsonLd: [
-      pricingProductLd(),
       breadcrumbLd([
         { name: 'Home', path: '/' },
         { name: 'Pricing', path: '/pricing' },
@@ -119,80 +175,92 @@ export default function Pricing() {
 
   return (
     <>
-      {/* Plan card */}
-      <section className="m-section" aria-labelledby="pricing-cards-heading">
+      {/* Header */}
+      <section className="m-section" aria-labelledby="pricing-heading">
         <div className="m-container">
-          <h1 id="pricing-cards-heading" className="m-section-heading is-centered">
+          <h1 id="pricing-heading" className="m-section-heading is-centered">
             Pricing.
           </h1>
-          <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 600, marginInline: 'auto' }}>
-            Free for small shops. Fair for everyone else. Every feature on every plan.
+          <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 560, marginInline: 'auto' }}>
+            Block pricing. Pay a flat monthly rate for your device range — not per seat.
+            Every feature included on every plan. No upsells.
           </p>
-
-          <div className="m-plan-card" aria-label="Pricing plans">
-            <div className="m-plan-card-head">
-              <div>
-                <span className="m-plan-name">Free</span>
-                <p className="m-plan-tagline">1 – 25 devices. Every feature. No credit card.</p>
-              </div>
-              <div className="m-plan-price-block">
-                <span className="m-plan-price" style={{ color: 'var(--accent)' }}>$0</span>
-                <span className="m-plan-price-unit">forever</span>
-              </div>
-            </div>
-
-            <div className="m-plan-card-head" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 24 }}>
-              <div>
-                <span className="m-plan-name">Standard</span>
-                <p className="m-plan-tagline">26+ devices. Same features. No upsells.</p>
-              </div>
-              <div className="m-plan-price-block">
-                <span className="m-plan-price">$0.22</span>
-                <span className="m-plan-price-unit">per device / month</span>
-                <span className="m-plan-price-floor">No minimum commitment. Cancel anytime.</span>
-              </div>
-            </div>
-
-            <div className="m-plan-card-cta">
-              <Link to="/register" className="m-btn m-btn-primary">
-                Get started free
-              </Link>
-              <a href="mailto:support@toastnotification.com?subject=Toast%20Notification" className="m-btn m-btn-ghost">
-                Contact us
-              </a>
-            </div>
-
-            <p className="m-plan-fineprint">
-              Free tier: up to 25 active devices, no payment required.
-              Standard tier: Stripe billing, managed from your portal.
-            </p>
-          </div>
         </div>
       </section>
 
-      {/* Cost reference */}
-      <section className="m-section" style={{ paddingTop: 32 }} aria-labelledby="cost-heading">
+      {/* Pricing cards */}
+      <section className="m-section" style={{ paddingTop: 0 }} aria-labelledby="pricing-cards-heading">
         <div className="m-container">
-          <h2 id="cost-heading" className="m-section-heading is-centered">
-            Indicative cost by fleet size.
-          </h2>
+          <h2 id="pricing-cards-heading" className="sr-only">Plans</h2>
+          <div className="m-pricing-grid">
+            {PLANS.map((plan) => (
+              <div
+                key={plan.name}
+                className={`m-pricing-card${plan.highlight ? ' is-featured' : ''}`}
+              >
+                <div className="m-pricing-card-header">
+                  <span className="m-pricing-card-name">{plan.name}</span>
+                  <span className="m-pricing-card-range">{plan.range}</span>
+                </div>
+                <div className="m-pricing-card-price">
+                  <span className={`m-pricing-price${plan.highlight ? ' is-accent' : ''}`}>
+                    {plan.price}
+                  </span>
+                  {plan.unit && (
+                    <span className="m-pricing-unit">{plan.unit}</span>
+                  )}
+                </div>
+                <p className="m-pricing-tagline">{plan.tagline}</p>
+                {plan.ctaHref.startsWith('mailto') ? (
+                  <a
+                    href={plan.ctaHref}
+                    className="m-btn m-btn-ghost"
+                    style={{ marginTop: 'auto', width: '100%', textAlign: 'center' }}
+                  >
+                    {plan.cta}
+                  </a>
+                ) : (
+                  <Link
+                    to={plan.ctaHref}
+                    className={`m-btn ${plan.ctaStyle === 'ghost' ? 'm-btn-ghost' : 'm-btn-primary'}`}
+                    style={{ marginTop: 'auto', width: '100%', textAlign: 'center' }}
+                  >
+                    {plan.cta}
+                  </Link>
+                )}
+              </div>
+            ))}
+          </div>
 
-          <table className="m-cost-table" aria-label="Monthly and annual cost by device count">
+          <p className="m-plan-fineprint" style={{ textAlign: 'center', marginTop: 24 }}>
+            All plans include every feature. No feature is gated behind a higher tier.
+            Cancel anytime from the billing portal.
+          </p>
+        </div>
+      </section>
+
+      {/* Block reference table */}
+      <section className="m-section" style={{ background: 'var(--bg-secondary)', paddingTop: 48, paddingBottom: 48 }} aria-labelledby="blocks-heading">
+        <div className="m-container">
+          <h2 id="blocks-heading" className="m-section-heading is-centered">
+            At a glance.
+          </h2>
+          <table className="m-cost-table" aria-label="Pricing blocks by device count" style={{ marginTop: 32 }}>
             <thead>
               <tr>
-                <th scope="col">Devices</th>
+                <th scope="col">Plan</th>
+                <th scope="col">Devices covered</th>
                 <th scope="col">Monthly</th>
-                <th scope="col">Annual</th>
                 <th scope="col" className="m-th-note">Notes</th>
               </tr>
             </thead>
             <tbody>
-              {COSTS.map((row) => (
-                <tr key={row.devices}>
+              {BLOCKS.map((row) => (
+                <tr key={row.block}>
+                  <td><strong>{row.block}</strong></td>
                   <td><span className="m-mono">{row.devices}</span></td>
                   <td><span className="m-mono">{row.monthly}</span></td>
-                  <td><span className="m-mono">{row.annual}</span></td>
-                  <td className="m-cost-note">{row.note ?? ''}</td>
+                  <td className="m-cost-note">{row.note}</td>
                 </tr>
               ))}
             </tbody>
@@ -201,16 +269,15 @@ export default function Pricing() {
       </section>
 
       {/* What's included */}
-      <section className="m-section" style={{ background: 'var(--bg-secondary)' }} aria-labelledby="included-heading">
+      <section className="m-section" aria-labelledby="included-heading">
         <div className="m-container">
           <h2 id="included-heading" className="m-section-heading is-centered">
             What&rsquo;s included.
           </h2>
           <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 580, marginInline: 'auto' }}>
-            Every feature is included in every subscription. There is no Pro upsell, no Enterprise gate, no add-on SKU.
+            Every feature ships on every plan. No Pro gate. No Enterprise tier. No add-on SKU.
           </p>
-
-          <div className="m-inclusion-grid">
+          <div className="m-inclusion-grid" style={{ marginTop: 48 }}>
             {INCLUSIONS.map((group) => (
               <div key={group.heading} className="m-inclusion-card">
                 <h3>{group.heading}</h3>
@@ -226,12 +293,11 @@ export default function Pricing() {
       </section>
 
       {/* FAQ */}
-      <section className="m-section" aria-labelledby="faq-heading">
+      <section className="m-section" style={{ background: 'var(--bg-secondary)' }} aria-labelledby="faq-heading">
         <div className="m-container">
           <h2 id="faq-heading" className="m-section-heading is-centered" style={{ marginBottom: 48 }}>
             Frequently asked.
           </h2>
-
           <div className="m-faq">
             {FAQ.map((item, idx) => {
               const open = idx === openIdx;
@@ -260,18 +326,19 @@ export default function Pricing() {
       </section>
 
       {/* Final CTA */}
-      <section className="m-section" style={{ background: 'var(--bg-secondary)' }} aria-labelledby="pricing-cta-heading">
+      <section className="m-section" aria-labelledby="pricing-cta-heading">
         <div className="m-final-cta">
-          <h2 id="pricing-cta-heading">Get started free.</h2>
+          <h2 id="pricing-cta-heading">Start free. Grow when you&rsquo;re ready.</h2>
           <p>
             Register a tenant, deploy the signed MSI, and send your first notification in under ten minutes.
-            Questions? Email <a href="mailto:support@toastnotification.com">support@toastnotification.com</a>.
+            Free up to 25 devices, no credit card required.
+            Questions? <a href="mailto:support@toastnotification.com">support@toastnotification.com</a>.
           </p>
           <div className="m-final-cta-buttons">
             <Link to="/register" className="m-btn m-btn-primary">
               Get started free
             </Link>
-            <a href="mailto:support@toastnotification.com?subject=Toast%20Notification" className="m-btn m-btn-ghost">
+            <a href="mailto:support@toastnotification.com?subject=Toast%20Notification%20Pricing" className="m-btn m-btn-ghost">
               Contact us
             </a>
           </div>

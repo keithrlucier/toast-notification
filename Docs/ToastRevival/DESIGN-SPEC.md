@@ -35,9 +35,9 @@ Foundation:
   --text-dark:        #1A1D27    (text on light backgrounds)
 
 Brand:
-  --accent-primary:   #00C9A7    (teal — inherited from original brand, modernized)
-  --accent-hover:     #00E5BF    (teal lighter)
-  --accent-pressed:   #00A88C    (teal darker)
+  --accent-primary:   #F59E0B    (amber — brand color)
+  --accent-hover:     #FBBF24    (amber lighter)
+  --accent-pressed:   #D97706    (amber darker)
 
 Status:
   --status-success:   #4ADE80
@@ -167,7 +167,7 @@ Four metric cards across the top of the Analytics page. Same `.metric-card` CSS 
 - **Chart type**: `<LineChart>` from Recharts
 - **Data**: Notifications sent per day, last 30 days. X-axis: date label (`"May 7"`). Y-axis: count, integer ticks only.
 - **Series**:
-  - Sent — color `#00C9A7` (accent), `strokeWidth={2}`, `dot={false}`
+  - Sent — color `#F59E0B` (accent), `strokeWidth={2}`, `dot={false}`
   - Delivered — color `#60A5FA` (status-info), `strokeWidth={1.5}`, `dot={false}`, `strokeDasharray="4 2"`
 - **Grid**: `<CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false}`
 - **Tooltip**: Dark tooltip — `background: var(--bg-tertiary)`, `border: 1px solid rgba(255,255,255,0.08)`, `border-radius: 6px`, `font-size: 12px`. Do not use the default Recharts tooltip style.
@@ -180,7 +180,7 @@ Four metric cards across the top of the Analytics page. Same `.metric-card` CSS 
 - **Data**: Count of deliveries in each status (Pending / Delivered / Clicked / Dismissed / Failed) for the selected time range
 - **Bars**: One bar per status
   - Delivered: `#4ADE80` (status-success)
-  - Clicked: `#00C9A7` (accent)
+  - Clicked: `#F59E0B` (accent)
   - Dismissed: `#7A7A92` (text-dim)
   - Failed: `#F87171` (status-error)
   - Pending: `#FBBF24` (status-warning)
@@ -197,7 +197,7 @@ Four metric cards across the top of the Analytics page. Same `.metric-card` CSS 
 
 ### Time Range Selector
 - Position: Top-right of the Analytics page, inline with the page header
-- Options: 7 days | 30 days | 90 days (segmented button control — three `<button>` elements, teal background on active)
+- Options: 7 days | 30 days | 90 days (segmented button control — three `<button>` elements, amber background on active)
 - Default: 30 days
 - No date picker. These three presets are enough for MSPs.
 
@@ -368,16 +368,17 @@ Three-card pricing comparison, 24px gap, each card 320px desktop (single column 
 
 | Card | Tier | Price | Devices | Bullets |
 |---|---|---|---|---|
-| Free | "For pilots and small teams." | $0 | 10 devices | Six templates, full feature set, audit log, CSV export, Microsoft Store install path, MSI install with auto-update |
-| Pro | "For working MSPs." (highlighted, teal border, "MOST POPULAR" eyebrow) | $X / device / month | Up to 250 devices | Everything in Free, plus PDF export, advanced analytics, custom logo + colors, Stripe billing, priority support |
-| Enterprise | "For larger fleets and compliance-driven shops." | Contact us | Unlimited | Everything in Pro, plus single-sign-on (M9 roadmap), dedicated infra, SOC 2 reports, custom SLAs |
+| Free | "For pilots and small teams." | $0 | 1–25 devices | Six templates, full feature set, audit log, CSV export, Microsoft Store install path, MSI install with auto-update |
+| Standard | "For working MSPs." (highlighted, amber border, "MOST POPULAR" eyebrow) | $22 / month flat | 26–100 devices | Everything in Free, plus PDF export, advanced analytics, custom logo + colors, Stripe billing, priority support |
+| Growth | "For growing fleets." | $44 / month flat | 101–200 devices | Everything in Standard |
+| Enterprise | "For larger fleets and compliance-driven shops." | Contact us | 200+ devices | Everything in Growth, plus single-sign-on (M9 roadmap), dedicated infra, SOC 2 reports, custom SLAs |
 
-- Card: `--bg-secondary`, 32px padding, 8px border radius. The Pro card has a 1px border in `--accent-primary` and a small "MOST POPULAR" eyebrow above the tier name (Inter 600, 11px, `--accent-primary`, letter-spacing 0.1em).
+- Card: `--bg-secondary`, 32px padding, 8px border radius. The Standard card has a 1px border in `--accent-primary` and a small "MOST POPULAR" eyebrow above the tier name (Inter 600, 11px, `--accent-primary`, letter-spacing 0.1em).
 - Tier name: Inter 700, 24px.
 - Tagline: Inter 400, 14px, `--text-secondary`, 8px below tier.
-- Price: Inter 700, 40px, `--text-primary`, 24px below tagline. "Free" / "$X / device / month" / "Contact us".
+- Price: Inter 700, 40px, `--text-primary`, 24px below tagline. "Free" / "$22 / month" / "$44 / month" / "Contact us".
 - Bullets: List of 5–6 items, Inter 400, 14px, `--text-secondary`, line-height 1.7, `✓` prefix in `--accent-primary` (use the same SVG checkmark as the dashboard).
-- CTA at bottom of each card: Free → "Get started" (primary), Pro → "Start a Pro trial" (primary), Enterprise → "Contact sales" (ghost).
+- CTA at bottom of each card: Free → "Get started" (primary), Standard → "Get started" (primary), Growth → "Get started" (primary), Enterprise → "Contact sales" (ghost).
 - Below the cards, 48px gap, centered text: "Full comparison and FAQ on the [pricing page →](/pricing)." Inter 400, 14px, `--text-secondary`.
 
 **Section 6 — Final CTA** (`--bg-primary`, 96px vertical padding, max-width 720px centered)
@@ -634,9 +635,10 @@ Three documented deployment paths:
 
 ## What it costs
 
-- Free: 10 devices, full feature set. No credit card.
-- Pro: per-device monthly billing, up to 250 devices.
-- Enterprise: contact sales, unlimited devices, SOC 2, custom SLA.
+- Free: 1–25 devices, full feature set. No credit card.
+- Standard: $22/month flat, 26–100 devices.
+- Growth: $44/month flat, 101–200 devices.
+- Enterprise: contact sales, 200+ devices, SOC 2, custom SLA.
 
 Full pricing: https://toastnotification.com/pricing
 

@@ -34,12 +34,17 @@ if (-not $wix) {
     $wix = Get-Item "$env:USERPROFILE\.dotnet\tools\wix.exe" -ErrorAction Stop
 }
 
+$licenseRtf = Join-Path $repoRoot "installer\License.rtf"
+if (-not (Test-Path $licenseRtf)) { throw "License RTF not found: $licenseRtf" }
+
 Write-Host "==> Building MSI ($Version) -> $msiPath"
 & $wix.Source build $installerSrc `
     -arch x64 `
+    -ext WixToolset.UI.wixext `
     -d "PublishDir=$publishDir" `
     -d "ProductVersion=$Version" `
     -d "LogonTaskXmlPath=$logonTaskXml" `
+    -d "LicenseRtf=$licenseRtf" `
     -o $msiPath
 if ($LASTEXITCODE -ne 0) { throw "wix build failed (exit $LASTEXITCODE)" }
 

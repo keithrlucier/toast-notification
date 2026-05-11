@@ -6,6 +6,10 @@ Last updated: 2026-05-10
 
 ## Project State
 
+**Brand color updated (2026-05-11).** Accent color flipped from teal `#00C9A7` to amber `#F59E0B` across all design tokens, chart specs, and marketing site references.
+
+**Pricing model updated (2026-05-11).** Per-device billing replaced with block pricing: Free 1–25 devices ($0), Standard 26–100 ($22/mo flat), Growth 101–200 ($44/mo flat), Enterprise 200+ (contact us).
+
 **M0A: COMPLETE (2026-05-07).** Signed MSI installs cleanly on a Win11 lab machine, agent runs in user context, toast survives login and reboot. Brand on every user-facing surface flipped from project codename to product name.
 
 **M0 D2: COMPLETE (2026-05-08).** Signed MSIX (`ToastNotification.Agent-0.2.0.3.msix`, commit `6e3495c`) installs cleanly via Add-AppxPackage on Win11 lab; single visible toast fires from packaged Start menu launch; "Acknowledge" button click routes through `NotificationInvoked` handler with expected argument payload (`action=acknowledge;source=m0a;template=Plain`). FIX-MSIX-004 resolved: missing `Arguments="----AppNotificationActivated:"` on `<com:ExeServer>` was causing `AppNotificationManager.Default.Register()` to throw `COMException 0x80070490` (ERROR_NOT_FOUND). DiagLog file-based diagnostic logging added in 0.2.0.2 (commit `eca31dc`) was what made the failure point isolatable in a single install cycle. Toast Activator CLSID locked at `7FA7762F-41EC-4D72-9F06-58964AB36FEA` for the lifetime of this product.

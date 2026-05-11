@@ -18,6 +18,23 @@
 
 ---
 
+## INFO-RATELIMIT-001 (pre-Cloudflare required)
+
+**Filed:** 2026-05-11 (session 4, Code Sweep)
+**Surface:** `src/ToastRevival.Api/Program.cs` — `login-per-ip` and `login-sms-per-ip` rate limit policies
+**Issue:** Both policies partition on `ctx.Connection.RemoteIpAddress`. No `UseForwardedHeaders` configured. Behind a reverse proxy (Cloudflare, nginx upstream, load balancer), all requests share the same IP bucket — one user triggering the limit blocks all users.
+**Fix:** Before routing production traffic through Cloudflare or any reverse proxy:
+```csharp
+builder.Services.Configure<ForwardedHeadersOptions>(opts => {
+    opts.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+    // Add Cloudflare IP ranges to KnownProxies
+});
+app.UseForwardedHeaders(); // before app.UseRateLimiter()
+```
+**Blocking:** No — current deployment is direct Lightsail. Becomes blocking the moment a proxy sits in front.
+
+---
+
 ## Open Issues
 
 ### INFO-SEC-006 — **RESOLVED 2026-05-09** (nginx static SPA responses now carry defensive headers + HSTS)

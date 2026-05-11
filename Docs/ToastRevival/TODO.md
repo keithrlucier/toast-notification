@@ -46,11 +46,21 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 
 ---
 
+## Engineering backlog (session 4 — 2026-05-11)
+
+- [x] **SMS MFA at login** — SHIPPED 2026-05-11 (commit ad8604c). Login issues ClickSend OTP when PhoneNumberConfirmed==true. POST /api/auth/login/verify-sms completes flow. Rate limiting: login-per-ip (10/5min) + login-sms-per-ip (5/15min). Login.tsx 2-step UI.
+
+- [x] **Mailjet + ClickSend config in platform admin** — SHIPPED 2026-05-11 (commit ad8604c). GET/POST /api/system/messaging/config (PlatformAdmin). Billing page Messaging Configuration section. Masked display + live-reload same as Stripe.
+
+- [ ] **INFO-RATELIMIT-001** — UseForwardedHeaders not configured. Rate limit collapses under Cloudflare/proxy. Add `builder.Services.Configure<ForwardedHeadersOptions>` + `app.UseForwardedHeaders()` before adding Cloudflare to the stack.
+
+---
+
 ## Keith actions
 
-- [ ] **Re-sign MSI** — When next agent build ships, team flags the artifact. Keith signs with Thales token. Current hosted binary is `ToastNotification.Agent-0.3.1.0.msi`.
+- [x] **Re-sign MSI** — Signed (Keith confirmed 2026-05-11). Current binary is `ToastNotification.Agent-0.4.0.0.msi`.
 
-- [ ] **Windows E2E verification** (M8 D1/D2/D3) — Store install → register → receive notification → interact → verify DB delivery row. Repeat for MSI/RMM and Intune LOB. Requires Keith's lab machine + signed package.
+- [ ] **Windows E2E verification** — Store install → register (SMS MFA now active) → receive notification → interact → verify DB delivery row. Repeat for MSI path with new ENROLLMENTKEY in msiexec command. Requires Keith's lab machine + signed package.
 
 ---
 

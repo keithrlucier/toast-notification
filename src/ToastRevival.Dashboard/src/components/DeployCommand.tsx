@@ -33,12 +33,16 @@ export default function DeployCommand() {
   const msiUrl     = `${serverUrl}/downloads/ToastNotification.msi`;
   const enrollmentPart = enrollmentKey ? ` ENROLLMENTKEY=${enrollmentKey}` : '';
 
-  // Full one-liner: download from our server then silent-install with tenant credentials.
+  // Full one-liner: download from our server, then install elevated.
+  // Start-Process -Verb RunAs triggers UAC so the user doesn't need a pre-elevated shell.
+  // -Wait holds the script until the install finishes.
   // $f and $env:TEMP are PowerShell variables — not JS template expressions.
+  const args =
+    `/i \`"$f\`" /qn CLIENTID=${tenantId} SERVERURL=${serverUrl}${enrollmentPart}`;
   const oneLiner =
     `$f="$env:TEMP\\ToastNotification.msi"; ` +
     `Invoke-WebRequest "${msiUrl}" -OutFile $f; ` +
-    `msiexec /i $f /qn CLIENTID=${tenantId} SERVERURL=${serverUrl}${enrollmentPart}`;
+    `Start-Process msiexec -ArgumentList "${args}" -Verb RunAs -Wait`;
 
   const copy = () => {
     navigator.clipboard.writeText(oneLiner).then(() => {

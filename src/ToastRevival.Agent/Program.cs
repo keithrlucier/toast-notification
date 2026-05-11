@@ -403,9 +403,9 @@ namespace ToastRevival.Agent
 
             try
             {
-                // AgentHubClient constructor subscribes to AppNotificationManager.Default.NotificationInvoked.
-                // Windows App SDK requires NotificationInvoked to be subscribed BEFORE Register() is called —
-                // subscribing after Register() throws COMException 0x80070490.
+                // Keep Register() after AgentHubClient construction. The constructor subscribes to
+                // NotificationInvoked, and Windows App SDK throws COMException 0x80070490 if the
+                // event is subscribed after registration.
                 await using var client = new AgentHubClient(config);
 
                 AppNotificationManager.Default.Register();

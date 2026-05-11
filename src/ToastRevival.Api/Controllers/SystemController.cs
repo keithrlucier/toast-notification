@@ -17,16 +17,57 @@ public class SystemController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IBillingConfigService _billingConfig;
+    private readonly IMessagingConfigService _messagingConfig;
     private readonly IAuditService _audit;
 
     public SystemController(
         AppDbContext db,
         IBillingConfigService billingConfig,
+        IMessagingConfigService messagingConfig,
         IAuditService audit)
     {
         _db = db;
         _billingConfig = billingConfig;
+        _messagingConfig = messagingConfig;
         _audit = audit;
+    }
+
+    [HttpGet("messaging/config")]
+    public IActionResult MessagingConfig()
+    {
+        return Ok(_messagingConfig.GetSnapshot());
+    }
+
+    [HttpPost("messaging/config")]
+    public async Task<IActionResult> UpdateMessagingConfig([FromBody] UpdateMessagingConfigRequest request)
+    {
+        if (request is null)
+            return BadRequest(new { message = "Messaging configuration is required." });
+
+        var snapshot = await _messagingConfig.UpdateAsync(
+            request.ClickSendUsername,
+            request.ClickSendApiKey,
+            request.MailjetApiKey,
+            request.MailjetApiSecret,
+            request.MailjetSenderEmail,
+            HttpContext.RequestAborted);
+
+        await _audit.LogAsync(
+            GetTenantId(),
+            GetUserId(),
+            "messaging.config.updated",
+            "SystemMessagingConfig",
+            null,
+            new { updatedFields = new[] {
+                request.ClickSendUsername  is not null ? "ClickSend:Username"    : null,
+                request.ClickSendApiKey    is not null ? "ClickSend:ApiKey"      : null,
+                request.MailjetApiKey      is not null ? "Mailjet:ApiKey"        : null,
+                request.MailjetApiSecret   is not null ? "Mailjet:ApiSecret"     : null,
+                request.MailjetSenderEmail is not null ? "Mailjet:SenderEmail"   : null,
+            }.Where(f => f is not null) },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(snapshot);
     }
 
     [HttpGet("billing/config")]
@@ -296,3 +337,10 @@ public class SystemController : ControllerBase
 }
 
 public sealed record UpdateBillingConfigRequest(string? PerDevicePriceId);
+
+public sealed record UpdateMessagingConfigRequest(
+    string? ClickSendUsername,
+    string? ClickSendApiKey,
+    string? MailjetApiKey,
+    string? MailjetApiSecret,
+    string? MailjetSenderEmail);

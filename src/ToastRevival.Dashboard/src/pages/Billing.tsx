@@ -37,6 +37,19 @@ interface StripeSnapshot {
   isConfigured: boolean;
 }
 
+interface MessagingSnapshot {
+  hasClickSendUsername: boolean;
+  hasClickSendApiKey: boolean;
+  hasMailjetApiKey: boolean;
+  hasMailjetApiSecret: boolean;
+  hasMailjetSenderEmail: boolean;
+  maskedClickSendUsername: string | null;
+  maskedClickSendApiKey: string | null;
+  maskedMailjetApiKey: string | null;
+  maskedMailjetApiSecret: string | null;
+  mailjetSenderEmail: string | null;
+}
+
 export default function Billing() {
   const { user } = useAuth();
   const isPlatformAdmin = user?.isPlatformAdmin ?? false;
@@ -49,7 +62,7 @@ export default function Billing() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [searchParams] = useSearchParams();
 
-  // Superadmin Stripe config state
+  // Stripe config state
   const [stripeSnap, setStripeSnap]   = useState<StripeSnapshot | null>(null);
   const [secretKey, setSecretKey]     = useState('');
   const [webhookSec, setWebhookSec]   = useState('');
@@ -58,15 +71,30 @@ export default function Billing() {
   const [saveError, setSaveError]     = useState('');
   const [saveOk, setSaveOk]           = useState(false);
 
+  // Messaging config state
+  const [msgSnap, setMsgSnap]               = useState<MessagingSnapshot | null>(null);
+  const [csUsername, setCsUsername]         = useState('');
+  const [csApiKey, setCsApiKey]             = useState('');
+  const [mjApiKey, setMjApiKey]             = useState('');
+  const [mjApiSecret, setMjApiSecret]       = useState('');
+  const [mjSenderEmail, setMjSenderEmail]   = useState('');
+  const [msgSaveLoading, setMsgSaveLoading] = useState(false);
+  const [msgSaveError, setMsgSaveError]     = useState('');
+  const [msgSaveOk, setMsgSaveOk]           = useState(false);
+
   const load = useCallback(async () => {
     setError('');
     try {
       const calls: Promise<unknown>[] = [billingApi.getPlan(), billingApi.getInvoices()];
-      if (isPlatformAdmin) calls.push(api.get<StripeSnapshot>('/api/billing/admin/stripe-config'));
-      const [p, inv, snap] = await Promise.all(calls);
+      if (isPlatformAdmin) {
+        calls.push(api.get<StripeSnapshot>('/api/billing/admin/stripe-config'));
+        calls.push(api.get<MessagingSnapshot>('/api/system/messaging/config'));
+      }
+      const [p, inv, snap, msg] = await Promise.all(calls);
       setPlan(p as BillingPlan);
       setInvoices((inv as { invoices: Invoice[] }).invoices);
       if (snap) setStripeSnap(snap as StripeSnapshot);
+      if (msg) setMsgSnap(msg as MessagingSnapshot);
     } catch {
       setError('Failed to load billing information.');
     } finally {
@@ -121,6 +149,30 @@ export default function Billing() {
       setSaveError(err instanceof ApiError ? err.message : 'Save failed.');
     } finally {
       setSaveLoading(false);
+    }
+  };
+
+  const handleMessagingConfigSave = async (e: FormEvent) => {
+    e.preventDefault();
+    setMsgSaveError('');
+    setMsgSaveOk(false);
+    setMsgSaveLoading(true);
+    try {
+      const snap = await api.post<MessagingSnapshot>('/api/system/messaging/config', {
+        clickSendUsername:  csUsername   || null,
+        clickSendApiKey:    csApiKey     || null,
+        mailjetApiKey:      mjApiKey     || null,
+        mailjetApiSecret:   mjApiSecret  || null,
+        mailjetSenderEmail: mjSenderEmail || null,
+      });
+      setMsgSnap(snap);
+      setCsUsername(''); setCsApiKey(''); setMjApiKey(''); setMjApiSecret(''); setMjSenderEmail('');
+      setMsgSaveOk(true);
+      setTimeout(() => setMsgSaveOk(false), 3000);
+    } catch (err) {
+      setMsgSaveError(err instanceof ApiError ? err.message : 'Save failed.');
+    } finally {
+      setMsgSaveLoading(false);
     }
   };
 
@@ -306,6 +358,120 @@ export default function Billing() {
                 style={{ minWidth: 120 }}
               >
                 {saveLoading ? 'Saving...' : 'Save configuration'}
+              </button>
+            </form>
+          </div>
+        </section>
+      )}
+
+      {/* Messaging Configuration — platform admin only */}
+      {isPlatformAdmin && (
+        <section style={{ marginBottom: 32 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>
+            Messaging Configuration
+          </h2>
+          <div className="card">
+            {/* Status row */}
+            <div style={{ display: 'flex', gap: 24, marginBottom: 24, flexWrap: 'wrap' }}>
+              {[
+                { label: 'ClickSend username', ok: msgSnap?.hasClickSendUsername, masked: msgSnap?.maskedClickSendUsername },
+                { label: 'ClickSend API key',  ok: msgSnap?.hasClickSendApiKey,   masked: msgSnap?.maskedClickSendApiKey },
+                { label: 'Mailjet API key',    ok: msgSnap?.hasMailjetApiKey,     masked: msgSnap?.maskedMailjetApiKey },
+                { label: 'Mailjet API secret', ok: msgSnap?.hasMailjetApiSecret,  masked: msgSnap?.maskedMailjetApiSecret },
+                { label: 'Sender email',       ok: msgSnap?.hasMailjetSenderEmail, masked: msgSnap?.mailjetSenderEmail },
+              ].map(({ label, ok, masked }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: ok ? 'var(--status-success)' : 'var(--status-error)',
+                    flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{label}</span>
+                  {masked && (
+                    <code style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-dim)' }}>
+                      {masked}
+                    </code>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleMessagingConfigSave}>
+              {msgSaveError && <div className="error-banner" style={{ marginBottom: 16 }}>{msgSaveError}</div>}
+              {msgSaveOk    && <div className="success-banner" style={{ marginBottom: 16 }}>Saved. Config reloaded.</div>}
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                Leave a field blank to keep the current value. Changes take effect immediately without a server restart.
+              </p>
+
+              <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-dim)', marginBottom: 10 }}>
+                ClickSend (SMS)
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                <div className="field">
+                  <label>Username</label>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={csUsername}
+                    onChange={e => setCsUsername(e.target.value)}
+                    placeholder={msgSnap?.hasClickSendUsername ? msgSnap.maskedClickSendUsername ?? 'Set' : 'Not configured'}
+                  />
+                </div>
+                <div className="field">
+                  <label>API key</label>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={csApiKey}
+                    onChange={e => setCsApiKey(e.target.value)}
+                    placeholder={msgSnap?.hasClickSendApiKey ? msgSnap.maskedClickSendApiKey ?? 'Set' : 'Not configured'}
+                  />
+                </div>
+              </div>
+
+              <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-dim)', marginBottom: 10 }}>
+                Mailjet (Email)
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                <div className="field">
+                  <label>API key</label>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={mjApiKey}
+                    onChange={e => setMjApiKey(e.target.value)}
+                    placeholder={msgSnap?.hasMailjetApiKey ? msgSnap.maskedMailjetApiKey ?? 'Set' : 'Not configured'}
+                  />
+                </div>
+                <div className="field">
+                  <label>API secret</label>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={mjApiSecret}
+                    onChange={e => setMjApiSecret(e.target.value)}
+                    placeholder={msgSnap?.hasMailjetApiSecret ? msgSnap.maskedMailjetApiSecret ?? 'Set' : 'Not configured'}
+                  />
+                </div>
+              </div>
+              <div className="field" style={{ marginBottom: 16, maxWidth: 360 }}>
+                <label>Sender email</label>
+                <input
+                  type="email"
+                  autoComplete="off"
+                  value={mjSenderEmail}
+                  onChange={e => setMjSenderEmail(e.target.value)}
+                  placeholder={msgSnap?.mailjetSenderEmail ?? 'Not configured'}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={msgSaveLoading || (!csUsername && !csApiKey && !mjApiKey && !mjApiSecret && !mjSenderEmail)}
+                style={{ minWidth: 120 }}
+              >
+                {msgSaveLoading ? 'Saving...' : 'Save configuration'}
               </button>
             </form>
           </div>

@@ -154,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const res = await authApi.login({ email, password });
+    if ('step' in res) throw new Error('SMS verification required.');
     const u = userFromResponse(res);
     localStorage.setItem('token', res.token);
     localStorage.setItem('user', JSON.stringify(u));

@@ -41,6 +41,14 @@ public record LoginRequest(
     [Required, EmailAddress] string Email,
     [Required] string Password);
 
+// SMS MFA challenge returned by Login when PhoneNumberConfirmed == true
+public record LoginSmsChallenge(Guid UserId, string Step, string MaskedPhone);
+
+// SMS OTP verify — completes login
+public record LoginSmsVerifyRequest(
+    [Required] Guid UserId,
+    [Required] string Code);
+
 public record AuthResponse(
     string Token,
     string RefreshToken,

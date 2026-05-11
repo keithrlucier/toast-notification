@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
@@ -251,6 +252,12 @@ public class AuthController : ControllerBase
     private static string HashSmsCode(string code) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code.Trim())));
 
+    private static string MaskPhone(string phone)
+    {
+        var digits = new string(phone.Where(char.IsDigit).ToArray());
+        if (digits.Length < 4) return "****";
+        return $"****{digits[^4..]}";
+    }
 
 
     [HttpPost("register")]
@@ -371,7 +378,8 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-    public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest req)
+    [EnableRateLimiting("login-per-ip")]
+    public async Task<ActionResult> Login([FromBody] LoginRequest req)
     {
         // Bypass tenant filter — login is tenant-unaware
         var user = await _db.Users.IgnoreQueryFilters()
@@ -380,15 +388,66 @@ public class AuthController : ControllerBase
         if (user is null || !await _userManager.CheckPasswordAsync(user, req.Password))
             return Unauthorized("Invalid credentials.");
 
+        if (user.RegistrationStep != RegistrationStep.Complete)
+            return Unauthorized("Registration is incomplete. Please finish registering your account.");
+
         await PromoteSoleTenantOwnerAsync(user);
 
+        // SMS MFA: all users with a confirmed phone number must verify via SMS
+        if (user.PhoneNumberConfirmed && !string.IsNullOrWhiteSpace(user.PhoneNumber))
+        {
+            var code   = GenerateSmsCode();
+            var hashed = HashSmsCode(code);
+            user.SmsVerificationCode = hashed;
+            user.SmsCodeExpiry       = DateTime.UtcNow.AddMinutes(10);
+            await _db.SaveChangesAsync();
+
+            await _sms.SendAsync(user.PhoneNumber, $"Your Toast Notification login code is: {code}. It expires in 10 minutes.");
+
+            var masked = MaskPhone(user.PhoneNumber);
+            return Ok(new LoginSmsChallenge(user.Id, "sms_required", masked));
+        }
+
+        // No phone confirmed — issue token directly (legacy/admin-created accounts)
         user.LastLogin = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        var token = _tokens.CreateUserToken(user);
-        var refresh = _tokens.CreateRefreshToken();
+        var token     = _tokens.CreateUserToken(user);
+        var refresh   = _tokens.CreateRefreshToken();
         var expiresAt = DateTime.UtcNow.AddMinutes(60);
+        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
+    }
 
+    /// <summary>
+    /// Completes SMS MFA login. Verifies the 6-digit code sent to the user's
+    /// phone during POST /api/auth/login and returns a full JWT on success.
+    /// </summary>
+    [HttpPost("login/verify-sms")]
+    [EnableRateLimiting("login-sms-per-ip")]
+    public async Task<ActionResult<AuthResponse>> VerifyLoginSms([FromBody] LoginSmsVerifyRequest req)
+    {
+        var user = await _db.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == req.UserId);
+
+        if (user is null || user.RegistrationStep != RegistrationStep.Complete)
+            return Unauthorized("Invalid request.");
+
+        if (user.SmsCodeExpiry is null || user.SmsCodeExpiry < DateTime.UtcNow)
+            return Unauthorized("Verification code expired. Please sign in again.");
+
+        if (user.SmsVerificationCode != HashSmsCode(req.Code.Trim()))
+            return Unauthorized("Incorrect verification code.");
+
+        user.SmsVerificationCode = null;
+        user.SmsCodeExpiry       = null;
+        user.LastLogin           = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        await PromoteSoleTenantOwnerAsync(user);
+
+        var token     = _tokens.CreateUserToken(user);
+        var refresh   = _tokens.CreateRefreshToken();
+        var expiresAt = DateTime.UtcNow.AddMinutes(60);
         return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
     }
 

@@ -38,9 +38,26 @@ export interface MfaVerifyResponse {
   expiresAt: string;
 }
 
+export interface LoginSmsChallenge {
+  userId: string;
+  step: 'sms_required';
+  maskedPhone: string;
+}
+
+export interface LoginSmsVerifyRequest {
+  userId: string;
+  code: string;
+}
+
+// login returns either AuthResponse (no phone) or LoginSmsChallenge (phone confirmed)
+export type LoginResult = AuthResponse | LoginSmsChallenge;
+
 export const authApi = {
   login: (req: LoginRequest) =>
-    api.post<AuthResponse>('/api/auth/login', req),
+    api.post<LoginResult>('/api/auth/login', req),
+
+  loginVerifySms: (req: LoginSmsVerifyRequest) =>
+    api.post<AuthResponse>('/api/auth/login/verify-sms', req),
 
   register: (req: RegisterRequest) =>
     api.post<AuthResponse>('/api/auth/register', req),

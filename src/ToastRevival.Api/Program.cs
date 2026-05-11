@@ -143,6 +143,32 @@ builder.Services.AddRateLimiter(opts =>
         });
     });
 
+    // Login brute-force protection: 10 attempts / 5 min per IP
+    opts.AddPolicy("login-per-ip", ctx =>
+    {
+        var partitionKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(5),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0,
+        });
+    });
+
+    // SMS OTP verify: 5 attempts / 15 min per IP (prevent OTP brute-force)
+    opts.AddPolicy("login-sms-per-ip", ctx =>
+    {
+        var partitionKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(15),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0,
+        });
+    });
+
     opts.RejectionStatusCode = 429;
 });
 
@@ -170,6 +196,7 @@ builder.Services.AddSingleton<IPdfExportService, PdfExportService>();
 builder.Services.AddScoped<ILicenseService, LicenseService>();
 builder.Services.AddScoped<IStripeBillingSyncService, StripeBillingSyncService>();
 builder.Services.AddSingleton<IBillingConfigService, BillingConfigService>();
+builder.Services.AddSingleton<IMessagingConfigService, MessagingConfigService>();
 
 // M9.A transactional messaging (Mailjet email + ClickSend SMS)
 builder.Services.AddHttpClient<IEmailService, MailjetEmailService>();

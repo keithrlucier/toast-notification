@@ -568,7 +568,7 @@ public class AuthController : ControllerBase
         if (user is null) return Unauthorized();
 
         if (string.IsNullOrWhiteSpace(user.MfaSecret))
-            return BadRequest("MFA is not enrolled. Call POST /api/auth/mfa/enroll first.");
+            return BadRequest("Authenticator app MFA is not set up on this account.");
 
         // MfaService.Verify mutates user.LastTotpStep on success (SEC-005 /
         // INFO-M3-001 replay guard). Persist the change so the next call

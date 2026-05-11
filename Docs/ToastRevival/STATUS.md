@@ -2,7 +2,7 @@
 
 > Repo / project codename: **ToastRevival** (internal). Product / user-facing brand: **Toast Notification** (toastnotification.com).
 
-Last updated: 2026-05-09 (Production live)
+Last updated: 2026-05-10
 
 ## Project State
 
@@ -54,7 +54,15 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **PRODUCTION LIVE 2026-05-09.** https://toastnotification.com deployed to AWS Lightsail 2-box setup. HTTPS via Let's Encrypt (auto-renews). React dashboard + ASP.NET Core 8 API on TOASTWEB1 (54.82.103.160). PostgreSQL 16 on TOASTDATA1 (172.26.3.164 private). EF migrations ran clean on first startup. SSH keys at `Docs/Assets/`. **First-time admin signup at https://toastnotification.com/register** — register endpoint creates the tenant, makes the registrant admin, seeds the 6 default templates.
 
-**Next: M7.D (SEO + JSON-LD + sitemap + llms.txt + favicon + OG image — same Lightsail deploy), M8 (integration testing + closed beta), M9 (launch). Codex tracks: Pricing v2 backend rewrite + PlatformAdmin role + admin dashboard UI redesign — handed off via `Docs/ToastRevival/CODEX-HANDOFF.md`.**
+**Microsoft Store Partner Agreement complete (2026-05-10). Listing 9PFD6004DVTN is 100% live and passing all Store certification checks. Two deferred polish items remain before broader marketing push: (1) branding — Diana curated tile assets; (2) Store copy — current listing description needs a rewrite against the locked marketing voice. End-to-end testing not yet completed (deferred to M8 beta).**
+
+**INFO-MSIX-004 closed (2026-05-10).** DiagLog rotation (512 KB cap, rolls to `agent.log.1`) added to `DiagLog.Write()`. `--diag` flag gate added: `ToastNotification.exe --diag` dumps the log path and last 200 lines to stdout. Works before the elevation check so support staff can run it as admin. Dispatch entry added between `--setup-bootstrap` and the elevation gate in `AgentEntryPoint.RunAsync`. `DiagMode` class lives alongside `DiagLog` in `Program.cs`.
+
+**Bucket 3 cleanup complete (2026-05-10).** INFO-M8C-001: hub tenant-isolation test replaced `Task.Delay(500ms)` with a 20ms predicate-poll (300ms timeout) — fails fast when isolation is broken, removes the fixed 500ms wall on the fast path. INFO-M7C-003: docs route paths extracted to `src/routes/docsRoutes.ts` (`DOCS_PATHS` const); both `App.tsx` and `DocsLayout.tsx` now import from the shared file — nav paths and router definitions can no longer drift. INFO-M9C-002: `DeployCommand` enrollment-key fetch is now module-level cached; `/api/tenant/settings` is called at most once per page load regardless of mount count.
+
+**Codex: no open tasks as of 2026-05-10.**
+
+**Next: M7.D (SEO + JSON-LD + sitemap + llms.txt + favicon + OG image — same Lightsail deploy), M8 (integration testing + closed beta), M9 (launch). Store copy + Diana tile assets deferred polish before M9 marketing push.**
 
 ## M0A Deliverables - All Closed
 
@@ -116,11 +124,14 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 - M0 D2 (Win10 1809 install validation): no Win10 1809 lab machine on hand; deferred to M0 D4 GPO matrix.
 - M0 D4: GPO / domain / Intune / multi-user matrix. Apply `FIX-MSIX-002` first. Roll uninstall idempotency + 0.3.x → 0.3.y major-upgrade race validation into this matrix.
-- M0 D5: **CLOSED 2026-05-09** — listing 9PFD6004DVTN live in the Microsoft Store. Diana curated tile assets remain a deferred polish item before broader market expansion.
+- M0 D5: **CLOSED 2026-05-09** — listing 9PFD6004DVTN live in the Microsoft Store. Partner Agreement complete 2026-05-10. **Deferred polish (pre-M9 marketing push):** (1) Diana curated tile assets; (2) Store listing description rewrite.
 - M0 D6: Document deployment findings + fallback mechanisms. Diana tile assets delivery.
 - M2 follow-up: detect `----AppNotificationActivated:` arg in `AgentOptions.Parse` and route to one-shot activation handler instead of falling through to a default Plain template re-send (INFO-MSIX-004-D).
 - M2 follow-up: HMAC payload verification, SignalR reconnect, missed notification catch-up.
-- M1/M2 hygiene: gate DiagLog behind `--diag` flag or add rotation before launch (INFO-MSIX-004-A/B/C).
+- **CLOSED 2026-05-10:** `--diag` flag gate + DiagLog 512KB rotation (INFO-MSIX-004-A/B/C). `ToastNotification.exe --diag` dumps log path + last 200 lines.
+- **CLOSED 2026-05-10:** INFO-M8C-001 hub isolation test predicate-poll (was Task.Delay 500ms).
+- **CLOSED 2026-05-10:** INFO-M7C-003 docs nav paths extracted to `src/routes/docsRoutes.ts` — single source of truth.
+- **CLOSED 2026-05-10:** INFO-M9C-002 DeployCommand enrollment-key fetch now module-cached.
 - M4 design: curated per-template hero / logo imagery + curated MSIX tile imagery. Open Diana question - `AppNotificationButtonStyle.Critical` vs `Success` for security-framed actions.
 - Future templates: inline image, text input, selection input controls not yet exercised.
-- No automated tests exist yet (first tests expected at M1 backend / M2 agent integration).
+- End-to-end testing not yet completed — deferred to M8 beta.

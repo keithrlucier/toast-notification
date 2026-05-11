@@ -330,9 +330,18 @@ public sealed class SecurityTests
 
         try
         {
-            // Give the hub a moment to fan out — DeviceConnected is fired in
-            // OnConnectedAsync after group join completes.
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
+            // Predicate-poll: if isolation is broken the bad event arrives almost
+            // immediately, so fail fast. Otherwise drain for up to 300ms to be
+            // confident nothing leaked through.
+            var deadline = DateTime.UtcNow.AddMilliseconds(300);
+            while (DateTime.UtcNow < deadline)
+            {
+                lock (aReceived)
+                {
+                    if (aReceived.Count > 0) break; // leaked — assertion below will fail
+                }
+                await Task.Delay(20);
+            }
 
             lock (aReceived)
             {

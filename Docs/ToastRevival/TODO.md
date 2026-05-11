@@ -1,6 +1,6 @@
 # Toast Notification — Open Items
 
-**Last updated: 2026-05-10 (session 2)**
+**Last updated: 2026-05-10 (session 3)**
 
 ## Production status
 
@@ -24,11 +24,11 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 
 ### Low / polish
 
-- [ ] **DiagLog rotation** (INFO-MSIX-004) — Agent DiagLog at `%LOCALAPPDATA%\Toast2IT\Toast Notification\` has no size cap and no rotation. Appends forever. Gate behind `--diag` flag or add rotation before fleet-wide deployment. Bundle with next signed agent build alongside INFO-M9B-001.
+- [x] **DiagLog rotation + --diag gate** (INFO-MSIX-004) — **RESOLVED 2026-05-10.** `DiagLog.Write()` now calls `RotateIfNeeded()` — rolls `agent.log` → `agent.log.1` at 512 KB, keeps two generations. New `--diag` flag handler in `AgentEntryPoint.RunAsync` (dispatched before the elevation check) prints log path, file size, and last 200 lines to stdout. `DiagMode` class in `Program.cs`. Ships next signed agent build.
 
-- [ ] **INFO-M8C-001** — `HubDeviceConnectedEvent` test uses a 500ms `Task.Delay`. Convert to predicate-poll to eliminate flake risk.
+- [x] **INFO-M8C-001** — **RESOLVED 2026-05-10.** `TenantIsolation_HubDeviceConnectedEvent_DoesNotLeakAcrossTenantGroups` predicate-poll: 20ms tick, 300ms timeout. Exits early if the leaked event arrives (fail fast), otherwise drains the full window before asserting `DoesNotContain`.
 
-- [ ] **INFO-M7C-003** — Docs sidebar references "Devices → Install agent" admin tab path. Verify this matches the current dashboard nav or update the text.
+- [x] **INFO-M7C-003** — **RESOLVED 2026-05-10.** Docs route paths extracted to `src/routes/docsRoutes.ts` (`DOCS_PATHS` constant). Both `App.tsx` (router) and `DocsLayout.tsx` (nav sidebar) import from it — single source of truth, nav and routes can no longer drift.
 
 - [x] **INFO-M2B-002** — Resolved 2026-05-10 (M9.B). `GET /api/notifications/pending` now accepts `?limit=<int>` query param, default 100 (backwards compat for v0.3.x agents), server-clamped to [1, 500]. Wire shape preserved (still array). Agent-side adoption of `limit=500` shipped as source change in M9.C (INFO-M9B-001) — ships next signed agent build.
 
@@ -56,6 +56,10 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 
 ## Closed this session (2026-05-10)
 
+- [x] **INFO-MSIX-004** (session 3) — DiagLog 512KB rotation + `--diag` stdout dump. `DiagMode` class, `RotateIfNeeded()` in `DiagLog`. Ships next signed agent build.
+- [x] **INFO-M8C-001** (session 3) — SecurityTests hub isolation test: `Task.Delay(500ms)` → 20ms predicate-poll, 300ms timeout.
+- [x] **INFO-M7C-003** (session 3) — Docs route paths centralized to `src/routes/docsRoutes.ts`; App.tsx + DocsLayout.tsx both import `DOCS_PATHS`.
+- [x] **INFO-M9C-002** (session 3) — `DeployCommand.tsx` enrollment-key fetch module-level cached; `/api/tenant/settings` fires at most once per page load.
 - [x] M9.C — enrollment-key auto-gen on new tenants + regenerate endpoint + DeployCommand surface (closes INFO-M1-003 forward-only); agent multi-page drain loop with `limit=500` (closes INFO-M9B-001 source-only); production bell tray icons + Store tile assets (closes Diana M9 GA blockers); INFO-M2B-003 already-shipped doc fix; Azure Content Safety env confirmation
 - [x] M9.B pending endpoint pagination — `?limit=<int>` query param, default 100, clamp [1, 500], wire shape preserved, integration test (510-row Postgres seed) shipped with the change
 - [x] M9.A registration flow — ClickSend SMS verify → Mailjet magic token email → set password → logged in

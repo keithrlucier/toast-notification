@@ -1,25 +1,26 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { DOCS_PATHS } from '../../routes/docsRoutes';
 
 const NAV_GROUPS: { heading: string; links: { to: string; label: string; end?: boolean }[] }[] = [
   {
     heading: 'Start here',
     links: [
-      { to: '/docs', label: 'Overview', end: true },
-      { to: '/docs/getting-started', label: 'Getting started' },
+      { to: DOCS_PATHS.index,          label: 'Overview', end: true },
+      { to: DOCS_PATHS.gettingStarted, label: 'Getting started' },
     ],
   },
   {
     heading: 'Deployment',
     links: [
-      { to: '/docs/deploy/store', label: 'Microsoft Store' },
-      { to: '/docs/deploy/intune', label: 'Intune (LOB)' },
-      { to: '/docs/deploy/rmm', label: 'RMM silent install' },
+      { to: DOCS_PATHS.deployStore,  label: 'Microsoft Store' },
+      { to: DOCS_PATHS.deployIntune, label: 'Intune (LOB)' },
+      { to: DOCS_PATHS.deployRmm,    label: 'RMM silent install' },
     ],
   },
   {
     heading: 'API reference',
-    links: [{ to: '/docs/api', label: 'REST API' }],
+    links: [{ to: DOCS_PATHS.api, label: 'REST API' }],
   },
 ];
 

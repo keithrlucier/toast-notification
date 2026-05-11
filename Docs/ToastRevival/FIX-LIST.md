@@ -1,5 +1,23 @@
 # ToastRevival - Fix List
 
+## Resolved 2026-05-10 (session 3)
+
+### INFO-MSIX-004 (A/B/C) — **RESOLVED 2026-05-10**
+
+**Filed:** M1/M2 carry-forward (DiagLog unbounded growth, no support dump path).
+**Surface:** `src/ToastRevival.Agent/Program.cs` — `DiagLog` class + `AgentEntryPoint.RunAsync`.
+**Resolution:**
+- **Rotation**: `DiagLog` now has a `MaxFileBytes = 512 * 1024` constant. `Write()` calls `RotateIfNeeded()` inside the lock before each append. `RotateIfNeeded` checks `FileInfo.Length >= MaxFileBytes` and renames `agent.log` → `agent.log.1` (overwriting any existing `.1`), then returns so the next `AppendAllText` creates a fresh `agent.log`. Keeps two generations. Error-swallowed (best-effort, same policy as the rest of `DiagLog`).
+- **`--diag` flag gate**: New `DiagMode` class handles `--diag`. Dispatched in `AgentEntryPoint.RunAsync` after `--setup-bootstrap` (SYSTEM mode) but before the elevation check — support staff running as admin can still get the dump. Prints log path, file size in KB, and the last 200 lines of the log to stdout. Ships next signed agent build alongside the agent's next MSI rebuild.
+
+### INFO-M9C-002 — **RESOLVED 2026-05-10**
+
+**Filed:** M9.C Code Sweep carry-forward ("deploy-command fetch caching nice-to-have").
+**Surface:** `src/ToastRevival.Dashboard/src/components/DeployCommand.tsx`
+**Resolution:** Module-level `_enrollmentKeyCache: Promise<string | null> | null` variable caches the first API call result. `getEnrollmentKey()` helper returns the cached promise on subsequent calls — `/api/tenant/settings` fires at most once per page load regardless of how many times `DeployCommand` mounts. Non-fatal error path preserved (unresolved promise catches to `null`). The `useEffect` now calls `getEnrollmentKey()` instead of `api.get()` directly; the `cancelled` flag guards remain.
+
+---
+
 ## Open Issues
 
 ### INFO-SEC-006 — **RESOLVED 2026-05-09** (nginx static SPA responses now carry defensive headers + HSTS)
@@ -84,8 +102,11 @@
 **Verification:** `tests/ToastRevival.Api.Tests/SecurityTests.cs::TenantIsolation_AuditList_DoesNotLeakOtherTenantsRows` seeds A + B audit rows and asserts Tenant A's response contains A's action string and not B's. Build clean (0 warnings, 0 errors).
 **New standing rule:** Code Sweep Step 5 now includes "Does every entity without a global query filter have an explicit tenantId predicate at every per-tenant controller read site?" `AuditLog` is the canonical "read by both PlatformAdmin and tenant admins" table; future tables of the same shape need this check applied at controller review.
 
-### INFO-M8C-001 (open, M9 polish)
-`tests/ToastRevival.Api.Tests/SecurityTests.cs::TenantIsolation_HubDeviceConnectedEvent_DoesNotLeakAcrossTenantGroups` uses a 500ms `Task.Delay` to give SignalR's `OnConnectedAsync` event fan-out a window before asserting Tenant A's connection didn't observe Tenant B's `DeviceConnected`. Could flake on a slow CI runner with high context-switch contention. M9 candidate: convert to a predicate-poll loop with a 5-second timeout, asserting `aReceived` stays empty for the full window — same shape `EndToEndNotificationTests.PollUntil` already uses for delivery-status assertions.
+### INFO-M8C-001 — **RESOLVED 2026-05-10 (session 3)**
+
+**Filed:** 2026-05-09 (M8.C Code Sweep).
+**Surface:** `tests/ToastRevival.Api.Tests/SecurityTests.cs::TenantIsolation_HubDeviceConnectedEvent_DoesNotLeakAcrossTenantGroups`
+**Resolution:** `Task.Delay(TimeSpan.FromMilliseconds(500))` replaced with a 20ms predicate-poll loop (300ms total timeout). Loop exits early if `aReceived.Count > 0` — fail-fast when tenant isolation is broken, which is the test's primary signal. Otherwise drains the full 300ms window before `Assert.DoesNotContain`. Reduces wall-time on the happy path (isolation intact → exits at deadline, not fixed 500ms) and on the failure path (leaked event detected within ~20ms, not after 500ms). Lock scope preserved; same `aReceived` list and lock guard as before.
 
 ### INFO-M1-004 — **RESOLVED 2026-05-09 (M8.A)** (Zero automated tests in backend)
 
@@ -158,8 +179,11 @@ After M7.D, `index.html` ships marketing-flavored default `<title>`/description/
 ### INFO-M7C-005 (open, M7.D candidate)
 Diana, post-deploy review: `--text-secondary` (#4B5563) reads slightly soft on `--bg-primary` (#F3F5F8) for docs body. WCAG AA compliant but Keith's standing comment ("my old eyes hurt, it's too faint") may flag. M7.D candidate: bump body to `--text-primary` and reserve `--text-secondary` for fine print / nav inactive.
 
-### INFO-M7C-003 (open, M8 candidate)
-Docs (`/docs/getting-started`, `/docs/deploy/store`, `/docs/deploy/rmm`) reference an "Install agent" admin tab path on the dashboard's Devices page. The Devices page may not yet expose the install download UI on prod (Codex's admin UI redesign in flight may add it; need to confirm). Copy is forward-leaning. Verify or rewrite for M8.
+### INFO-M7C-003 — **RESOLVED 2026-05-10 (session 3)**
+
+**Filed:** 2026-05-09 (M7.C Code Sweep — nav path consistency).
+**Surface:** `src/ToastRevival.Dashboard/src/components/marketing/DocsLayout.tsx` (NAV_GROUPS), `src/ToastRevival.Dashboard/src/App.tsx` (docs route children).
+**Resolution:** Docs route paths extracted to a shared constants file `src/ToastRevival.Dashboard/src/routes/docsRoutes.ts` exporting `DOCS_PATHS` (`as const` object: index, gettingStarted, deployStore, deployIntune, deployRmm, api). Both `App.tsx` and `DocsLayout.tsx` import `DOCS_PATHS` and reference the same string values. Nav sidebar links and router route definitions are now structurally coupled — adding a path to one without the other causes a TypeScript reference error that surfaces at build time, not as a silent 404 at runtime. Verified: all six paths present in both consumers, routes and nav match exactly.
 
 ### INFO-M7C-002 (open, no action)
 `m-footer-grid--slim` widened from 3-col to 4-col to host the new `Resources` column. Codex did NOT modify `MarketingFooter.tsx` (verified via `git diff --cached`), so no merge conflict expected. Mobile breakpoint preserves single-column.

@@ -486,7 +486,7 @@ Carl sliced M8 at orientation (2026-05-09). M8.A delivers the xUnit + WebApplica
 - Banned-terms grep clean across all four new test files (zero hits on customer-facing prohibited terms or team-name leaks).
 - New M8.C standing sweep check (Carl): **"Does every entity without a global query filter have an explicit tenantId predicate at every per-tenant controller read site?"** `AuditLog` is the canonical "read by both PlatformAdmin and tenant admins" table and it bit us. Future tables of the same shape (audit-log style, cross-tenant analytics, etc.) need this check applied at controller review.
 - INFO items:
-  - **INFO-M8C-001** (open, M9 polish): `TenantIsolation_HubDeviceConnectedEvent_DoesNotLeakAcrossTenantGroups` uses a 500ms `Task.Delay` for cross-connection event propagation. Could flake on a slow CI runner. M9 candidate: convert to predicate-poll with a 5s timeout instead.
+  - **INFO-M8C-001 — RESOLVED 2026-05-10 (session 3)**: `TenantIsolation_HubDeviceConnectedEvent_DoesNotLeakAcrossTenantGroups` `Task.Delay(500ms)` replaced with 20ms predicate-poll, 300ms total timeout. Fail-fast when isolation is broken; otherwise drains the full window. See FIX-LIST.md.
 
 ### Agent Deployment (M8.C)
 - Anthony: full implementation (4 new test files, AuditController patch) — single-author shape consistent with M8.A and M8.B.
@@ -553,6 +553,17 @@ Build clean: API, Agent, Dashboard. Deploy verified — `/api/health` 200, `/log
 - Abish: Code Sweep — caught the pre-existing WIP scope leak before commit.
 - Diana: On bench — backend-only milestone, no UI work.
 - Carl: foreman + selective-commit discipline.
+
+### Session 3 Cleanup (2026-05-10) — Bucket 3 + INFO-MSIX-004
+
+Four low/nice-to-have INFO items closed. No new milestone, no EF migration, no signed build.
+
+1. **INFO-MSIX-004 (A/B/C)** — `DiagLog` 512KB rotation (`.log` → `.log.1`, two generations) added to `Program.cs::DiagLog.RotateIfNeeded`. `--diag` flag handler (`DiagMode` class) dumps log path + last 200 lines to stdout; dispatched before elevation check so support staff can run as admin. Ships next signed agent build.
+2. **INFO-M8C-001** — `SecurityTests.TenantIsolation_HubDeviceConnectedEvent_DoesNotLeakAcrossTenantGroups` 500ms fixed delay replaced with 20ms predicate-poll (300ms timeout). Fail-fast on leaked event; removes 500ms floor from the passing path.
+3. **INFO-M7C-003** — Docs route paths centralized to `src/routes/docsRoutes.ts` (`DOCS_PATHS`). `App.tsx` (router) and `DocsLayout.tsx` (nav sidebar) both import from it — single source of truth, structural coupling prevents future nav/route drift.
+4. **INFO-M9C-002** — `DeployCommand.tsx` enrollment-key fetch module-cached (`_enrollmentKeyCache` promise-level singleton). `/api/tenant/settings` fires at most once per page load regardless of mount count.
+
+**App store status:** Partner Agreement fully signed (2026-05-10). Listing 9PFD6004DVTN 100% live. Remaining pre-M9-marketing-push polish: Diana tile assets + Store listing copy rewrite.
 
 ---
 

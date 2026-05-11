@@ -6,6 +6,19 @@ interface TenantSettingsLite {
   enrollmentKey: string | null;
 }
 
+// Module-level cache — enrollment key is immutable for the session, so we only
+// fetch once regardless of how many times DeployCommand mounts.
+let _enrollmentKeyCache: Promise<string | null> | null = null;
+
+function getEnrollmentKey(): Promise<string | null> {
+  if (!_enrollmentKeyCache) {
+    _enrollmentKeyCache = api.get<TenantSettingsLite>('/api/tenant/settings')
+      .then(res => res.enrollmentKey ?? null)
+      .catch(() => null); // non-fatal
+  }
+  return _enrollmentKeyCache;
+}
+
 export default function DeployCommand() {
   const { user } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -17,9 +30,7 @@ export default function DeployCommand() {
   // rejected unless an admin shares the key out-of-band).
   useEffect(() => {
     let cancelled = false;
-    api.get<TenantSettingsLite>('/api/tenant/settings')
-      .then(res => { if (!cancelled) setEnrollmentKey(res.enrollmentKey ?? null); })
-      .catch(() => { /* non-fatal: deploy command renders without the key */ });
+    getEnrollmentKey().then(key => { if (!cancelled) setEnrollmentKey(key); });
     return () => { cancelled = true; };
   }, []);
 

@@ -175,6 +175,12 @@ There is no live channel between us. This doc is the comms surface. If you need 
 
 Codex closed the inherited tracks and deployed them to production.
 
+## Status 2026-05-10
+
+**Codex has no open tasks.** All backend + admin UI tracks from the original handoff are complete. If new work is assigned to Codex, a new section will be added here.
+
+Current project state: M0A–M9.C complete. Bucket 3 cleanup done (INFO-MSIX-004, INFO-M8C-001, INFO-M7C-003, INFO-M9C-002). Next active work: M7.D (SEO/OG/sitemap) and M8 D1/D2/D3 end-to-end lab tests (Keith). Codex track: no active items.
+
 - Admin UI: authenticated shell now uses a dark enterprise rail, light operations workspace, blue accent, dense cards/tables, and corrected role labels. Platform admins render as `Platform Admin`; tenant `SuperAdmin` renders as `Tenant Owner`.
 - Navigation errors: fixed API contract mismatches for MFA, enum JSON, device DTOs, notification status, and JWT claim remapping (`MapInboundClaims=false`) so admin routes stop returning false 403s when the token contains `role=SuperAdmin`.
 - Tenant owner self-heal: public register creates `Role=SuperAdmin`; login promotes a sole legacy tenant `Admin` to `SuperAdmin` when no tenant owner exists.

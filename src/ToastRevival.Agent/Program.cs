@@ -25,7 +25,10 @@ namespace ToastRevival.Agent
     ///                        whose original sender (the primary worker) was dead. Short-lived,
     ///                        skips the mutex, posts the interaction via REST, exits clean.
     ///
-    ///  2. Diagnostic mode:   args contain --template — legacy M0A behavior. Used by the MSI
+    ///  2. Diagnostic log dump: args contain --diag — prints the log file path and last 200 lines
+    ///                        to stdout for remote support. Works before the elevation gate.
+    ///
+    ///  3. Diagnostic mode:   args contain --template — legacy M0A behavior. Used by the MSI
     ///                        Scheduled Task channel and for direct lab/dev launches. Renders a
     ///                        single hardcoded template and exits.
     ///
@@ -72,6 +75,13 @@ namespace ToastRevival.Agent
             if (HasFlag(args, "--setup-bootstrap"))
             {
                 return await SetupMode.RunAsync(args);
+            }
+
+            // Diagnostic gate — dump log path + recent log content to stdout for support.
+            // Works before the elevation check so support staff can run it as admin.
+            if (HasFlag(args, "--diag"))
+            {
+                return DiagMode.Run();
             }
 
             if (IsElevated())
@@ -483,8 +493,48 @@ namespace ToastRevival.Agent
         }
     }
 
+    /// <summary>
+    /// Handles --diag: prints the log file path and the last 200 lines to stdout.
+    /// Useful for remote support ("run --diag and paste the output").
+    /// </summary>
+    internal static class DiagMode
+    {
+        public static int Run()
+        {
+            var path = DiagLog.LogFilePath;
+            Console.WriteLine($"Toast Notification Agent — DiagLog path: {(string.IsNullOrEmpty(path) ? "(unavailable)" : path)}");
+
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                Console.WriteLine("Log file not found.");
+                return 0;
+            }
+
+            try
+            {
+                var info = new FileInfo(path);
+                Console.WriteLine($"Log size: {info.Length / 1024.0:F1} KB");
+                Console.WriteLine();
+                Console.WriteLine("--- Last 200 lines ---");
+
+                var lines = File.ReadAllLines(path);
+                var start = Math.Max(0, lines.Length - 200);
+                for (var i = start; i < lines.Length; i++)
+                    Console.WriteLine(lines[i]);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to read log: {ex.Message}");
+            }
+
+            return 0;
+        }
+    }
+
     internal static class DiagLog
     {
+        private const long MaxFileBytes = 512 * 1024; // 512 KB — rotate at this threshold
+
         private static readonly object _lock = new();
         public static string LogFilePath { get; private set; } = "";
         public static bool IsPackaged { get; private set; }
@@ -523,10 +573,25 @@ namespace ToastRevival.Agent
             {
                 lock (_lock)
                 {
+                    RotateIfNeeded();
                     File.AppendAllText(LogFilePath, line);
                 }
             }
             catch { /* DiagLog must never throw */ }
+        }
+
+        private static void RotateIfNeeded()
+        {
+            try
+            {
+                if (!File.Exists(LogFilePath)) return;
+                if (new FileInfo(LogFilePath).Length < MaxFileBytes) return;
+
+                var rolled = LogFilePath + ".1";
+                if (File.Exists(rolled)) File.Delete(rolled);
+                File.Move(LogFilePath, rolled);
+            }
+            catch { /* best-effort rotation */ }
         }
     }
 

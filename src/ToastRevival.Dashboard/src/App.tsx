@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { DOCS_PATHS } from './routes/docsRoutes';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -102,12 +103,12 @@ const router = createBrowserRouter([
           </Suspense>
         ),
         children: [
-          { path: '/docs',                  element: <Suspense fallback={<MarketingFallback />}><DocsIndex /></Suspense> },
-          { path: '/docs/getting-started',  element: <Suspense fallback={<MarketingFallback />}><DocsGettingStarted /></Suspense> },
-          { path: '/docs/deploy/store',     element: <Suspense fallback={<MarketingFallback />}><DocsStore /></Suspense> },
-          { path: '/docs/deploy/intune',    element: <Suspense fallback={<MarketingFallback />}><DocsIntune /></Suspense> },
-          { path: '/docs/deploy/rmm',       element: <Suspense fallback={<MarketingFallback />}><DocsRmm /></Suspense> },
-          { path: '/docs/api',              element: <Suspense fallback={<MarketingFallback />}><DocsApi /></Suspense> },
+          { path: DOCS_PATHS.index,          element: <Suspense fallback={<MarketingFallback />}><DocsIndex /></Suspense> },
+          { path: DOCS_PATHS.gettingStarted, element: <Suspense fallback={<MarketingFallback />}><DocsGettingStarted /></Suspense> },
+          { path: DOCS_PATHS.deployStore,   element: <Suspense fallback={<MarketingFallback />}><DocsStore /></Suspense> },
+          { path: DOCS_PATHS.deployIntune,  element: <Suspense fallback={<MarketingFallback />}><DocsIntune /></Suspense> },
+          { path: DOCS_PATHS.deployRmm,     element: <Suspense fallback={<MarketingFallback />}><DocsRmm /></Suspense> },
+          { path: DOCS_PATHS.api,           element: <Suspense fallback={<MarketingFallback />}><DocsApi /></Suspense> },
         ],
       },
     ],

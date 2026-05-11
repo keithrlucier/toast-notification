@@ -1,4 +1,5 @@
 /* Marketing site — Diana spec, M7.A locked. Token aliases use index.css authoritative names. */
+@import './bento.css';
 
 .marketing-root {
   display: flex;

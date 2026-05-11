@@ -563,7 +563,9 @@ Four low/nice-to-have INFO items closed. No new milestone, no EF migration, no s
 3. **INFO-M7C-003** — Docs route paths centralized to `src/routes/docsRoutes.ts` (`DOCS_PATHS`). `App.tsx` (router) and `DocsLayout.tsx` (nav sidebar) both import from it — single source of truth, structural coupling prevents future nav/route drift.
 4. **INFO-M9C-002** — `DeployCommand.tsx` enrollment-key fetch module-cached (`_enrollmentKeyCache` promise-level singleton). `/api/tenant/settings` fires at most once per page load regardless of mount count.
 
-**App store status:** Partner Agreement fully signed (2026-05-10). Listing 9PFD6004DVTN 100% live. Remaining pre-M9-marketing-push polish: Diana tile assets + Store listing copy rewrite.
+**App store status:** Partner Agreement fully signed (2026-05-10). Listing 9PFD6004DVTN 100% live. Remaining pre-M9-marketing-push polish: Store listing copy rewrite (Diana tile assets shipped M9.C).
+
+5. **Home page redesign** — technical hero (copy-left / RMM code-block-right), terminal msg.exe vs. Toast Notification comparison, bento grid for platform architecture, accurate two-card pricing (free ≤25 / standard $0.22 from device 26). `bento.css` new stylesheet. No fake stats. Deployed 2026-05-10 (commit `a6b658c`).
 
 ---
 

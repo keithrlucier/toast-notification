@@ -60,6 +60,8 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **Bucket 3 cleanup complete (2026-05-10).** INFO-M8C-001: hub tenant-isolation test replaced `Task.Delay(500ms)` with a 20ms predicate-poll (300ms timeout) — fails fast when isolation is broken, removes the fixed 500ms wall on the fast path. INFO-M7C-003: docs route paths extracted to `src/routes/docsRoutes.ts` (`DOCS_PATHS` const); both `App.tsx` and `DocsLayout.tsx` now import from the shared file — nav paths and router definitions can no longer drift. INFO-M9C-002: `DeployCommand` enrollment-key fetch is now module-level cached; `/api/tenant/settings` is called at most once per page load regardless of mount count.
 
+**Home page redesigned and deployed (2026-05-10, commit a6b658c).** New layout: technical hero with copy-left / RMM code-block-right split, terminal msg.exe vs. Toast Notification comparison, bento grid for platform architecture (4 cards, 8/4 column split), accurate two-card pricing (free ≤25 devices / standard $0.22/device starting at 26). No fake stats, no trial claim. `bento.css` new stylesheet imported via `marketing.css @import`.
+
 **Codex: no open tasks as of 2026-05-10.**
 
 **Next: M7.D (SEO + JSON-LD + sitemap + llms.txt + favicon + OG image — same Lightsail deploy), M8 (integration testing + closed beta), M9 (launch). Store copy + Diana tile assets deferred polish before M9 marketing push.**

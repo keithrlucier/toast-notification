@@ -59,7 +59,6 @@ Toast Notification has one current plan.
 - Paid subscription floor: 100 devices.
 - Entry paid price: $22 per month.
 - Device definition: The app is licensed per signed-in user. A single computer with two active users consumes two device licenses.
-- Trial: 14 days.
 - Feature tiers: none; current features are included in the plan.
 
 Pricing page: https://toastnotification.com/pricing/

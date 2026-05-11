@@ -162,7 +162,7 @@ export function pricingProductLd(): Record<string, unknown> {
     '@type': 'Product',
     name: `${SITE_NAME} - Standard plan`,
     description:
-      'Single plan, $0.22 per device per month, 100-device subscription minimum, 14-day free trial. Includes every feature, no tiers.',
+      'Single plan, $0.22 per device per month, 100-device subscription minimum. Includes every feature, no tiers.',
     brand: { '@type': 'Brand', name: SITE_NAME },
     offers: {
       '@type': 'AggregateOffer',

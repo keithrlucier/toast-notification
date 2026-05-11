@@ -77,10 +77,6 @@ const FAQ = [
     a: 'Per-device pricing is uniform up to 5,000 devices. Above 5,000 devices, contact us to discuss options.',
   },
   {
-    q: 'How does the 14-day trial work?',
-    a: 'Every new tenant gets 14 days of full-feature access, started during Stripe checkout. Billing begins after the trial unless canceled. Trial tenants have access to all features — no locked capabilities.',
-  },
-  {
     q: 'What payment methods do you accept?',
     a: 'Credit card and ACH via Stripe. Self-serve billing portal included with every subscription.',
   },
@@ -110,7 +106,7 @@ export default function Pricing() {
   useSeo({
     title: 'Pricing',
     description:
-      '$0.22 per managed device per month. 100-device subscription minimum. 14-day free trial. One plan, no tiers, no upsells.',
+      '$0.22 per managed device per month. 100-device subscription minimum. One plan, no tiers, no upsells.',
     path: '/pricing',
     jsonLd: [
       pricingProductLd(),
@@ -266,14 +262,14 @@ export default function Pricing() {
       {/* Final CTA */}
       <section className="m-section" style={{ background: 'var(--bg-secondary)' }} aria-labelledby="pricing-cta-heading">
         <div className="m-final-cta">
-          <h2 id="pricing-cta-heading">Start the 14-day trial.</h2>
+          <h2 id="pricing-cta-heading">Get started free.</h2>
           <p>
             Register a tenant, deploy the signed MSI, and send your first notification in under ten minutes.
             Questions? Email <a href="mailto:support@toastnotification.com">support@toastnotification.com</a>.
           </p>
           <div className="m-final-cta-buttons">
             <Link to="/register" className="m-btn m-btn-primary">
-              Start trial
+              Get started free
             </Link>
             <a href="mailto:support@toastnotification.com?subject=Toast%20Notification" className="m-btn m-btn-ghost">
               Contact us

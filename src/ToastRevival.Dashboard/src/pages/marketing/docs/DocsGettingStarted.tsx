@@ -49,13 +49,6 @@ export default function DocsGettingStarted() {
         a per-tenant HMAC signing key. You are routed straight to the admin dashboard.
       </p>
 
-      <Callout title="14-day trial">
-        <p>
-          New tenants start a 14-day trial during Stripe checkout. Add up to 100 devices during the trial and the
-          monthly minimum applies after the trial converts.
-        </p>
-      </Callout>
-
       <h2 id="step-2-tenant-id">Step 2 — Note your tenant ID and server URL</h2>
       <p>
         On the admin dashboard, open <strong>Settings → Tenant</strong>. The Tenant ID is the GUID you will pass to the

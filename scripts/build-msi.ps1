@@ -22,6 +22,7 @@ dotnet publish $projectPath `
     --runtime $RuntimeIdentifier `
     --self-contained true `
     -p:WindowsAppSDKSelfContained=true `
+    -p:SatelliteResourceLanguages=en `
     --output $publishDir
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)" }
 

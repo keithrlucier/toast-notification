@@ -401,14 +401,15 @@ namespace ToastRevival.Agent
                 }
             }
 
-            // Register the activator before the hub starts — same Register()/Unregister()
-            // lifecycle that has been working since FIX-MSIX-004 in M0 D2.
-            AppNotificationManager.Default.Register();
-            DiagLog.Write("PrimaryMode: Register() returned.");
-
             try
             {
+                // AgentHubClient constructor subscribes to AppNotificationManager.Default.NotificationInvoked.
+                // Windows App SDK requires NotificationInvoked to be subscribed BEFORE Register() is called —
+                // subscribing after Register() throws COMException 0x80070490.
                 await using var client = new AgentHubClient(config);
+
+                AppNotificationManager.Default.Register();
+                DiagLog.Write("PrimaryMode: Register() returned.");
 
                 // Tray icon is visible from process start (Connecting state) so the
                 // user sees the agent in their tray at logon before the hub connects.

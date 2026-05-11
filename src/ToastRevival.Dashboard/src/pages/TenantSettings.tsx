@@ -38,7 +38,9 @@ export default function TenantSettings() {
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
   // Controlled form state
+  const [tenantName, setTenantName]         = useState('');
   const [logoUrl, setLogoUrl]               = useState('');
+  const [uploading, setUploading]           = useState(false);
   const [primaryColor, setPrimaryColor]     = useState('#1F6FBD');
   const [defaultAudio, setDefaultAudio]     = useState('');
   const [defaultScenario, setDefaultScenario] = useState('Default');
@@ -47,6 +49,7 @@ export default function TenantSettings() {
     api.get<TenantSettingsData>('/api/tenant/settings')
       .then(s => {
         setData(s);
+        setTenantName(s.tenantName ?? '');
         setLogoUrl(s.logoUrl ?? '');
         setPrimaryColor(s.primaryColor ?? '#1F6FBD');
         setDefaultAudio(s.defaultAudioSetting ?? '');
@@ -65,6 +68,7 @@ export default function TenantSettings() {
     setSuccess('');
     try {
       await api.put('/api/tenant/settings', {
+        tenantName:          tenantName.trim() || undefined,
         logoUrl:             logoUrl.trim() || null,
         primaryColor:        primaryColor.trim() || null,
         defaultAudioSetting: defaultAudio || null,
@@ -118,13 +122,81 @@ export default function TenantSettings() {
           <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 20 }}>Branding</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="field">
-              <label>Logo URL</label>
+              <label>Display Name</label>
               <input
-                type="url"
-                value={logoUrl}
-                onChange={e => setLogoUrl(e.target.value)}
-                placeholder="https://example.com/logo.png"
+                type="text"
+                value={tenantName}
+                onChange={e => setTenantName(e.target.value)}
+                placeholder="Your company name"
               />
+              <span style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4, display: 'block' }}>
+                Shown as the notification attribution on endpoints
+              </span>
+            </div>
+
+            <div className="field">
+              <label>Logo</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                {logoUrl && (
+                  <img
+                    src={logoUrl}
+                    alt="Logo"
+                    style={{ height: 36, maxWidth: 100, objectFit: 'contain', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, padding: 4, background: 'var(--bg-tertiary)' }}
+                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                )}
+                <label
+                  style={{
+                    cursor: uploading ? 'default' : 'pointer',
+                    opacity: uploading ? 0.6 : 1,
+                  }}
+                >
+                  <input
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.gif,.webp"
+                    style={{ display: 'none' }}
+                    disabled={uploading}
+                    onChange={async e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setUploading(true);
+                      setError('');
+                      try {
+                        const form = new FormData();
+                        form.append('file', file);
+                        const res = await fetch('/api/tenant/logo', {
+                          method: 'POST',
+                          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+                          body: form,
+                        });
+                        if (!res.ok) { const b = await res.json(); throw new Error(b.message ?? 'Upload failed'); }
+                        const { url } = await res.json();
+                        setLogoUrl(url);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Upload failed.');
+                      } finally {
+                        setUploading(false);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                  <span className="btn btn-secondary" style={{ fontSize: 12, padding: '6px 14px', minHeight: 0, pointerEvents: 'none' }}>
+                    {uploading ? 'Uploading…' : logoUrl ? 'Replace' : '↑ Upload logo'}
+                  </span>
+                </label>
+                {logoUrl && (
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12, padding: '6px 10px', minHeight: 0 }}
+                    onClick={() => setLogoUrl('')}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              <span style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4, display: 'block' }}>
+                PNG, JPG or WebP · max 2 MB · appears in notification toasts
+              </span>
             </div>
 
             <div className="field">
@@ -155,24 +227,6 @@ export default function TenantSettings() {
               </div>
             </div>
 
-            {logoUrl.trim() && (
-              <div style={{
-                padding: 12,
-                background: 'var(--bg-tertiary)',
-                borderRadius: 'var(--radius-sm)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-              }}>
-                <img
-                  src={logoUrl}
-                  alt="Logo preview"
-                  style={{ height: 32, maxWidth: 120, objectFit: 'contain' }}
-                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                />
-                <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>Logo preview</span>
-              </div>
-            )}
           </div>
         </div>
 

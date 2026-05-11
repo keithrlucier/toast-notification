@@ -16,6 +16,7 @@ public record TenantSettingsResponse(
 
 public class UpdateTenantSettingsRequest
 {
+    public string? TenantName { get; set; }
     public string? LogoUrl { get; set; }
     public string? PrimaryColor { get; set; }
     public string? DefaultAudioSetting { get; set; }

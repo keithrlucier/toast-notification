@@ -74,6 +74,8 @@ public class TenantController : ControllerBase
         var tenant = await _db.Tenants.FindAsync(tenantId);
         if (tenant is null) return NotFound();
 
+        if (!string.IsNullOrWhiteSpace(req.TenantName))
+            tenant.Name = req.TenantName.Trim();
         tenant.LogoUrl             = string.IsNullOrWhiteSpace(req.LogoUrl)             ? null : req.LogoUrl.Trim();
         tenant.PrimaryColor        = string.IsNullOrWhiteSpace(req.PrimaryColor)        ? null : req.PrimaryColor.Trim();
         tenant.DefaultAudioSetting = string.IsNullOrWhiteSpace(req.DefaultAudioSetting) ? null : req.DefaultAudioSetting;
@@ -84,6 +86,45 @@ public class TenantController : ControllerBase
 
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    /// <summary>
+    /// Uploads a logo image for the tenant and returns its public URL.
+    /// The URL is stored in Tenant.LogoUrl and used as the notification icon.
+    /// </summary>
+    [HttpPost("logo")]
+    public async Task<ActionResult<object>> UploadLogo(IFormFile file)
+    {
+        if (!IsAdmin()) return Forbid();
+        if (file is null || file.Length == 0) return BadRequest("No file uploaded.");
+        if (file.Length > 2 * 1024 * 1024) return BadRequest("Logo must be under 2 MB.");
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (ext is not (".png" or ".jpg" or ".jpeg" or ".gif" or ".webp"))
+            return BadRequest("Unsupported file type. Use PNG, JPG, GIF, or WebP.");
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var dir      = Path.Combine("wwwroot", "assets", "logos");
+        Directory.CreateDirectory(dir);
+
+        var fileName = $"{tenantId}{ext}";
+        var filePath = Path.Combine(dir, fileName);
+
+        await using (var stream = System.IO.File.Create(filePath))
+            await file.CopyToAsync(stream);
+
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var url     = $"{baseUrl}/assets/logos/{fileName}";
+
+        // Persist the URL to the tenant record immediately
+        var tenant = await _db.Tenants.FindAsync(tenantId);
+        if (tenant is not null)
+        {
+            tenant.LogoUrl = url;
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { url });
     }
 
     private bool IsAdmin()

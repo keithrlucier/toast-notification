@@ -37,7 +37,7 @@ export function MarketingFooter() {
         </div>
 
         <div className="m-footer-bottom">
-          <span>© {year} Toast2IT, LLC. Built in the United States.</span>
+          <span>© {year} Toast2IT, LLC. Built in the United States since 2021.</span>
         </div>
       </div>
     </footer>

@@ -151,8 +151,8 @@ export default function Compose() {
     return groups.filter(g => selectedGroups.includes(g.id)).reduce((s, g) => s + g.deviceCount, 0);
   })();
 
-  const requiresMfa = targetMode === 'All';
-  const requiresConfirm = estimatedDeviceCount > 100 || requiresMfa;
+  const requiresMfa = targetMode === 'All' && estimatedDeviceCount > 1;
+  const requiresConfirm = estimatedDeviceCount > 1 || requiresMfa;
 
   const buildRequest = (): SendNotificationRequest => ({
     title,

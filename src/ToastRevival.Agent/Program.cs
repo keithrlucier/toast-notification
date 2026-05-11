@@ -421,7 +421,7 @@ namespace ToastRevival.Agent
                 Console.CancelKeyPress += (_, e) =>
                 {
                     e.Cancel = true;
-                    shutdown.Cancel();
+                    try { shutdown.Cancel(); } catch (ObjectDisposedException) { }
                 };
                 tray.QuitRequested    += () => shutdown.Cancel();
                 tray.ReconnectRequested += async () =>

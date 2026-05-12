@@ -679,16 +679,79 @@ input, textarea, select, button {
 }
 
 @media (max-width: 640px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .app-sidebar {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    order: 2;
+    border-right: none;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .sidebar-brand,
+  .sidebar-footer {
+    display: none;
+  }
+
+  .sidebar-nav {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px;
+    gap: 8px;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar-section-label {
+    display: none;
+  }
+
+  .sidebar-link {
+    min-height: auto;
+    padding: 12px;
+    flex: 1;
+    justify-content: center;
+    margin-bottom: 0;
+  }
+
+  .sidebar-link.active::before {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 0;
+    width: auto;
+    height: 3px;
+    border-radius: 2px 2px 0 0;
+  }
+
+  .app-workspace {
+    order: 1;
+  }
+
   .app-topbar {
     height: auto;
     min-height: 64px;
     align-items: flex-start;
     flex-direction: column;
     padding: 14px 16px;
+    gap: 16px;
   }
 
   .page-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .data-table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
   }
 }

@@ -187,6 +187,93 @@ public sealed class EndToEndNotificationTests
         }
     }
 
+    [Fact]
+    public async Task DeviceGroups_CreateMembershipAndTargeting_ScopesToSelectedGroup()
+    {
+        await _load.ResetAsync();
+
+        var factory    = _load.Factory;
+        using var http = factory.CreateClient();
+
+        var registerEmail = $"groups-{Guid.NewGuid():n}@toastrevival.test";
+        var registerReq = new RegisterRequest(
+            TenantName: $"Group Tenant {Guid.NewGuid():n}",
+            Email: registerEmail,
+            Password: "TestPass123!");
+
+        var registerResp = await http.PostAsJsonAsync("/api/auth/register", registerReq);
+        Assert.Equal(HttpStatusCode.OK, registerResp.StatusCode);
+        var auth = await registerResp.Content.ReadFromJsonAsync<AuthResponse>();
+        Assert.NotNull(auth);
+
+        var serverDeviceResp = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
+            TenantId: auth!.TenantId,
+            DeviceName: "GROUP-SERVER-01",
+            Username: "server-user",
+            OsVersion: "Windows Server 2025",
+            AgentVersion: "0.4.0.0"));
+        Assert.Equal(HttpStatusCode.OK, serverDeviceResp.StatusCode);
+        var serverDevice = await serverDeviceResp.Content.ReadFromJsonAsync<DeviceTokenResponse>();
+        Assert.NotNull(serverDevice);
+
+        var workstationDeviceResp = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
+            TenantId: auth.TenantId,
+            DeviceName: "GROUP-WORKSTATION-01",
+            Username: "workstation-user",
+            OsVersion: "Windows 11 26100",
+            AgentVersion: "0.4.0.0"));
+        Assert.Equal(HttpStatusCode.OK, workstationDeviceResp.StatusCode);
+        var workstationDevice = await workstationDeviceResp.Content.ReadFromJsonAsync<DeviceTokenResponse>();
+        Assert.NotNull(workstationDevice);
+
+        http.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", auth.Token);
+
+        var createGroupResp = await http.PostAsJsonAsync("/api/devicegroups", new CreateDeviceGroupRequest(
+            Name: "Servers",
+            Description: "Critical infrastructure"));
+        Assert.Equal(HttpStatusCode.Created, createGroupResp.StatusCode);
+        var group = await createGroupResp.Content.ReadFromJsonAsync<DeviceGroupResponse>();
+        Assert.NotNull(group);
+
+        var setMembersResp = await http.PutAsJsonAsync(
+            $"/api/devicegroups/{group!.Id}/members",
+            new SetDeviceGroupMembersRequest(new List<Guid> { serverDevice!.DeviceId }));
+        Assert.Equal(HttpStatusCode.NoContent, setMembersResp.StatusCode);
+
+        var groups = await http.GetFromJsonAsync<List<DeviceGroupResponse>>("/api/devicegroups");
+        var listedGroup = Assert.Single(groups!);
+        Assert.Equal(group.Id, listedGroup.Id);
+        Assert.Equal(1, listedGroup.DeviceCount);
+
+        var devices = await http.GetFromJsonAsync<List<DeviceResponse>>("/api/devices");
+        var serverRow = Assert.Single(devices!, d => d.DeviceId == serverDevice.DeviceId);
+        var workstationRow = Assert.Single(devices!, d => d.DeviceId == workstationDevice!.DeviceId);
+        Assert.Contains(group.Id, serverRow.GroupIds);
+        Assert.DoesNotContain(group.Id, workstationRow.GroupIds);
+
+        var sendReq = new SendNotificationRequest(
+            Title: "Group target test",
+            BodyLine1: "Only the server group should receive this",
+            Scenario: ToastScenario.Default,
+            TargetType: TargetType.Group,
+            TargetIds: new List<Guid> { group.Id });
+
+        var sendResp = await http.PostAsJsonAsync("/api/notifications", sendReq);
+        Assert.Equal(HttpStatusCode.Accepted, sendResp.StatusCode);
+        var notification = await sendResp.Content.ReadFromJsonAsync<NotificationResponse>();
+        Assert.NotNull(notification);
+        Assert.Equal(1, notification!.TargetDeviceCount);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var delivery = Assert.Single(await db.NotificationDeliveries.IgnoreQueryFilters()
+            .Where(d => d.NotificationId == notification.Id)
+            .ToListAsync());
+        Assert.Equal(serverDevice.DeviceId, delivery.DeviceId);
+        Assert.Equal(auth.TenantId, delivery.TenantId);
+    }
+
     private static async Task<T> WithTimeout<T>(Task<T> task, TimeSpan timeout, string failureMessage)
     {
         var winner = await Task.WhenAny(task, Task.Delay(timeout));

@@ -563,7 +563,10 @@ public class NotificationsController : ControllerBase
 
             TargetType.Group when req.TargetIds?.Count > 0 =>
                 await _db.DeviceGroupMembers
-                    .Where(m => req.TargetIds.Contains(m.DeviceGroupId))
+                    .Where(m => req.TargetIds.Contains(m.DeviceGroupId)
+                        && m.DeviceGroup.TenantId == tenantId
+                        && m.Device.TenantId == tenantId
+                        && m.Device.Status == DeviceStatus.Active)
                     .Select(m => m.DeviceId).Distinct().ToListAsync(),
 
             _ => [],

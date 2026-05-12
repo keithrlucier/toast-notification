@@ -139,18 +139,25 @@ public class DevicesController : ControllerBase
     public async Task<ActionResult<IEnumerable<DeviceResponse>>> List()
     {
         var devices = await _db.Devices
+            .Include(d => d.GroupMemberships)
+            .ThenInclude(m => m.DeviceGroup)
             .Where(d => d.Status != DeviceStatus.Decommissioned)
-            .Select(d => ToResponse(d))
+            .OrderBy(d => d.DeviceName)
             .ToListAsync();
 
-        return Ok(devices);
+        return Ok(devices.Select(ToResponse));
     }
 
     [Authorize]
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<DeviceResponse>> Get(Guid id)
     {
-        var device = await _db.Devices.FindAsync(id);
+        var device = await _db.Devices
+            .Include(d => d.GroupMemberships)
+            .ThenInclude(m => m.DeviceGroup)
+            .Where(d => d.Id == id && d.Status != DeviceStatus.Decommissioned)
+            .FirstOrDefaultAsync();
+
         return device is null ? NotFound() : Ok(ToResponse(device));
     }
 
@@ -223,7 +230,12 @@ public class DevicesController : ControllerBase
 
     private static DeviceResponse ToResponse(Device d) =>
         new(d.Id, d.DeviceName, d.Username, d.OsVersion, d.AgentVersion,
-            d.Status.ToString(), d.LastPing, d.RegisteredAt);
+            d.Status.ToString(), d.LastPing, d.RegisteredAt,
+            d.GroupMemberships
+                .Where(m => m.DeviceGroup.TenantId == d.TenantId)
+                .Select(m => m.DeviceGroupId)
+                .Distinct()
+                .ToList());
 
     private static string HashToken(string token)
     {

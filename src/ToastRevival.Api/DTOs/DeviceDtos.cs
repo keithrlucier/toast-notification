@@ -18,7 +18,8 @@ public record DeviceResponse(
     string? AgentVersion,
     string Status,
     DateTime? LastPing,
-    DateTime RegisteredAt);
+    DateTime RegisteredAt,
+    IReadOnlyList<Guid> GroupIds);
 
 public record DeviceTokenResponse(
     string Token,

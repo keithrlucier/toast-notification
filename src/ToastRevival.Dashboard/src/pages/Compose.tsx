@@ -148,6 +148,11 @@ export default function Compose() {
   const estimatedDeviceCount = (() => {
     if (targetMode === 'All') return devices.length;
     if (targetMode === 'Device') return selectedDevices.length;
+    const selected = new Set(selectedGroups);
+    const uniqueFromDevices = devices
+      .filter(d => d.groupIds.some(groupId => selected.has(groupId)))
+      .length;
+    if (uniqueFromDevices > 0 || devices.length > 0) return uniqueFromDevices;
     return groups.filter(g => selectedGroups.includes(g.id)).reduce((s, g) => s + g.deviceCount, 0);
   })();
 
@@ -793,13 +798,39 @@ interface GroupMultiSelectProps {
 }
 
 function GroupMultiSelect({ groups, selected, onChange }: GroupMultiSelectProps) {
+  const [search, setSearch] = useState('');
+  const filtered = groups
+    .filter(g =>
+      g.name.toLowerCase().includes(search.toLowerCase()) ||
+      (g.description ?? '').toLowerCase().includes(search.toLowerCase())
+    )
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
   const toggle = (id: string) =>
     onChange(selected.includes(id) ? selected.filter(s => s !== id) : [...selected, id]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {groups.length === 0 && <p style={{ fontSize: 12, color: 'var(--text-dim)' }}>No device groups configured.</p>}
-      {groups.map(g => (
+    <div>
+      <input
+        type="search"
+        placeholder="Search groups..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{
+          width: '100%',
+          background: 'var(--bg-tertiary)',
+          border: '1px solid rgba(15,23,42,0.12)',
+          borderRadius: 4,
+          color: 'var(--text-primary)',
+          padding: '8px 10px',
+          fontSize: 13,
+          marginBottom: 8,
+        }}
+      />
+      <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {groups.length === 0 && <p style={{ fontSize: 12, color: 'var(--text-dim)', padding: 8 }}>No device groups configured.</p>}
+      {groups.length > 0 && filtered.length === 0 && <p style={{ fontSize: 12, color: 'var(--text-dim)', padding: 8 }}>No groups found.</p>}
+      {filtered.map(g => (
         <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 4, cursor: 'pointer', background: selected.includes(g.id) ? 'rgba(0,201,167,0.06)' : 'transparent' }}>
           <input
             type="checkbox"
@@ -811,6 +842,10 @@ function GroupMultiSelect({ groups, selected, onChange }: GroupMultiSelectProps)
           <span style={{ fontSize: 11, color: 'var(--text-dim)', marginLeft: 'auto' }}>{g.deviceCount} devices</span>
         </label>
       ))}
+      </div>
+      {selected.length > 0 && (
+        <p style={{ fontSize: 12, color: 'var(--accent)', marginTop: 8 }}>{selected.length} group{selected.length !== 1 ? 's' : ''} selected</p>
+      )}
     </div>
   );
 }

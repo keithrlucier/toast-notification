@@ -38,6 +38,18 @@ export interface DeviceGroup {
   createdAt: string;
 }
 
+export interface DeviceGroupMember {
+  deviceId: string;
+  deviceName: string;
+  agentVersion: string | null;
+  addedAt: string;
+}
+
+export interface SaveDeviceGroupRequest {
+  name: string;
+  description?: string;
+}
+
 function isRecentlyOnline(status: string | undefined, lastSeen: string | null): boolean {
   if (status && status !== 'Active') return false;
   if (!lastSeen) return false;
@@ -79,4 +91,17 @@ export const devicesApi = {
   },
   decommission: (id: string) => api.delete(`/api/devices/${id}`),
   listGroups: () => api.get<DeviceGroup[]>('/api/devicegroups'),
+  createGroup: (req: SaveDeviceGroupRequest) =>
+    api.post<DeviceGroup>('/api/devicegroups', req),
+  updateGroup: (id: string, req: SaveDeviceGroupRequest) =>
+    api.put<DeviceGroup>(`/api/devicegroups/${id}`, req),
+  deleteGroup: (id: string) => api.delete(`/api/devicegroups/${id}`),
+  listGroupMembers: (id: string) =>
+    api.get<DeviceGroupMember[]>(`/api/devicegroups/${id}/members`),
+  setGroupMembers: (id: string, deviceIds: string[]) =>
+    api.put(`/api/devicegroups/${id}/members`, { deviceIds }),
+  addGroupMember: (id: string, deviceId: string) =>
+    api.post(`/api/devicegroups/${id}/members`, { deviceId }),
+  removeGroupMember: (id: string, deviceId: string) =>
+    api.delete(`/api/devicegroups/${id}/members/${deviceId}`),
 };

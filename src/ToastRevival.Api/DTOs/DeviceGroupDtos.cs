@@ -13,7 +13,13 @@ public record CreateDeviceGroupRequest(
     [Required, MaxLength(100)] string Name,
     [MaxLength(500)] string? Description);
 
+public record UpdateDeviceGroupRequest(
+    [Required, MaxLength(100)] string Name,
+    [MaxLength(500)] string? Description);
+
 public record AddMemberRequest([Required] Guid DeviceId);
+
+public record SetDeviceGroupMembersRequest(IList<Guid>? DeviceIds);
 
 public record DeviceGroupMemberResponse(
     Guid DeviceId,

@@ -423,15 +423,10 @@ namespace ToastRevival.Agent
                         }
                     }
 
-                    // Set notification attribution (AUMID + DisplayName registry entry) BEFORE
-                    // any AppNotificationManager.Default access. The Windows App SDK snapshots
-                    // the process AUMID on first access — and that first access is the
-                    // NotificationInvoked subscription inside AgentHubClient's constructor.
-                    // If Apply() runs after that, SetCurrentProcessExplicitAppUserModelID is a
-                    // no-op for AppNotificationManager and toasts fall back to the default
-                    // (exe FileDescription) attribution. This is what caused Keith's 'Toast
-                    // Notification' attribution to persist even after the tenant-name refresh
-                    // (f437b01) — config had the right name, but Apply() ran too late.
+                    // Phase 1 — write tenant name under our declared AUMID before any
+                    // AppNotificationManager.Default touch. Wins for legacy Shell32 AUMID
+                    // consumers (jump lists, taskbar pin, anything that respects the
+                    // process explicit AUMID).
                     NotificationDisplayName.Apply(config.TenantName);
 
                     // Keep Register() after AgentHubClient construction. The constructor subscribes
@@ -441,6 +436,15 @@ namespace ToastRevival.Agent
 
                     AppNotificationManager.Default.Register();
                     DiagLog.Write("PrimaryMode: Register() returned.");
+
+                    // Phase 2 — Register() just wrote a hash-derived AUMID for this
+                    // unpackaged app and stamped our COM activator CLSID under it.
+                    // Find that AUMID by scanning HKCU for entries whose CustomActivator
+                    // matches our CLSID, and overwrite DisplayName/IconUri there so the
+                    // toast attribution shows the tenant name. This is the AUMID Windows
+                    // actually reads when rendering toasts — Phase 1's HKCU write is
+                    // belt-and-suspenders for non-WinAppSDK consumers.
+                    NotificationDisplayName.ApplyToActivatorAumids(config.TenantName);
 
                     using var tray = new TrayIconService(config.ServerUrl);
                     client.ConnectionStateChanged += (_, state) => tray.UpdateState(state);

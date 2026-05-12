@@ -64,35 +64,69 @@ public class DevicesController : ControllerBase
             }
         }
 
-        // M6 D3: license enforcement — block registration when limit reached or billing canceled
-        if (!await _license.CanRegisterDeviceAsync(req.TenantId))
-        {
-            return StatusCode(403, "Subscription canceled. Please renew to register devices.");
-        }
+        // Idempotent registration. The MSI uninstall wipes per-user config.json on
+        // purpose (so a reinstall starts clean), but that meant every reinstall on
+        // the same machine produced a brand-new Device row, leaving the old row
+        // orphaned — visible to admins as duplicates and (worse) double-counting
+        // against the seat license. Match on TenantId + DeviceName + Username and
+        // refresh credentials on the existing (non-decommissioned) row instead of
+        // creating a sibling. Decommissioned rows are not reused — those represent
+        // a deliberate admin action and a re-registration should provision a new
+        // device row + go through the license CanRegisterDeviceAsync gate.
+        var existing = await _db.Devices.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(d =>
+                d.TenantId == req.TenantId &&
+                d.DeviceName == req.DeviceName &&
+                d.Username == req.Username &&
+                d.Status != DeviceStatus.Decommissioned);
 
         var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
         var tokenHash = HashToken(rawToken);
 
-        var device = new Device
+        Device device;
+        string auditAction;
+        if (existing is not null)
         {
-            TenantId = req.TenantId,
-            DeviceName = req.DeviceName,
-            Username = req.Username,
-            OsVersion = req.OsVersion,
-            AgentVersion = req.AgentVersion,
-            RegistrationToken = tokenHash,
-        };
+            existing.OsVersion = req.OsVersion;
+            existing.AgentVersion = req.AgentVersion;
+            existing.RegistrationToken = tokenHash;
+            existing.Status = DeviceStatus.Active;
+            device = existing;
+            auditAction = "device.re-register";
+            await _db.SaveChangesAsync();
+            // Seat count is unchanged — we're reusing an existing row, not adding one.
+        }
+        else
+        {
+            // M6 D3: license enforcement applies only to NEW seats. A reinstall on an
+            // existing seat (handled above) must not be blocked by license depletion.
+            if (!await _license.CanRegisterDeviceAsync(req.TenantId))
+            {
+                return StatusCode(403, "Subscription canceled. Please renew to register devices.");
+            }
 
-        _db.Devices.Add(device);
-        await _db.SaveChangesAsync();
+            device = new Device
+            {
+                TenantId = req.TenantId,
+                DeviceName = req.DeviceName,
+                Username = req.Username,
+                OsVersion = req.OsVersion,
+                AgentVersion = req.AgentVersion,
+                RegistrationToken = tokenHash,
+            };
 
-        // M6 D4: maintain ConsumedCount
-        await _license.IncrementConsumedAsync(tenant);
-        await _billingSync.SyncSubscriptionQuantityAsync(tenant);
+            _db.Devices.Add(device);
+            await _db.SaveChangesAsync();
+            auditAction = "device.register";
+
+            // M6 D4: maintain ConsumedCount only when adding a new device row.
+            await _license.IncrementConsumedAsync(tenant);
+            await _billingSync.SyncSubscriptionQuantityAsync(tenant);
+        }
 
         var jwt = _tokens.CreateDeviceToken(device);
 
-        await _audit.LogAsync(req.TenantId, null, "device.register", "Device",
+        await _audit.LogAsync(req.TenantId, null, auditAction, "Device",
             device.Id.ToString(), new { device.DeviceName, device.Username },
             HttpContext.Connection.RemoteIpAddress?.ToString());
 

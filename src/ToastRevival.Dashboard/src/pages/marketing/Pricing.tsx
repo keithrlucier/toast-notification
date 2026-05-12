@@ -80,8 +80,8 @@ const INCLUSIONS = [
   {
     heading: 'Deployment',
     items: [
-      'Code-signed MSI with embedded scheduled task',
-      'Code-signed MSIX through the Microsoft Store',
+      'MSI with embedded scheduled task',
+      'MSIX through the Microsoft Store',
       'Intune LOB compatible',
       'RMM silent install with CLIENTID, SERVERURL, and ENROLLMENTKEY properties',
       'Velopack auto-update with enterprise opt-out registry toggle',

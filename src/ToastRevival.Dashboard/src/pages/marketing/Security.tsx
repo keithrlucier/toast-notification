@@ -5,7 +5,7 @@ export default function Security() {
   useSeo({
     title: 'Security architecture',
     description:
-      'Toast Notification security architecture: HTTPS transport, HMAC-SHA256 payload signing, tenant isolation, MFA controls, audit logging, code signing, and responsible disclosure.',
+      'Toast Notification security architecture: HTTPS transport, HMAC-SHA256 payload signing, tenant isolation, MFA controls, audit logging, and responsible disclosure.',
     path: '/security',
     jsonLd: breadcrumbLd([
       { name: 'Home', path: '/' },
@@ -27,9 +27,8 @@ export default function Security() {
             <a href="mailto:security@toastnotification.com">security@toastnotification.com</a>.
           </p>
           <div className="m-security-meta">
-            <span>Last architecture review: May 2026</span>
-            <span>Security test review: May 2026</span>
-            <span>Controls: signed delivery, MFA elevation, audit export</span>
+            <span>Controls: HMAC payload signing, MFA elevation, tenant isolation</span>
+            <span>Transport: TLS 1.2 / 1.3, HSTS enforced</span>
             <span>Production data region: United States</span>
           </div>
         </header>
@@ -45,7 +44,7 @@ export default function Security() {
           <ul>
             <li><strong>Application tier</strong> &mdash; TLS termination, static dashboard delivery, API routing, authentication, targeting, and audit workflows.</li>
             <li><strong>Data tier</strong> &mdash; private application-only access for tenant records, users, devices, notification records, assets, and audit logs.</li>
-            <li><strong>Windows agent</strong> &mdash; installed per endpoint and distributed through signed installer channels.</li>
+            <li><strong>Windows agent</strong> &mdash; installed per endpoint and distributed through standard Windows installer channels.</li>
           </ul>
         </section>
 
@@ -93,10 +92,10 @@ export default function Security() {
             data. Platform-administration views are separate from tenant-administration views.
           </p>
           <p>
-            Audit-log access was specifically reviewed in May 2026 because it supports both
-            tenant-level reporting and platform-level administration. Tenant audit endpoints
-            now scope every query to the caller&rsquo;s tenant before applying date filters or
-            export formatting.
+            Audit-log access is enforced separately for tenant-level and platform-level views.
+            Tenant audit endpoints scope every query to the caller&rsquo;s tenant before
+            applying date filters or export formatting. Platform administrators read tenant
+            data through a distinct cross-tenant view.
           </p>
         </section>
 
@@ -146,54 +145,18 @@ export default function Security() {
           </p>
         </section>
 
-        <section className="m-security-section" aria-labelledby="codesign-heading">
-          <h2 id="codesign-heading">Code signing</h2>
+        <section className="m-security-section" aria-labelledby="review-heading">
+          <h2 id="review-heading">Security review and regression coverage</h2>
           <p>
-            Windows agent packages are signed with an Organization Validation certificate
-            issued to Toast2IT, LLC. Signing uses hardware-backed key storage; the private key
-            is not exportable.
+            Toast Notification operates an internal security review and regression program
+            covering the API surface, Windows agent, and notification delivery pipeline. Review
+            scope, test artifacts, and any findings are handled through our internal process
+            and are not published publicly.
           </p>
           <p>
-            The agent validates its own signature before following its managed update path. A
-            binary that fails signature validation does not continue through that update
-            redirect flow.
-          </p>
-        </section>
-
-        <section className="m-security-section" aria-labelledby="testing-heading">
-          <h2 id="testing-heading">Security testing - May 2026</h2>
-          <p>
-            The May 2026 security review covered these areas of the API and agent delivery
-            model:
-          </p>
-          <ul>
-            <li><strong>Tenant isolation</strong> &mdash; device lists, device lookups, notification targeting, catch-up delivery, audit-log reads, and hub group events.</li>
-            <li><strong>Authentication bypass</strong> &mdash; expired JWTs, invalid signing keys, missing device claims, user tokens on device endpoints, and broadcast sends without MFA elevation.</li>
-            <li><strong>Content injection</strong> &mdash; script payloads, oversized titles, Unicode boundary cases, and HTML/script delimiters in notification body fields.</li>
-            <li><strong>Privilege escalation</strong> &mdash; role-restricted user invitations, role changes, cross-tenant user targeting, high-volume sends, and platform-admin-only endpoints.</li>
-          </ul>
-
-          <div className="m-security-finding">
-            <p className="m-security-finding-label">Closed finding</p>
-            <p>
-              <strong>Audit-log tenant isolation</strong>
-            </p>
-            <p>
-              A medium-severity tenant-isolation issue was identified in the per-tenant
-              audit-log list and export endpoints. The issue allowed an authenticated tenant
-              administrator to retrieve audit rows outside their tenant through those audit
-              endpoints.
-            </p>
-            <p>
-              The endpoints now scope every audit query to the caller&rsquo;s tenant ID before
-              applying date filters or export formatting. Regression coverage verifies that one
-              tenant cannot retrieve another tenant&rsquo;s audit rows.
-            </p>
-          </div>
-
-          <p>
-            The review did not document any unresolved high- or critical-severity findings.
-            Security regression coverage remains part of the API test suite.
+            Coordinated disclosure inquiries, prospect security documentation requests, and
+            customer-facing security reviews under NDA can be directed to{' '}
+            <a href="mailto:security@toastnotification.com">security@toastnotification.com</a>.
           </p>
         </section>
 

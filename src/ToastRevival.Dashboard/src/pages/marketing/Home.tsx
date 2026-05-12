@@ -55,7 +55,7 @@ export default function Home() {
             </Link>
           </div>
           <div style={{ color: '#64748b', fontSize: '14px' }}>
-            Reviewed trials, code-signed agent, tenant-scoped deployment values.
+            Reviewed trials, tenant-scoped deployment values.
           </div>
         </div>
 
@@ -170,7 +170,7 @@ WS-014: payload unsigned`}
             </div>
             <h3>Flexible Deployment Paths</h3>
             <p>
-              Deploy the code-signed MSI with an embedded scheduled task via Intune LOB, Microsoft Store, or RMM silent install. The agent uses DPAPI to protect local endpoint configuration.
+              Deploy the MSI with an embedded scheduled task via Intune LOB, Microsoft Store, or RMM silent install. The agent uses DPAPI to protect local endpoint configuration.
             </p>
           </div>
         </div>

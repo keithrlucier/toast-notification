@@ -127,7 +127,7 @@ const routes = [
         <li>Target one device, a device group, or every endpoint in a tenant.</li>
         <li>Track delivered, clicked, dismissed, and failed outcomes.</li>
         <li>Export tenant audit evidence to CSV or PDF.</li>
-        <li>Deploy through signed MSI, Intune, Microsoft Store, or RMM silent install.</li>
+        <li>Deploy through MSI, Intune, Microsoft Store, or RMM silent install.</li>
       </ul>
       <p>Trial access is reviewed before activation. Paid fleet blocks start at $22 per month for 26-100 devices.</p>
     `,
@@ -163,7 +163,7 @@ const routes = [
     path: '/security',
     title: 'Security architecture',
     description:
-      'Toast Notification security architecture: signed payloads, tenant isolation, MFA-gated broadcast sends, DPAPI-protected endpoint configuration, audit logging, and code signing.',
+      'Toast Notification security architecture: HTTPS transport, HMAC-SHA256 payload signing, tenant isolation, MFA controls, audit logging, and responsible disclosure.',
     priority: '0.85',
     changefreq: 'monthly',
     jsonLd: [
@@ -171,7 +171,7 @@ const routes = [
         path: '/security',
         title: 'Toast Notification security architecture',
         description:
-          'Security controls for managed Windows notifications: signed delivery, tenant isolation, MFA controls, audit logging, and code signing.',
+          'Security controls for managed Windows notifications: HMAC payload signing, tenant isolation, MFA elevation, and audit logging.',
       }),
       breadcrumbLd([
         { name: 'Home', path: '/' },
@@ -182,14 +182,13 @@ const routes = [
       <h1>Security controls for managed Windows notifications</h1>
       <p>Toast Notification is designed for MSPs that need tenant isolation, signed endpoint delivery, audit evidence, and clear operational boundaries.</p>
       <ul>
-        <li>Notification payloads are signed per tenant and verified by the Windows agent before render.</li>
+        <li>Notification payloads are signed per tenant with HMAC-SHA256 and verified by the Windows agent before render.</li>
         <li>Tenant-facing API queries are scoped by tenant ID.</li>
         <li>Broadcast-to-all sends require MFA elevation.</li>
         <li>Endpoint configuration is protected with Windows DPAPI.</li>
-        <li>Windows agent packages are code signed by Toast2IT, LLC.</li>
         <li>Audit records track sends, deliveries, user actions, device registrations, and tenant changes.</li>
       </ul>
-      <p>Current boundaries: the production service is single-region, and customer-facing SIEM export is not part of the standard service.</p>
+      <p>For coordinated disclosure or security documentation, contact security@toastnotification.com.</p>
     `,
   },
   {
@@ -235,7 +234,7 @@ const routes = [
       <p>Create a tenant, verify the administrator account, install the Windows agent, register the endpoint, and send the first branded notification from the dashboard.</p>
       <ol>
         <li>Request trial access and set your password after approval.</li>
-        <li>Install the signed Windows agent.</li>
+        <li>Install the Windows agent.</li>
         <li>Confirm the device appears in the dashboard.</li>
         <li>Send a notification using one of the included templates.</li>
         <li>Review delivery and interaction events in history.</li>
@@ -251,7 +250,7 @@ const routes = [
     changefreq: 'monthly',
     body: `
       <h1>Microsoft Store deployment</h1>
-      <p>The Store deployment path is for individual users and BYOD-style Windows endpoints. Install the signed agent, provide tenant configuration, and verify the endpoint appears in Toast Notification.</p>
+      <p>The Store deployment path is for individual users and BYOD-style Windows endpoints. Install the agent, provide tenant configuration, and verify the endpoint appears in Toast Notification.</p>
       <p>Use this path when endpoints can install from the Microsoft Store and do not require central MSI deployment.</p>
     `,
   },
@@ -264,7 +263,7 @@ const routes = [
     changefreq: 'monthly',
     body: `
       <h1>Intune deployment</h1>
-      <p>Intune deployment lets IT teams push the signed Windows agent to managed endpoints and set tenant registration values centrally.</p>
+      <p>Intune deployment lets IT teams push the Windows agent to managed endpoints and set tenant registration values centrally.</p>
       <p>This path is suited for corporate Windows fleets managed through Microsoft Endpoint Manager.</p>
     `,
   },
@@ -320,8 +319,8 @@ const routes = [
       <ul>
         <li>Primary audience: MSPs and IT departments.</li>
         <li>Pricing: reviewed trial access, then $22/month for 26-100 devices and $44/month for 101-200 devices.</li>
-        <li>Deployment: signed MSI, Intune, Microsoft Store, or RMM silent install.</li>
-        <li>Security: signed payloads, tenant isolation, MFA-gated broadcast sends, code-signed agent, and audit records.</li>
+        <li>Deployment: MSI, Intune, Microsoft Store, or RMM silent install.</li>
+        <li>Security: HMAC payload signing, tenant isolation, MFA-gated broadcast sends, and audit records.</li>
         <li>Plain-text crawler file: <a href="/llms.txt">/llms.txt</a>.</li>
       </ul>
     `,

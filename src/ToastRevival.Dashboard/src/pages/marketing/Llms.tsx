@@ -81,7 +81,6 @@ export default function Llms() {
             <li>Tenant data is isolated by tenant-scoped API and database queries.</li>
             <li>Broadcast-to-all sends require MFA elevation.</li>
             <li>Endpoint configuration is protected with Windows DPAPI.</li>
-            <li>Windows agent packages are code signed by Toast2IT, LLC.</li>
           </ul>
         </section>
 

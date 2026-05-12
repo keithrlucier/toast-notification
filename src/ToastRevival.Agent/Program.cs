@@ -423,14 +423,21 @@ namespace ToastRevival.Agent
                         }
                     }
 
+                    // Set notification attribution (AUMID + DisplayName registry entry) BEFORE
+                    // any AppNotificationManager.Default access. The Windows App SDK snapshots
+                    // the process AUMID on first access — and that first access is the
+                    // NotificationInvoked subscription inside AgentHubClient's constructor.
+                    // If Apply() runs after that, SetCurrentProcessExplicitAppUserModelID is a
+                    // no-op for AppNotificationManager and toasts fall back to the default
+                    // (exe FileDescription) attribution. This is what caused Keith's 'Toast
+                    // Notification' attribution to persist even after the tenant-name refresh
+                    // (f437b01) — config had the right name, but Apply() ran too late.
+                    NotificationDisplayName.Apply(config.TenantName);
+
                     // Keep Register() after AgentHubClient construction. The constructor subscribes
                     // to NotificationInvoked, and Windows App SDK throws COMException 0x80070490
                     // if the event is subscribed after registration.
                     await using var client = new AgentHubClient(config);
-
-                    // Set notification attribution to tenant name before Register() so toasts
-                    // show the tenant name (e.g. "Colo Solutions") instead of "ToastNotification".
-                    NotificationDisplayName.Apply(config.TenantName);
 
                     AppNotificationManager.Default.Register();
                     DiagLog.Write("PrimaryMode: Register() returned.");

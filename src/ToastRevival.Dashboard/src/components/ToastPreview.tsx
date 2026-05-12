@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import type { ActionButton } from '../api/notifications';
+import { api } from '../api/client';
 
 interface ToastPreviewProps {
   title: string;
@@ -9,6 +11,26 @@ interface ToastPreviewProps {
   actionButtons?: ActionButton[];
   scenario?: string;
   scale?: number;
+  /** Override the app-attribution shown in the preview header. Defaults to the
+   *  signed-in tenant's display name (matches what the agent writes as the
+   *  AUMID DisplayName at runtime). Falls back to 'Toast Notification' when
+   *  unauthenticated or before the fetch resolves. */
+  appName?: string;
+}
+
+interface TenantSettingsLite {
+  tenantName: string;
+}
+
+let _tenantNameCache: Promise<string | null> | null = null;
+
+function getTenantName(): Promise<string | null> {
+  if (!_tenantNameCache) {
+    _tenantNameCache = api.get<TenantSettingsLite>('/api/tenant/settings')
+      .then(res => res.tenantName?.trim() || null)
+      .catch(() => null);
+  }
+  return _tenantNameCache;
 }
 
 /* Character truncation limits matching Windows Action Center rendering */
@@ -28,12 +50,28 @@ export default function ToastPreview({
   actionButtons = [],
   scenario,
   scale = 1,
+  appName,
 }: ToastPreviewProps) {
   const isUrgent = scenario === 'urgent';
 
   const displayTitle = title ? truncate(title, TITLE_MAX) : 'Notification Title';
   const displayBody1 = bodyLine1 ? truncate(bodyLine1, BODY_MAX) : undefined;
   const displayBody2 = bodyLine2 ? truncate(bodyLine2, BODY_MAX) : undefined;
+
+  // When the caller hasn't supplied an explicit appName, fetch the tenant's
+  // display name so the preview matches the AUMID DisplayName the installed
+  // agent writes to HKCU before AppNotificationManager.Register(). Cached at
+  // module level so the request fires once per dashboard load even when
+  // ToastPreview is rendered many times (e.g. Templates page grid).
+  const [fetchedAppName, setFetchedAppName] = useState<string | null>(null);
+  useEffect(() => {
+    if (appName) return;
+    let cancelled = false;
+    void getTenantName().then(name => { if (!cancelled) setFetchedAppName(name); });
+    return () => { cancelled = true; };
+  }, [appName]);
+
+  const headerAppName = (appName?.trim() || fetchedAppName?.trim() || 'Toast Notification');
 
   return (
     /* Windows 11 desktop background */
@@ -95,7 +133,9 @@ export default function ToastPreview({
             )}
           </div>
 
-          {/* App name */}
+          {/* App name — matches the AUMID DisplayName written by the agent on the
+              installed device, so the preview reflects the actual attribution users
+              will see in Windows Action Center. */}
           <span style={{
             flex: 1,
             fontSize: 11,
@@ -106,7 +146,7 @@ export default function ToastPreview({
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}>
-            Toast Notification
+            {headerAppName}
           </span>
 
           {/* Urgency badge */}

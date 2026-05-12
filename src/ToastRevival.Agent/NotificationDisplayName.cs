@@ -1,43 +1,50 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
 namespace ToastRevival.Agent;
 
 /// <summary>
-/// Sets the notification attribution (the small app name shown above every toast)
-/// to the tenant's display name.
+/// Overrides the notification attribution (the small app name shown above
+/// every toast) with the tenant's display name.
 ///
-/// Two-phase mechanism because the Windows App SDK manages its own AUMID for
-/// unpackaged apps and does NOT honor SetCurrentProcessExplicitAppUserModelID:
+/// Evidence-based design (2026-05-12, agent.log + HKCU hive dump from the
+/// Colo Solutions test machine). WinAppSDK AppNotificationManager for
+/// unpackaged apps does the following at <c>Register()</c> time:
 ///
-///   Phase 1 — <see cref="Apply"/>: called BEFORE AppNotificationManager.Default
-///   touches anything. Sets our explicit AUMID via SetCurrentProcessExplicitAppUserModelID
-///   and pre-writes DisplayName + IconUri under that AUMID. This wins for any code
-///   path that respects the legacy Shell32 AUMID (e.g. taskbar pinning, jump lists).
+///   1. Generates its OWN COM activator CLSID (NOT the one in our
+///      Package.appxmanifest — that file is only consumed by MSIX builds).
+///   2. Creates a GUID-keyed AUMID — <c>HKCU\Software\Classes\AppUserModelId\{guid}</c>
+///      — and writes DisplayName + IconUri + CustomActivator under it.
+///      DisplayName is auto-derived from AssemblyName (stripped of trailing
+///      <c>.Agent</c>); IconUri points at a PNG in
+///      <c>%LOCALAPPDATA%\Microsoft\WindowsAppSDK</c>.
+///   3. Creates a path-alias key —
+///      <c>HKCU\Software\Classes\AppUserModelId\&lt;normalized-exe-path&gt;</c>
+///      — whose <c>NotificationGUID</c> value points at the GUID-keyed AUMID
+///      from step 2. Path normalization is lowercase + replace
+///      backslashes/forward-slashes with dots.
 ///
-///   Phase 2 — <see cref="ApplyToActivatorAumids"/>: called AFTER
-///   AppNotificationManager.Default.Register() returns. The SDK creates a
-///   private AUMID for unpackaged apps and writes our COM activator CLSID
-///   into HKCU\SOFTWARE\Classes\AppUserModelId\{sdk-aumid}\CustomActivator.
-///   We scan that hive, find every AUMID whose CustomActivator matches our
-///   toast activator CLSID, and overwrite DisplayName + IconUri on each.
-///   This is what Windows reads when it renders the toast.
+/// When Windows renders a toast, it looks up the attribution by normalizing
+/// the running exe's path, reading <c>NotificationGUID</c> from the
+/// path-alias key, then reading <c>DisplayName</c> from the GUID-keyed AUMID.
+/// <see cref="SetCurrentProcessExplicitAppUserModelID"/> only affects the
+/// legacy Shell32 AUMID (jump lists / taskbar pinning) — NOT what the
+/// WinAppSDK toast subsystem reads.
 ///
-/// The two-phase approach is the most robust shape: we write to BOTH our
-/// declared AUMID and the SDK's hash-derived AUMID, so the tenant name shows
-/// up whichever code path Windows actually queries.
+/// To override the attribution we therefore must, AFTER
+/// <c>AppNotificationManager.Default.Register()</c> returns:
+///   a. Compute the path-alias the same way WinAppSDK does.
+///   b. Read <c>NotificationGUID</c> from the path-alias key.
+///   c. Overwrite <c>DisplayName</c> + <c>IconUri</c> on the GUID-keyed AUMID.
+///
+/// We continue to set the explicit AUMID in Phase 1 (legacy Shell32 paths)
+/// and we dump the AUMID hive to DiagLog on every startup so any future
+/// WinAppSDK schema drift is visible without another guess-and-ship cycle.
 /// </summary>
 internal static class NotificationDisplayName
 {
     private const string AumidBase = "Toast2IT.ToastNotification";
-
-    /// <summary>
-    /// COM activator CLSID from <c>Package.appxmanifest</c> / the runtime registration
-    /// AppNotificationManager.Default.Register() writes for unpackaged toast delivery.
-    /// Used in Phase 2 to find the SDK's hash-derived AUMID under HKCU.
-    /// </summary>
-    private const string ActivatorClsid = "7FA7762F-41EC-4D72-9F06-58964AB36FEA";
-
     private const string AumidHiveRoot = @"SOFTWARE\Classes\AppUserModelId";
 
     [DllImport("shell32.dll", SetLastError = true)]
@@ -45,10 +52,10 @@ internal static class NotificationDisplayName
         [MarshalAs(UnmanagedType.LPWStr)] string appId);
 
     /// <summary>
-    /// Phase 1 — sets the process explicit AUMID and writes our declared AUMID's
-    /// DisplayName + IconUri. Must be called BEFORE any AppNotificationManager.Default
-    /// access. Does not affect what AppNotificationManager.Default.Register() ends
-    /// up writing for the toast activator — Phase 2 handles that.
+    /// Phase 1 — sets the explicit process AUMID and writes DisplayName + IconUri
+    /// under our declared AUMID. Must run BEFORE any AppNotificationManager.Default
+    /// touch. This wins for legacy Shell32 AUMID consumers (jump lists, taskbar pin)
+    /// but does NOT control the WinAppSDK toast subsystem — Phase 2 handles that.
     /// </summary>
     public static void Apply(string? tenantName)
     {
@@ -61,11 +68,13 @@ internal static class NotificationDisplayName
 
             using var key = Registry.CurrentUser.CreateSubKey(
                 $@"{AumidHiveRoot}\{AumidBase}", writable: true);
-            key.SetValue("DisplayName", displayName);
+            // Match WinAppSDK's value kind so any consumer that distinguishes
+            // REG_SZ from REG_EXPAND_SZ sees a consistent shape.
+            key.SetValue("DisplayName", displayName, RegistryValueKind.ExpandString);
             if (logoPath is not null)
-                key.SetValue("IconUri", logoPath);
+                key.SetValue("IconUri", logoPath, RegistryValueKind.ExpandString);
 
-            DiagLog.Write($"NotificationDisplayName.Apply: explicit AUMID '{AumidBase}', DisplayName='{displayName}', icon={(logoPath ?? "(missing)")}");
+            DiagLog.Write($"NotificationDisplayName.Apply: declared AUMID '{AumidBase}', DisplayName='{displayName}', icon={(logoPath ?? "(missing)")}");
         }
         catch (Exception ex)
         {
@@ -74,11 +83,11 @@ internal static class NotificationDisplayName
     }
 
     /// <summary>
-    /// Phase 2 — scan HKCU\SOFTWARE\Classes\AppUserModelId for entries whose
-    /// <c>CustomActivator</c> value matches our toast activator CLSID, and
-    /// write DisplayName + IconUri on each. Must be called AFTER
-    /// AppNotificationManager.Default.Register() returns, because Register()
-    /// is what creates those entries for unpackaged apps.
+    /// Phase 2 — finds the AUMID Windows actually reads when rendering toasts
+    /// and overwrites its DisplayName + IconUri. Must run AFTER
+    /// <c>AppNotificationManager.Default.Register()</c> returns, because Register()
+    /// is what creates the path-alias and GUID-keyed AUMID entries (and would
+    /// otherwise re-overwrite any DisplayName we set earlier).
     /// </summary>
     public static void ApplyToActivatorAumids(string? tenantName)
     {
@@ -87,41 +96,51 @@ internal static class NotificationDisplayName
 
         try
         {
-            using var root = Registry.CurrentUser.OpenSubKey(AumidHiveRoot, writable: false);
-            if (root is null)
+            // Always dump the hive while we're stabilizing this behavior across
+            // WinAppSDK versions — gives operators a single artifact to grep when
+            // something doesn't show up the way it should.
+            DumpAumidHive();
+
+            var exePath = ResolveExePath();
+            if (exePath is null)
             {
-                DiagLog.Write($"NotificationDisplayName.ApplyToActivatorAumids: HKCU\\{AumidHiveRoot} not found");
+                DiagLog.Write("NotificationDisplayName.ApplyToActivatorAumids: could not resolve current process exe path; aborting Phase 2.");
                 return;
             }
 
-            var matches = 0;
-            foreach (var aumid in root.GetSubKeyNames())
+            var pathAlias = NormalizeExePathForAumidAlias(exePath);
+            DiagLog.Write($"NotificationDisplayName.ApplyToActivatorAumids: exe='{exePath}', path-alias='{pathAlias}'");
+
+            string? targetGuidAumid = null;
+            using (var aliasKey = Registry.CurrentUser.OpenSubKey($@"{AumidHiveRoot}\{pathAlias}", writable: false))
             {
-                using var sub = root.OpenSubKey(aumid, writable: true);
-                if (sub is null) continue;
-
-                var customActivator = sub.GetValue("CustomActivator")?.ToString();
-                if (string.IsNullOrEmpty(customActivator)) continue;
-
-                if (!ActivatorClsidsMatch(customActivator, ActivatorClsid)) continue;
-
-                sub.SetValue("DisplayName", displayName);
-                if (logoPath is not null)
-                    sub.SetValue("IconUri", logoPath);
-
-                DiagLog.Write($"NotificationDisplayName.ApplyToActivatorAumids: matched AUMID '{aumid}' (CustomActivator={customActivator}), DisplayName='{displayName}'");
-                matches++;
+                if (aliasKey is null)
+                {
+                    DiagLog.Write($"NotificationDisplayName.ApplyToActivatorAumids: path-alias key not found under HKCU\\{AumidHiveRoot}\\{pathAlias}. Falling back to declared-AUMID write only.");
+                }
+                else
+                {
+                    targetGuidAumid = aliasKey.GetValue("NotificationGUID")?.ToString();
+                    if (string.IsNullOrEmpty(targetGuidAumid))
+                    {
+                        DiagLog.Write("NotificationDisplayName.ApplyToActivatorAumids: path-alias key has no NotificationGUID value.");
+                    }
+                    else
+                    {
+                        DiagLog.Write($"NotificationDisplayName.ApplyToActivatorAumids: resolved NotificationGUID='{targetGuidAumid}' for this exe.");
+                    }
+                }
             }
 
-            DiagLog.Write($"NotificationDisplayName.ApplyToActivatorAumids: {matches} AUMID(s) matched activator CLSID '{ActivatorClsid}'");
-
-            if (matches == 0)
+            if (!string.IsNullOrEmpty(targetGuidAumid))
             {
-                // No match means AppNotificationManager.Default.Register() didn't
-                // write our activator under any AUMID — diagnostic dump so we can
-                // see what SDK actually wrote and adjust the matcher.
-                DumpAumidHive(root);
+                WriteDisplayNameAt(targetGuidAumid!, displayName, logoPath);
             }
+
+            // Belt-and-suspenders: write under our declared AUMID too, in case any
+            // code path (legacy compat, future SDK refactor, third-party consumer)
+            // reads from there instead of the path-alias resolution.
+            WriteDisplayNameAt(AumidBase, displayName, logoPath);
         }
         catch (Exception ex)
         {
@@ -138,33 +157,76 @@ internal static class NotificationDisplayName
         return File.Exists(path) ? path : null;
     }
 
-    private static bool ActivatorClsidsMatch(string registryValue, string expected)
+    private static string? ResolveExePath()
     {
-        var a = registryValue.Trim().Trim('{', '}');
-        var b = expected.Trim().Trim('{', '}');
-        return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+        // Environment.ProcessPath returns the absolute path of the host on .NET 6+.
+        var p = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(p)) return p;
+
+        try
+        {
+            return Process.GetCurrentProcess().MainModule?.FileName;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
-    /// Walks the AUMID hive and logs every subkey + its CustomActivator + DisplayName.
-    /// Only invoked when Phase 2 finds zero matches, so the cost is paid once per
-    /// (presumably broken) agent start and the operator can read the log to see
-    /// what AppNotificationManager actually wrote.
+    /// Mirrors WinAppSDK's path-alias normalization (verified against
+    /// HKCU dump 2026-05-12): lowercase, replace <c>\</c> and <c>/</c>
+    /// with <c>.</c>, leave spaces and other characters intact.
     /// </summary>
-    private static void DumpAumidHive(RegistryKey root)
+    private static string NormalizeExePathForAumidAlias(string exePath) =>
+        exePath.ToLowerInvariant().Replace('\\', '.').Replace('/', '.');
+
+    private static void WriteDisplayNameAt(string aumidKeyName, string displayName, string? logoPath)
     {
         try
         {
-            DiagLog.Write("NotificationDisplayName: AUMID hive dump start");
+            using var key = Registry.CurrentUser.CreateSubKey(
+                $@"{AumidHiveRoot}\{aumidKeyName}", writable: true);
+            key.SetValue("DisplayName", displayName, RegistryValueKind.ExpandString);
+            if (logoPath is not null)
+                key.SetValue("IconUri", logoPath, RegistryValueKind.ExpandString);
+            DiagLog.Write($"NotificationDisplayName.WriteDisplayNameAt: '{aumidKeyName}' DisplayName='{displayName}' icon={(logoPath ?? "(missing)")}");
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"NotificationDisplayName.WriteDisplayNameAt: '{aumidKeyName}' failed — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Walks HKCU\Software\Classes\AppUserModelId and logs every subkey's
+    /// CustomActivator / NotificationGUID / DisplayName. Cheap (a few dozen
+    /// values total in a typical hive) and runs once per agent startup;
+    /// keeps an artifact in DiagLog the operator can paste back when an
+    /// attribution issue recurs so we never debug this blind again.
+    /// </summary>
+    private static void DumpAumidHive()
+    {
+        try
+        {
+            using var root = Registry.CurrentUser.OpenSubKey(AumidHiveRoot, writable: false);
+            if (root is null)
+            {
+                DiagLog.Write($"NotificationDisplayName.DumpAumidHive: HKCU\\{AumidHiveRoot} not present.");
+                return;
+            }
+
+            DiagLog.Write("NotificationDisplayName.DumpAumidHive: BEGIN");
             foreach (var aumid in root.GetSubKeyNames())
             {
                 using var sub = root.OpenSubKey(aumid, writable: false);
                 if (sub is null) continue;
-                var act = sub.GetValue("CustomActivator")?.ToString() ?? "(none)";
-                var disp = sub.GetValue("DisplayName")?.ToString() ?? "(none)";
-                DiagLog.Write($"  {aumid} | CustomActivator={act} | DisplayName={disp}");
+                var disp = sub.GetValue("DisplayName")?.ToString();
+                var act = sub.GetValue("CustomActivator")?.ToString();
+                var ng  = sub.GetValue("NotificationGUID")?.ToString();
+                DiagLog.Write($"  [{aumid}] DisplayName={disp ?? "(none)"} | CustomActivator={act ?? "(none)"} | NotificationGUID={ng ?? "(none)"}");
             }
-            DiagLog.Write("NotificationDisplayName: AUMID hive dump end");
+            DiagLog.Write("NotificationDisplayName.DumpAumidHive: END");
         }
         catch (Exception ex)
         {

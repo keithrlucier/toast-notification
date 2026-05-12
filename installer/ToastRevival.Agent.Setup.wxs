@@ -60,7 +60,10 @@
                   Name="Toast Notification"
                   Target="[INSTALLFOLDER]ToastNotification.Agent.exe"
                   WorkingDirectory="INSTALLFOLDER"
-                  Description="Launch the Toast Notification agent." />
+                  Description="Launch the Toast Notification agent.">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="Toast2IT.ToastNotification" />
+          <ShortcutProperty Key="System.AppUserModel.ToastActivatorCLSID" Value="{7FA7762F-41EC-4D72-9F06-58964AB36FEA}" />
+        </Shortcut>
         <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
         <RegistryValue Root="HKMU"
                        Key="Software\Toast2IT\Toast Notification\Install"

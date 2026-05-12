@@ -356,7 +356,7 @@ namespace ToastRevival.Agent
                 WarnIfAssetsMissing(template, assets);
 
                 var notification = ToastTemplateBuilder.Build(template, assets, options.OverrideTitle, options.OverrideBody);
-                AppNotificationManager.Default.Show(notification);
+                LegacyToastShim.Show(notification);
                 DiagLog.Write($"DiagnosticMode: Show() returned. Template={template.Key}");
 
                 Console.WriteLine($"Toast Notification sent. Template: {template.Key}");
@@ -507,7 +507,7 @@ namespace ToastRevival.Agent
                             var note   = ToastTemplateBuilder.Build(tmpl, assets,
                                 "Toast Notification",
                                 "Agent is connected. Notifications from your admin will appear here.");
-                            AppNotificationManager.Default.Show(note);
+                            LegacyToastShim.Show(note);
                             DiagLog.Write("PrimaryMode: test notification sent from tray.");
                         }
                         catch (Exception ex)

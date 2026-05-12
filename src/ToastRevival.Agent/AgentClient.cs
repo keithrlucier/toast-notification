@@ -448,7 +448,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
         try
         {
             var notification = ToastTemplateBuilder.BuildFromPayload(payload);
-            AppNotificationManager.Default.Show(notification);
+            LegacyToastShim.Show(notification);
             DiagLog.Write($"{source}: rendered notificationId={payload.NotificationId}; title='{payload.Title}'");
         }
         catch (Exception ex)

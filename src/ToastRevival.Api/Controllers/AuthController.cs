@@ -24,6 +24,8 @@ public class AuthController : ControllerBase
     private readonly IEmailService _email;
     private readonly ISmsService _sms;
     private readonly IConfiguration _config;
+    private readonly ITurnstileVerifier _turnstile;
+    private readonly ILogger<AuthController> _logger;
 
     public AuthController(
         UserManager<AppUser> userManager,
@@ -32,7 +34,9 @@ public class AuthController : ControllerBase
         MfaService mfa,
         IEmailService email,
         ISmsService sms,
-        IConfiguration config)
+        IConfiguration config,
+        ITurnstileVerifier turnstile,
+        ILogger<AuthController> logger)
     {
         _userManager = userManager;
         _db = db;
@@ -41,6 +45,8 @@ public class AuthController : ControllerBase
         _email = email;
         _sms = sms;
         _config = config;
+        _turnstile = turnstile;
+        _logger = logger;
     }
 
     // ─── New M9.A registration flow ────────────────────────────────────────────
@@ -49,83 +55,66 @@ public class AuthController : ControllerBase
     /// Step 1 of 3. Creates tenant + user (no password yet), sends ClickSend
     /// SMS with a 6-digit verification code.
     /// </summary>
+    [HttpGet("register/config")]
+    public ActionResult<PublicRegistrationConfigResponse> RegisterConfig() =>
+        Ok(new PublicRegistrationConfigResponse(_turnstile.IsEnabled, _turnstile.SiteKey));
+
     [HttpPost("register/init")]
-    public async Task<ActionResult<RegisterInitResponse>> RegisterInit([FromBody] RegisterInitRequest req)
+    [EnableRateLimiting("trial-register-per-ip")]
+    public async Task<ActionResult<TrialRegistrationResponse>> RegisterInit([FromBody] TrialRegistrationRequest req)
     {
-        var subdomain = NormalizeSubdomain(req.Subdomain) ?? SlugifyTenantName(req.TenantName);
-        if (string.IsNullOrEmpty(subdomain))
-            return BadRequest("Tenant name must contain at least one alphanumeric character.");
-
-        for (var attempt = 0; attempt < 5; attempt++)
-        {
-            if (!await _db.Tenants.AnyAsync(t => t.Subdomain == subdomain)) break;
-            if (req.Subdomain is not null) return Conflict("Subdomain already taken.");
-            subdomain = SlugifyTenantName(req.TenantName) + "-" + RandomSuffix();
-        }
-        if (await _db.Tenants.AnyAsync(t => t.Subdomain == subdomain))
-            return Conflict("Could not allocate a unique subdomain.");
-
-        if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == req.Email))
+        var email = req.Email.Trim().ToLowerInvariant();
+        if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == email))
             return Conflict("An account with that email already exists.");
 
-        using var tx = await _db.Database.BeginTransactionAsync();
+        if (await _db.TrialRequests.AnyAsync(r => r.Email == email && r.Status == TrialRequestStatus.Pending))
+            return Conflict("A trial request for that email is already pending review.");
 
-        var tenant = new Tenant
-        {
-            Name          = req.TenantName,
-            Subdomain     = subdomain,
-            SigningKey    = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
-            // INFO-M1-003 (M9.C): every new tenant gets a pre-shared enrollment key.
-            // Devices must include this in /api/devices/register or the request is
-            // rejected with 403. Key is surfaced in the admin dashboard's deploy
-            // command so MSPs paste it into their RMM script alongside CLIENTID.
-            EnrollmentKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)),
-        };
-        _db.Tenants.Add(tenant);
-        await _db.SaveChangesAsync();
-
-        var code       = GenerateSmsCode();
-        var codeHash   = HashSmsCode(code);
-        var codeExpiry = DateTime.UtcNow.AddMinutes(10);
-
-        var user = new AppUser
-        {
-            TenantId             = tenant.Id,
-            FullName             = req.FullName.Trim(),
-            Email                = req.Email,
-            UserName             = req.Email,
-            PhoneNumber          = req.Mobile,
-            Role                 = UserRole.SuperAdmin,
-            SecurityStamp        = Guid.NewGuid().ToString(),
-            SmsVerificationCode  = codeHash,
-            SmsCodeExpiry        = codeExpiry,
-            RegistrationStep     = RegistrationStep.PendingSmsVerification,
-        };
-
-        var result = await _userManager.CreateAsync(user);
-        if (!result.Succeeded)
-        {
-            await tx.RollbackAsync();
-            return BadRequest(new { errors = result.Errors.Select(e => e.Description).ToArray() });
-        }
-
+        string website;
         try
         {
-            foreach (var template in TemplatesController.BuildDefaultTemplates(tenant.Id))
-                _db.NotificationTemplates.Add(template);
-            await _db.SaveChangesAsync();
+            website = NormalizeWebsite(req.Website);
         }
-        catch
+        catch (ArgumentException ex)
         {
-            await tx.RollbackAsync();
-            return StatusCode(500, "Registration failed during template initialization.");
+            return BadRequest(ex.Message);
         }
 
-        await tx.CommitAsync();
+        var remoteIp = ClientIp();
+        var turnstile = await _turnstile.VerifyAsync(
+            req.TurnstileToken,
+            remoteIp,
+            "trial_register",
+            HttpContext.RequestAborted);
+        if (!turnstile.Success)
+            return BadRequest(turnstile.Error ?? "Human verification failed.");
 
-        await _sms.SendAsync(req.Mobile, $"Your Toast Notification verification code is: {code}. It expires in 10 minutes.");
+        var trial = new TrialRequest
+        {
+            CompanyName = req.CompanyName.Trim(),
+            Website = website,
+            FullName = req.FullName.Trim(),
+            Email = email,
+            Phone = req.Phone.Trim(),
+            JobTitle = req.JobTitle.Trim(),
+            IntendedUseCase = req.IntendedUseCase,
+            IntendedUseCaseDetails = string.IsNullOrWhiteSpace(req.IntendedUseCaseDetails)
+                ? null
+                : req.IntendedUseCaseDetails.Trim(),
+            RemoteIpAddress = remoteIp,
+            UserAgent = Truncate(Request.Headers["User-Agent"].ToString(), 512),
+            TurnstileHostname = turnstile.Hostname,
+            TurnstileAction = turnstile.Action,
+        };
 
-        return Ok(new RegisterInitResponse(user.Id, "sms_pending"));
+        _db.TrialRequests.Add(trial);
+        await _db.SaveChangesAsync();
+        await NotifyTrialReviewAsync(trial);
+
+        return Ok(new TrialRegistrationResponse(
+            trial.Id,
+            "pending_review",
+            "Thanks. Your trial request is pending review. We will email you after approval."));
     }
 
     /// <summary>
@@ -259,10 +248,65 @@ public class AuthController : ControllerBase
         return $"****{digits[^4..]}";
     }
 
+    private static string NormalizeWebsite(string raw)
+    {
+        var value = raw.Trim();
+        if (!value.Contains("://", StringComparison.Ordinal))
+            value = $"https://{value}";
+
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("http" or "https")
+            || string.IsNullOrWhiteSpace(uri.Host))
+        {
+            throw new ArgumentException("Enter a valid company website.");
+        }
+
+        return uri.ToString().TrimEnd('/');
+    }
+
+    private string ClientIp()
+    {
+        var cfIp = Request.Headers["CF-Connecting-IP"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(cfIp)) return cfIp;
+
+        var forwarded = Request.Headers["X-Forwarded-For"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(forwarded))
+            return forwarded.Split(',')[0].Trim();
+
+        return HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    }
+
+    private async Task NotifyTrialReviewAsync(TrialRequest trial)
+    {
+        var reviewEmail = _config["Registration:ReviewEmail"] ?? "support@toastnotification.com";
+        try
+        {
+            await _email.SendAsync(
+                reviewEmail,
+                "Toast Notification Review",
+                $"Trial request: {trial.CompanyName}",
+                EmailTemplates.TrialRequestReview(trial));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send trial request review email for {TrialRequestId}", trial.Id);
+        }
+    }
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
+
 
     [HttpPost("register")]
+    [EnableRateLimiting("trial-register-per-ip")]
     public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest req)
     {
+        if (!_config.GetValue<bool>("Registration:AllowLegacyDirectRegister"))
+            return StatusCode(StatusCodes.Status410Gone, new
+            {
+                message = "Public registration now uses the reviewed trial request flow. Submit /api/auth/register/init."
+            });
+
         var subdomain = NormalizeSubdomain(req.Subdomain) ?? SlugifyTenantName(req.TenantName);
         if (string.IsNullOrEmpty(subdomain))
             return BadRequest("Tenant name must contain at least one alphanumeric character.");

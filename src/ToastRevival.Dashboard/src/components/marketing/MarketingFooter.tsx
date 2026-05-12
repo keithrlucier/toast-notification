@@ -19,7 +19,7 @@ export function MarketingFooter() {
             <h4>Product</h4>
             <Link to="/pricing">Pricing</Link>
             <Link to="/login">Sign in</Link>
-            <Link to="/register">Get started</Link>
+            <Link to="/register">Request access</Link>
           </div>
 
           <div className="m-footer-col">

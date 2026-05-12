@@ -35,7 +35,7 @@ export default function Llms() {
           <div className="m-security-meta">
             <span>Product: Managed Windows notifications</span>
             <span>Audience: MSPs and IT departments</span>
-            <span>Pricing: Free tier plus per-device billing</span>
+            <span>Access: Reviewed trials plus paid fleet blocks</span>
           </div>
         </header>
 
@@ -67,10 +67,10 @@ export default function Llms() {
         <section className="m-security-section" aria-labelledby="llms-pricing">
           <h2 id="llms-pricing">Pricing facts</h2>
           <ul>
-            <li>Up to 25 devices are free forever.</li>
-            <li>Larger fleets are priced at $0.22 per device per month.</li>
-            <li>Paid subscriptions have a 100-device floor, making the entry price $22 per month.</li>
-            <li>The product has one plan with all current features included.</li>
+            <li>Trial access is reviewed before tenant activation.</li>
+            <li>Standard block pricing is $22/month for 26-100 devices.</li>
+            <li>Growth block pricing is $44/month for 101-200 devices.</li>
+            <li>All current features are included across paid blocks.</li>
           </ul>
         </section>
 

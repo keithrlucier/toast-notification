@@ -12,7 +12,7 @@ export default function DocsRmm() {
       techArticleLd({
         headline: 'RMM silent install',
         description:
-          'Silent MSI install with CLIENTID and SERVERURL properties. Tested with NinjaOne, Datto, ConnectWise Automate, and Atera.',
+          'Silent MSI install with CLIENTID, SERVERURL, and ENROLLMENTKEY properties. Tested with NinjaOne, Datto, ConnectWise Automate, and Atera.',
         path: '/docs/deploy/rmm',
       }),
       breadcrumbLd([
@@ -28,7 +28,7 @@ export default function DocsRmm() {
       <h1>RMM silent install</h1>
       <p>
         Deploy the signed MSI through any RMM that runs scheduled scripts as <code>SYSTEM</code> with administrative
-        rights. Tenant ID and server URL are passed as MSI public properties at install time.
+        rights. Tenant ID, server URL, and enrollment key are passed as MSI public properties at install time.
       </p>
 
       <h2 id="install-command">Install command</h2>
@@ -36,10 +36,11 @@ export default function DocsRmm() {
         language="powershell"
         code={`msiexec /i "C:\\Temp\\ToastNotification.Agent-0.4.0.0.msi" /qn /norestart \`
   CLIENTID=00000000-0000-0000-0000-000000000000 \`
-  SERVERURL=https://toastnotification.com`}
+  SERVERURL=https://toastnotification.com \`
+  ENROLLMENTKEY=<tenant-enrollment-key>`}
       />
       <p>
-        The two public properties — <code>CLIENTID</code> and <code>SERVERURL</code> — are written to{' '}
+        The public properties <code>CLIENTID</code>, <code>SERVERURL</code>, and <code>ENROLLMENTKEY</code> are written to{' '}
         <code>%ProgramData%\Toast2IT\Toast Notification\bootstrap.json</code> by a deferred custom action during the
         InstallFiles sequence. The agent reads them on first launch in the user's context, registers the device, and
         connects to the SignalR hub.
@@ -47,9 +48,9 @@ export default function DocsRmm() {
 
       <Callout title="Properties are public, not secret">
         <p>
-          <code>CLIENTID</code> and <code>SERVERURL</code> are MSI public properties — they appear in install logs and
-          are not protected. The tenant GUID is not a secret on its own; the agent must complete device registration
-          (which returns a unique device JWT) before it can publish anything to the API.
+          <code>CLIENTID</code>, <code>SERVERURL</code>, and <code>ENROLLMENTKEY</code> are MSI public properties and
+          can appear in install logs. The enrollment key limits new device registration for that tenant; rotate it from
+          Tenant Settings if an install command is exposed.
         </p>
       </Callout>
 
@@ -129,7 +130,7 @@ export default function DocsRmm() {
         language="powershell"
         code={`msiexec /i ToastNotification.Agent-0.4.0.0.msi /qn /norestart \`
   /L*v "%ProgramData%\\Toast2IT\\install.log" \`
-  CLIENTID=... SERVERURL=https://toastnotification.com`}
+  CLIENTID=... SERVERURL=https://toastnotification.com ENROLLMENTKEY=...`}
       />
       <p>
         Log to a tenant-known path so the RMM can collect it for triage. The agent's own diagnostic log is at{' '}

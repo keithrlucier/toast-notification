@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using ToastRevival.Api.Models;
 
 namespace ToastRevival.Api.DTOs;
 
@@ -19,6 +20,26 @@ public record RegisterInitRequest(
     string? Subdomain = null);
 
 public record RegisterInitResponse(Guid UserId, string Step);
+
+public record PublicRegistrationConfigResponse(
+    bool TurnstileEnabled,
+    string? TurnstileSiteKey);
+
+public record TrialRegistrationRequest(
+    [Required, MaxLength(200)] string CompanyName,
+    [Required, MaxLength(500)] string Website,
+    [Required, MaxLength(160)] string FullName,
+    [Required, EmailAddress, MaxLength(256)] string Email,
+    [Required, Phone, MaxLength(64)] string Phone,
+    [Required, MaxLength(160)] string JobTitle,
+    [Required] TrialUseCase IntendedUseCase,
+    [MaxLength(2000)] string? IntendedUseCaseDetails,
+    string? TurnstileToken);
+
+public record TrialRegistrationResponse(
+    Guid RequestId,
+    string Step,
+    string Message);
 
 public record VerifySmsRequest(
     [Required] Guid UserId,

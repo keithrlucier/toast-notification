@@ -28,7 +28,7 @@ export function MarketingHeader() {
 
   const signedIn = !!user;
   const primaryHref = signedIn ? '/dashboard' : '/register';
-  const primaryLabel = signedIn ? 'Open dashboard' : 'Get started';
+  const primaryLabel = signedIn ? 'Open dashboard' : 'Request access';
   const secondaryHref = signedIn ? '/dashboard' : '/login';
   const secondaryLabel = signedIn ? 'Dashboard' : 'Sign in';
 

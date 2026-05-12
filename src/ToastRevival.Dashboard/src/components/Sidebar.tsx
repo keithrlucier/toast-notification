@@ -12,12 +12,17 @@ const NAV_ITEMS = [
 ];
 
 const ADMIN_ITEMS = [
+  { to: '/devices/install',    label: 'Install Agent', icon: DevicesIcon },
   { to: '/moderation',        label: 'Moderation', icon: ModerationIcon },
   { to: '/users',             label: 'Users',      icon: UsersIcon },
   { to: '/audit',             label: 'Audit Log',  icon: AuditIcon },
   { to: '/billing',           label: 'Billing',    icon: BillingIcon },
   { to: '/settings/api-keys', label: 'API Keys',   icon: ApiKeysIcon },
   { to: '/settings/tenant',   label: 'Settings',   icon: SettingsIcon },
+];
+
+const PLATFORM_ITEMS = [
+  { to: '/system/trial-requests', label: 'Trial Requests', icon: UsersIcon },
 ];
 
 function roleLabel(role?: string, isPlatformAdmin?: boolean): string {
@@ -57,6 +62,15 @@ export default function Sidebar() {
           <>
             <div className="sidebar-section-label">Administration</div>
             {ADMIN_ITEMS.map(item => (
+              <NavItem key={item.to} {...item} />
+            ))}
+          </>
+        )}
+
+        {user?.isPlatformAdmin && (
+          <>
+            <div className="sidebar-section-label">Platform</div>
+            {PLATFORM_ITEMS.map(item => (
               <NavItem key={item.to} {...item} />
             ))}
           </>

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const SITE_URL = 'https://toastnotification.com';
 const SITE_NAME = 'Toast Notification';
-const UPDATED = '2026-05-10';
+const UPDATED = '2026-05-12';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -28,13 +28,12 @@ const softwareApplicationLd = () => ({
   offers: {
     '@type': 'Offer',
     name: 'Standard',
-    price: '0.22',
+    price: '22.00',
     priceCurrency: 'USD',
     priceSpecification: {
-      '@type': 'UnitPriceSpecification',
-      price: '0.22',
+      '@type': 'PriceSpecification',
+      price: '22.00',
       priceCurrency: 'USD',
-      unitText: 'device per month',
     },
     eligibleQuantity: {
       '@type': 'QuantitativeValue',
@@ -55,7 +54,7 @@ const productLd = () => ({
   '@type': 'Product',
   name: `${SITE_NAME} Standard plan`,
   description:
-    'Managed Windows notification platform with one plan, free tier, per-device billing, signed delivery, and audit reporting.',
+    'Managed Windows notification platform with reviewed trial access, fleet block pricing, signed delivery, and audit reporting.',
   brand: { '@type': 'Brand', name: SITE_NAME },
   offers: {
     '@type': 'AggregateOffer',
@@ -65,15 +64,14 @@ const productLd = () => ({
     offers: [
       {
         '@type': 'Offer',
-        name: 'Standard',
-        price: '0.22',
-        priceCurrency: 'USD',
-        priceSpecification: {
-          '@type': 'UnitPriceSpecification',
-          price: '0.22',
+          name: 'Standard',
+          price: '22.00',
           priceCurrency: 'USD',
-          unitText: 'device per month',
-        },
+          priceSpecification: {
+            '@type': 'PriceSpecification',
+            price: '22.00',
+            priceCurrency: 'USD',
+          },
         availability: 'https://schema.org/InStock',
       },
     ],
@@ -131,14 +129,14 @@ const routes = [
         <li>Export tenant audit evidence to CSV or PDF.</li>
         <li>Deploy through signed MSI, Intune, Microsoft Store, or RMM silent install.</li>
       </ul>
-      <p>Pricing starts free for up to 25 devices. Larger fleets are $0.22 per device per month with a 100-device paid subscription floor.</p>
+      <p>Trial access is reviewed before activation. Paid fleet blocks start at $22 per month for 26-100 devices.</p>
     `,
   },
   {
     path: '/pricing',
     title: 'Pricing',
     description:
-      'Toast Notification pricing: free for up to 25 devices, then $0.22 per device per month with a 100-device paid subscription floor and 14-day trial.',
+      'Toast Notification pricing: reviewed trial access, then $22/month for 26-100 devices and $44/month for 101-200 devices.',
     priority: '0.9',
     changefreq: 'weekly',
     jsonLd: [
@@ -150,10 +148,10 @@ const routes = [
     ],
     body: `
       <h1>Toast Notification pricing</h1>
-      <p>Toast Notification has one plan. Up to 25 devices are free forever. Larger fleets cost $0.22 per device per month. Paid subscriptions have a 100-device floor, making the entry paid price $22 per month.</p>
+      <p>Toast Notification has reviewed trial access before tenant activation. Paid fleet blocks are predictable: $22/month for 26-100 devices and $44/month for 101-200 devices.</p>
       <ul>
-        <li>25 devices: free forever.</li>
-        <li>100 devices: $22 per month.</li>
+        <li>Trial access: reviewed before activation.</li>
+        <li>26-100 devices: $22 per month.</li>
         <li>300 devices: $66 per month.</li>
         <li>1,000 devices: $220 per month.</li>
         <li>5,000 devices: $1,100 per month.</li>
@@ -236,7 +234,7 @@ const routes = [
       <h1>Getting started with Toast Notification</h1>
       <p>Create a tenant, verify the administrator account, install the Windows agent, register the endpoint, and send the first branded notification from the dashboard.</p>
       <ol>
-        <li>Register an organization.</li>
+        <li>Request trial access and set your password after approval.</li>
         <li>Install the signed Windows agent.</li>
         <li>Confirm the device appears in the dashboard.</li>
         <li>Send a notification using one of the included templates.</li>
@@ -321,7 +319,7 @@ const routes = [
       <h2>Canonical facts</h2>
       <ul>
         <li>Primary audience: MSPs and IT departments.</li>
-        <li>Pricing: free for up to 25 devices, then $0.22 per device per month with a 100-device paid floor.</li>
+        <li>Pricing: reviewed trial access, then $22/month for 26-100 devices and $44/month for 101-200 devices.</li>
         <li>Deployment: signed MSI, Intune, Microsoft Store, or RMM silent install.</li>
         <li>Security: signed payloads, tenant isolation, MFA-gated broadcast sends, code-signed agent, and audit records.</li>
         <li>Plain-text crawler file: <a href="/llms.txt">/llms.txt</a>.</li>

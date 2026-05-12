@@ -243,7 +243,7 @@ export default function Billing() {
                 </div>
                 <p style={{ margin: '8px 0 0', maxWidth: 560, color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.55 }}>
                   {money(plan.pricePerDevice)} per active device per month.
-                  First {plan.freeTierLimit} devices are free. The 14-day trial starts during Stripe checkout.
+                  Reviewed trial and billing status are shown here. Paid service uses Stripe billing.
                 </p>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -273,11 +273,10 @@ export default function Billing() {
                 Activate Billing
               </h2>
               <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.55, margin: '0 0 18px' }}>
-                Start the standard plan with a 14-day trial. Stripe bills the higher of your active device count or the
-                100-device minimum.
+                Activate the standard plan in Stripe when the tenant is ready for paid service.
               </p>
               <button className="btn btn-primary" onClick={handleCheckout} disabled={checkoutLoading}>
-                {checkoutLoading ? 'Redirecting...' : 'Start 14-Day Trial'}
+                {checkoutLoading ? 'Redirecting...' : 'Activate Billing'}
               </button>
             </div>
           )}

@@ -5,7 +5,7 @@ const HUB_LINKS = [
   {
     to: '/docs/getting-started',
     title: 'Getting started',
-    body: 'Sign up, register a tenant, install the agent on a Windows endpoint, and send your first notification in under ten minutes.',
+    body: 'Request access, set your password after approval, install the agent on a Windows endpoint, and send your first notification.',
   },
   {
     to: '/docs/deploy/store',
@@ -20,7 +20,7 @@ const HUB_LINKS = [
   {
     to: '/docs/deploy/rmm',
     title: 'RMM silent install',
-    body: 'msiexec with CLIENTID and SERVERURL properties. Tested with NinjaOne, Datto, ConnectWise Automate, Atera, and any RMM that supports silent MSI deployment.',
+    body: 'msiexec with CLIENTID, SERVERURL, and ENROLLMENTKEY properties. Tested with NinjaOne, Datto, ConnectWise Automate, Atera, and any RMM that supports silent MSI deployment.',
   },
   {
     to: '/docs/api',

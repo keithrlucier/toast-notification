@@ -27,6 +27,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<TenantBlocklistEntry> TenantBlocklistEntries => Set<TenantBlocklistEntry>();
     public DbSet<TenantApiKey> TenantApiKeys => Set<TenantApiKey>();
+    public DbSet<TrialRequest> TrialRequests => Set<TrialRequest>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -157,6 +158,24 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.Property(k => k.KeyHash).HasMaxLength(64);
             e.HasIndex(k => k.KeyHash).IsUnique();
             e.HasQueryFilter(k => k.TenantId == _tenantProvider.TenantId);
+        });
+
+        builder.Entity<TrialRequest>(e =>
+        {
+            e.Property(r => r.CompanyName).HasMaxLength(200);
+            e.Property(r => r.Website).HasMaxLength(500);
+            e.Property(r => r.FullName).HasMaxLength(160);
+            e.Property(r => r.Email).HasMaxLength(256);
+            e.Property(r => r.Phone).HasMaxLength(64);
+            e.Property(r => r.JobTitle).HasMaxLength(160);
+            e.Property(r => r.IntendedUseCaseDetails).HasMaxLength(2000);
+            e.Property(r => r.ReviewNote).HasMaxLength(1000);
+            e.Property(r => r.RemoteIpAddress).HasMaxLength(64);
+            e.Property(r => r.UserAgent).HasMaxLength(512);
+            e.Property(r => r.TurnstileHostname).HasMaxLength(255);
+            e.Property(r => r.TurnstileAction).HasMaxLength(100);
+            e.HasIndex(r => new { r.Status, r.SubmittedAt });
+            e.HasIndex(r => r.Email);
         });
     }
 

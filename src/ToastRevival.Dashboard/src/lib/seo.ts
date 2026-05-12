@@ -128,18 +128,12 @@ export function softwareApplicationLd(): Record<string, unknown> {
     offers: {
       '@type': 'Offer',
       name: 'Standard',
-      price: '0.22',
+      price: '22.00',
       priceCurrency: 'USD',
       priceSpecification: {
-        '@type': 'UnitPriceSpecification',
-        price: '0.22',
+        '@type': 'PriceSpecification',
+        price: '22.00',
         priceCurrency: 'USD',
-        unitText: 'device per month',
-        referenceQuantity: {
-          '@type': 'QuantitativeValue',
-          value: 1,
-          unitCode: 'C62',
-        },
       },
       eligibleQuantity: {
         '@type': 'QuantitativeValue',
@@ -162,7 +156,7 @@ export function pricingProductLd(): Record<string, unknown> {
     '@type': 'Product',
     name: `${SITE_NAME} - Standard plan`,
     description:
-      'Single plan, $0.22 per device per month, 100-device subscription minimum. Includes every feature, no tiers.',
+      'Reviewed trial access and simple fleet block pricing. Standard is $22 per month for 26-100 devices. Includes every feature, no tiers.',
     brand: { '@type': 'Brand', name: SITE_NAME },
     offers: {
       '@type': 'AggregateOffer',
@@ -173,13 +167,12 @@ export function pricingProductLd(): Record<string, unknown> {
         {
           '@type': 'Offer',
           name: 'Standard',
-          price: '0.22',
+          price: '22.00',
           priceCurrency: 'USD',
           priceSpecification: {
-            '@type': 'UnitPriceSpecification',
-            price: '0.22',
+            '@type': 'PriceSpecification',
+            price: '22.00',
             priceCurrency: 'USD',
-            unitText: 'device per month',
           },
           availability: 'https://schema.org/InStock',
         },

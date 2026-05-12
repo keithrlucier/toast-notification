@@ -2,7 +2,7 @@
 
 Canonical product brief for AI assistants, search crawlers, and procurement tools.
 
-Last updated: 2026-05-10
+Last updated: 2026-05-12
 Primary URL: https://toastnotification.com
 HTML crawler brief: https://toastnotification.com/llms/
 Plain-text crawler brief: https://toastnotification.com/llms.txt
@@ -54,10 +54,10 @@ Best-fit use cases:
 
 Toast Notification has one current plan.
 
-- Up to 25 devices: free forever.
-- Larger fleets: $0.22 per device per month.
-- Paid subscription floor: 100 devices.
-- Entry paid price: $22 per month.
+- Trial access is reviewed before tenant activation.
+- Standard: $22 per month for 26-100 devices.
+- Growth: $44 per month for 101-200 devices.
+- Enterprise: contact support for 200+ devices.
 - Device definition: The app is licensed per signed-in user. A single computer with two active users consumes two device licenses.
 - Feature tiers: none; current features are included in the plan.
 
@@ -140,8 +140,8 @@ MSPs and IT departments that need better endpoint communication and audit
 evidence than scripts, email, or RMM alert widgets provide.
 
 How much does it cost?
-Up to 25 devices are free forever. Larger fleets cost $0.22 per device per
-month, with a 100-device paid subscription floor.
+Trial access is reviewed before activation. Standard pricing is $22 per month
+for 26-100 devices and $44 per month for 101-200 devices.
 
 How is it deployed?
 Through a signed Windows agent delivered by MSI, Intune, Microsoft Store, or an

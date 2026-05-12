@@ -13,6 +13,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
+import InstallAgent from './pages/InstallAgent';
 import Templates from './pages/Templates';
 import Compose from './pages/Compose';
 import History from './pages/History';
@@ -25,6 +26,7 @@ import Assets from './pages/Assets';
 import AuditLog from './pages/AuditLog';
 import Billing from './pages/Billing';
 import Onboarding from './pages/Onboarding';
+import TrialRequests from './pages/TrialRequests';
 
 // Marketing chunks — lazy so the dashboard bundle doesn't pull in the marketing CSS / pages
 // for already-authenticated users, and the public marketing bundle doesn't pull in Recharts.
@@ -125,6 +127,14 @@ const router = createBrowserRouter([
       { path: '/dashboard',   element: <Dashboard /> },
       { path: '/analytics',   element: <Analytics /> },
       { path: '/devices',     element: <Devices /> },
+      {
+        path: '/devices/install',
+        element: (
+          <ProtectedRoute requireAdmin>
+            <InstallAgent />
+          </ProtectedRoute>
+        ),
+      },
       { path: '/templates',   element: <Templates /> },
       { path: '/compose',     element: <Compose /> },
       { path: '/assets',      element: <Assets /> },
@@ -174,6 +184,14 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute requireAdmin>
             <Billing />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/system/trial-requests',
+        element: (
+          <ProtectedRoute requireAdmin>
+            <TrialRequests />
           </ProtectedRoute>
         ),
       },

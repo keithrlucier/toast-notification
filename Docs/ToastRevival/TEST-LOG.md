@@ -1,5 +1,26 @@
 # ToastRevival - Test Log
 
+## 2026-05-12 (Trial approval gate, install page, SEO refresh)
+
+### Build Checks
+
+- `dotnet build src\ToastRevival.Api\ToastRevival.Api.csproj`: **0 warnings, 0 errors**.
+- `npm run build` from `src\ToastRevival.Dashboard`: **passed** (`tsc -b`, Vite build, and `scripts/prerender-seo.mjs`). The existing Vite chunk-size warning remains.
+- `dotnet test tests\ToastRevival.Api.Tests\ToastRevival.Api.Tests.csproj`: **blocked by local Docker/Testcontainers**. The test assembly compiled and 21 tests passed, but 31 fixture-backed tests failed before app code ran because the shared Postgres Testcontainers fixture could not reach Docker (`Docker is either not running or misconfigured`).
+- Browser smoke at `http://127.0.0.1:5173`: `/register`, `/`, `/pricing`, `/docs/getting-started`, and unauthenticated `/devices/install` redirect to `/login` verified. Only console warnings observed were existing React Router v7 future-flag warnings.
+
+### Scope Verified
+
+- Trial request backend compiles with EF model/migration, Turnstile verifier, rate-limit registration policy, pending-review registration endpoint, and platform-admin approve/reject endpoints.
+- Dashboard production build compiles with the new `/register`, `/devices/install`, and `/system/trial-requests` routes.
+- SEO prerender completed for the public marketing/docs routes after the content and JSON-LD refresh.
+- Public trial form renders the company, website, contact, phone, job-title, use-case, and submit controls. The use-case select is operable in-browser.
+
+### Boundaries
+
+- End-to-end approval flow was not runtime-tested against a live Postgres instance because Docker is unavailable in this session.
+- Production deploy still needs Turnstile site/secret keys and the `M10TrialApprovalGate` EF migration applied.
+
 ## 2026-05-09 (FIX-CI-002 — XML comment double-dash in wxs)
 
 ### Problem

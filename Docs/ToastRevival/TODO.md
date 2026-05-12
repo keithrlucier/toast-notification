@@ -1,6 +1,6 @@
 # Toast Notification — Open Items
 
-**Last updated: 2026-05-10 (session 3)**
+**Last updated: 2026-05-12 (session 4)**
 
 ## Production status
 
@@ -10,6 +10,7 @@ All milestones M0A–M8.C complete. M9.A (Mailjet + ClickSend registration flow)
 M9.B (pending endpoint pagination — INFO-M2B-002) complete 2026-05-10.
 M9.C (enrollment-key auto-gen + agent drain loop + production tray/Store assets) complete 2026-05-10.
 Stripe live: `price_1TVXJYIbddaRrnMlw8K4LrKr`, webhook `we_1TVXJwIbddaRrnMllPMIXamd`.
+Public trial access is now review-gated. Direct tenant creation from public registration is disabled by default outside test config.
 Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscription.
 
 ---
@@ -17,6 +18,12 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 ## Engineering backlog
 
 ### Medium
+
+- [x] **Tenant owner MSI install surface** - Resolved 2026-05-12. Added `/devices/install` for tenant admins with tenant ID, server URL, MSI download URL, and the prefilled `msiexec` command using the tenant enrollment key. Devices and onboarding now link directly to the install surface.
+
+- [x] **Reviewed trial requests** - Resolved 2026-05-12. Public registration now stores a `TrialRequest` with company/contact/use-case details and Turnstile verification instead of immediately creating a tenant. Platform admins review at `/system/trial-requests`; approval provisions the tenant owner and sends the password setup email.
+
+- [x] **Marketing, SEO, and LLM content refresh** - Resolved 2026-05-12. Home, pricing, public docs, SEO metadata, JSON-LD, `llms.txt`, and prerendered SEO copy now describe realistic MSP/software use cases, deployment paths, reviewed access, and current block pricing.
 
 - [x] **Onboarding billing step** — Fixed 2026-05-10. Free tier language: "1–25 devices always free, billing starts at device 26+." Continue is primary CTA. Deployed.
 
@@ -57,6 +64,10 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 ---
 
 ## Keith actions
+
+- [ ] **Configure production Turnstile keys** - Set `Turnstile__SiteKey`, `Turnstile__SecretKey`, and keep `Turnstile__Required=true` in production before deploying the trial gate. Cloudflare action expected by the backend is `trial_register`.
+
+- [ ] **Run production EF migration** - Apply `M10TrialApprovalGate` during deploy so the `TrialRequests` table exists before public registration points at the new flow.
 
 - [x] **Re-sign MSI** — Signed (Keith confirmed 2026-05-11). Current binary is `ToastNotification.Agent-0.4.0.0.msi`.
 

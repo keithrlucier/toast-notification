@@ -11,3 +11,14 @@ public enum SubscriptionTier { Standard }
 public enum BillingStatus { Active, PastDue, Canceled, Trialing }
 public enum ToastScenario { Default, Alarm, Reminder, IncomingCall, Urgent }
 public enum ModerationDecision { Pass, Review, Block }
+public enum TrialRequestStatus { Pending, Approved, Rejected }
+public enum TrialUseCase
+{
+    MspClientCommunication,
+    InternalItOperations,
+    SecurityIncidentResponse,
+    MaintenanceWindowNotices,
+    ComplianceAuditEvidence,
+    ProductEvaluation,
+    Other,
+}

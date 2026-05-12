@@ -169,6 +169,22 @@ builder.Services.AddRateLimiter(opts =>
         });
     });
 
+    // Public trial applications: low hourly budget to limit spam and Turnstile
+    // validation flooding before any tenant or user is created.
+    opts.AddPolicy("trial-register-per-ip", ctx =>
+    {
+        var partitionKey = ctx.Request.Headers["CF-Connecting-IP"].FirstOrDefault()
+            ?? ctx.Connection.RemoteIpAddress?.ToString()
+            ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromHours(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0,
+        });
+    });
+
     opts.RejectionStatusCode = 429;
 });
 
@@ -201,6 +217,7 @@ builder.Services.AddSingleton<IMessagingConfigService, MessagingConfigService>()
 // M9.A transactional messaging (Mailjet email + ClickSend SMS)
 builder.Services.AddHttpClient<IEmailService, MailjetEmailService>();
 builder.Services.AddHttpClient<ISmsService, ClickSendSmsService>();
+builder.Services.AddHttpClient<ITurnstileVerifier, CloudflareTurnstileVerifier>();
 
 // CORS — dev allows any origin; production should lock this down via config
 builder.Services.AddCors(opts =>

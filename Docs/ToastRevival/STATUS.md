@@ -2,9 +2,13 @@
 
 > Repo / project codename: **ToastRevival** (internal). Product / user-facing brand: **Toast Notification** (toastnotification.com).
 
-Last updated: 2026-05-10
+Last updated: 2026-05-12
 
 ## Project State
+
+**Trial approval gate + tenant install surface added (2026-05-12).** Public `/register` is now a reviewed trial request instead of direct tenant creation. The request collects company, website, contact, phone, job title, intended use case, notes, IP/user-agent, and Cloudflare Turnstile verification metadata before storing a pending `TrialRequest`. Platform admins can review pending/approved/rejected requests at `/system/trial-requests` and approve into a tenant-owner account with a password setup email. Legacy direct registration is disabled by default outside test config. Tenant admins now have a first-class `/devices/install` page with tenant ID, server URL, MSI download URL, and a prefilled `msiexec` deployment command using the tenant enrollment key.
+
+**Marketing / SEO / LLM discovery refreshed (2026-05-12).** Public content now describes concrete MSP and software use cases: maintenance windows, security incident response, help desk follow-through, MSP client operations, branded Windows notifications, delivery evidence, action buttons, and RMM/Intune/MSI deployment. Pricing and docs copy now reflect reviewed access and current block pricing instead of direct free signup language. `llms.txt`, route metadata, JSON-LD, prerender output, sitemap dates, and public docs were updated with the same facts.
 
 **Brand color updated (2026-05-11).** Accent color flipped from teal `#00C9A7` to amber `#F59E0B` across all design tokens, chart specs, and marketing site references.
 

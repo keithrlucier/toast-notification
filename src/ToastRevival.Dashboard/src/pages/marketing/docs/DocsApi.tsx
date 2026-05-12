@@ -56,25 +56,33 @@ export default function DocsApi() {
 
       <h2 id="authentication">Authentication</h2>
 
-      <h3>POST /api/auth/register</h3>
-      <p>Create a new tenant and the first administrator. Public endpoint.</p>
+      <h3>POST /api/auth/register/init</h3>
+      <p>
+        Submit a reviewed trial request. This public endpoint validates Turnstile, stores the company/contact details,
+        and waits for Platform Admin approval before any tenant or user is created.
+      </p>
       <CodeBlock
         language="json"
         label="request body"
         code={`{
-  "organizationName": "Acme MSP",
+  "companyName": "Acme MSP",
+  "website": "https://acme-msp.com",
+  "fullName": "Jane Smith",
   "email": "owner@acme-msp.com",
-  "password": "********"
+  "phone": "+1 555 000 0000",
+  "jobTitle": "Service Desk Manager",
+  "intendedUseCase": "MspClientCommunication",
+  "intendedUseCaseDetails": "Client maintenance and security notices",
+  "turnstileToken": "<token>"
 }`}
       />
       <CodeBlock
         language="json"
         label="response"
         code={`{
-  "userToken": "eyJhbGciOi...",
-  "expiresAt": "2026-05-09T08:00:00Z",
-  "tenantId": "00000000-0000-0000-0000-000000000000",
-  "user": { "id": "...", "email": "owner@acme-msp.com", "role": "SuperAdmin" }
+  "requestId": "00000000-0000-0000-0000-000000000000",
+  "step": "pending_review",
+  "message": "Thanks. Your trial request is pending review."
 }`}
       />
 

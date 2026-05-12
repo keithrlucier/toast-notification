@@ -8,9 +8,9 @@ const PLANS = [
     name: 'Free',
     range: '1 – 25 devices',
     price: '$0',
-    unit: 'forever',
-    tagline: 'Every feature. No credit card. No time limit.',
-    cta: 'Get started free',
+    unit: 'trial',
+    tagline: 'Reviewed access for product evaluation and small fleet testing.',
+    cta: 'Request access',
     ctaHref: '/register',
     ctaStyle: 'primary' as const,
     highlight: false,
@@ -21,7 +21,7 @@ const PLANS = [
     price: '$22',
     unit: '/ month',
     tagline: 'One flat rate. Up to 100 devices. No per-device math.',
-    cta: 'Get started',
+    cta: 'Request access',
     ctaHref: '/register',
     ctaStyle: 'accent' as const,
     highlight: true,
@@ -32,7 +32,7 @@ const PLANS = [
     price: '$44',
     unit: '/ month',
     tagline: 'One flat rate. Up to 200 devices.',
-    cta: 'Get started',
+    cta: 'Request access',
     ctaHref: '/register',
     ctaStyle: 'primary' as const,
     highlight: false,
@@ -51,7 +51,7 @@ const PLANS = [
 ];
 
 const BLOCKS = [
-  { block: 'Free',       devices: '1 – 25',    monthly: '$0',          note: 'No credit card required.' },
+  { block: 'Free',       devices: '1 – 25',    monthly: '$0',          note: 'Trial requests are reviewed before activation.' },
   { block: 'Standard',  devices: '26 – 100',   monthly: '$22 / mo',    note: 'Flat rate. All features.' },
   { block: 'Growth',    devices: '101 – 200',  monthly: '$44 / mo',    note: 'Flat rate. All features.' },
   { block: 'Enterprise',devices: '200+',       monthly: 'Contact us',  note: 'Volume pricing.' },
@@ -121,7 +121,7 @@ const INCLUSIONS = [
 const FAQ = [
   {
     q: 'How does block pricing work?',
-    a: 'You pay a flat monthly rate based on which block your active device count falls into — not per device. 1–25 devices is always free. 26–100 devices is $22/month regardless of whether you have 30 or 100 devices. 101–200 is $44/month. Blocks give you a cost ceiling, not a per-seat invoice.',
+    a: 'You pay a flat monthly rate based on which block your active device count falls into, not per device. Trial access is reviewed before activation. 26-100 devices is $22/month regardless of whether you have 30 or 100 devices. 101-200 is $44/month. Blocks give you a cost ceiling, not a per-seat invoice.',
   },
   {
     q: 'How is a "device" counted?',
@@ -163,7 +163,7 @@ export default function Pricing() {
   useSeo({
     title: 'Pricing',
     description:
-      'Simple block pricing. 1–25 devices free. $22/month up to 100 devices. $44/month up to 200 devices. Every feature included on every plan.',
+      'Toast Notification pricing uses reviewed trial access and simple fleet blocks: $22/month up to 100 devices and $44/month up to 200 devices. Every feature included.',
     path: '/pricing',
     jsonLd: [
       breadcrumbLd([
@@ -328,15 +328,15 @@ export default function Pricing() {
       {/* Final CTA */}
       <section className="m-section" aria-labelledby="pricing-cta-heading">
         <div className="m-final-cta">
-          <h2 id="pricing-cta-heading">Start free. Grow when you&rsquo;re ready.</h2>
+          <h2 id="pricing-cta-heading">Request access. Grow when you are ready.</h2>
           <p>
-            Register a tenant, deploy the signed MSI, and send your first notification in under ten minutes.
-            Free up to 25 devices, no credit card required.
+            Request access, deploy the signed MSI after approval, and send your first notification in under ten minutes.
+            Trial access is reviewed before activation to protect the platform from abuse.
             Questions? <a href="mailto:support@toastnotification.com">support@toastnotification.com</a>.
           </p>
           <div className="m-final-cta-buttons">
             <Link to="/register" className="m-btn m-btn-primary">
-              Get started free
+              Request trial access
             </Link>
             <a href="mailto:support@toastnotification.com?subject=Toast%20Notification%20Pricing" className="m-btn m-btn-ghost">
               Contact us

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { devicesApi, type Device } from '../api/devices';
 import { DeviceStatus } from '../components/StatusBadge';
 import { ApiError } from '../api/client';
@@ -75,13 +76,18 @@ export default function Devices() {
             {' · '}{online} online
           </p>
         </div>
-        <button className="btn btn-ghost" onClick={() => void load()} disabled={loading}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M12.5 7A5.5 5.5 0 112.3 3.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            <path d="M2 1v3h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Refresh
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Link to="/devices/install" className="btn btn-secondary" style={{ textDecoration: 'none' }}>
+            Install Agent
+          </Link>
+          <button className="btn btn-ghost" onClick={() => void load()} disabled={loading}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M12.5 7A5.5 5.5 0 112.3 3.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M2 1v3h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}

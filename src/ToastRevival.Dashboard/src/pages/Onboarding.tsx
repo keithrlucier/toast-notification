@@ -245,11 +245,11 @@ function PlanFact({ label, value }: { label: string; value: string }) {
 
 function InstallStep({ tenantId, onDone }: { tenantId: string; onDone: () => void }) {
   const serverUrl = window.location.origin.includes('localhost')
-    ? 'https://api.toastnotification.com'
+    ? 'https://toastnotification.com'
     : window.location.origin;
 
   const msiCommand =
-    `msiexec /i ToastNotification.msi /qn CLIENTID=${tenantId || '<your-tenant-id>'} SERVERURL=${serverUrl}`;
+    `msiexec /i ToastNotification.msi /qn CLIENTID=${tenantId || '<your-tenant-id>'} SERVERURL=${serverUrl} ENROLLMENTKEY=<tenant-enrollment-key>`;
 
   const [copied, setCopied] = useState(false);
 
@@ -265,7 +265,7 @@ function InstallStep({ tenantId, onDone }: { tenantId: string; onDone: () => voi
         Install Your First Agent
       </h2>
       <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.55 }}>
-        Deploy the MSI to Windows endpoints with your RMM tool or Microsoft Intune. The agent registers itself on first launch.
+        Deploy the MSI to Windows endpoints with your RMM tool or Microsoft Intune. Open Install Agent for the MSI download and your tenant-specific enrollment key.
       </p>
 
       <div style={{ marginBottom: 24 }}>
@@ -303,6 +303,7 @@ function InstallStep({ tenantId, onDone }: { tenantId: string; onDone: () => voi
         {[
           { label: 'Tenant ID (CLIENTID)', value: tenantId || 'Loading...' },
           { label: 'API Server (SERVERURL)', value: serverUrl },
+          { label: 'Enrollment key', value: 'Open Install Agent to copy the current key' },
         ].map(({ label, value }) => (
           <div key={label} style={{
             display: 'flex',
@@ -330,12 +331,15 @@ function InstallStep({ tenantId, onDone }: { tenantId: string; onDone: () => voi
         color: '#14508C',
         marginBottom: 32,
       }}>
-        Download the MSI installer from account settings. Agents appear in Devices within seconds of first launch.
+        The Install Agent page shows the current MSI download, tenant ID, server URL, and enrollment key. Agents appear in Devices within seconds of first launch.
       </div>
 
       <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         <button className="btn btn-secondary" onClick={() => window.open('/devices', '_blank')}>
           View Devices
+        </button>
+        <button className="btn btn-secondary" onClick={() => window.open('/devices/install', '_blank')}>
+          Open Install Agent
         </button>
         <button className="btn btn-primary" onClick={onDone}>
           Go to Dashboard

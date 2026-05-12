@@ -7,11 +7,30 @@ import {
 } from '../../components/marketing/FeatureIcons';
 import { useSeo, softwareApplicationLd } from '../../lib/seo';
 
+const USE_CASES = [
+  {
+    title: 'Maintenance windows',
+    body: 'Send tenant-branded notices before patching, backup pauses, planned outages, or forced reboot windows. Track which users acknowledged the message.',
+  },
+  {
+    title: 'Security response',
+    body: 'Reach Windows users during phishing campaigns, password resets, VPN outages, endpoint isolation, or emergency instructions without relying on email.',
+  },
+  {
+    title: 'MSP client operations',
+    body: 'Separate tenants, templates, enrollment keys, device groups, and audit history so each client receives the right notification from the right brand.',
+  },
+  {
+    title: 'Help desk follow-through',
+    body: 'Send action-required prompts, policy reminders, and service updates with delivery evidence that can be attached to tickets or client reports.',
+  },
+];
+
 export default function Home() {
   useSeo({
-    title: 'Managed Windows notifications for MSPs',
+    title: 'Windows notification platform for MSPs',
     description:
-      'Toast Notification is open-infrastructure notification tooling for Windows fleets. Free up to 25 devices. Multi-tenant, payload-signed, audit-logged.',
+      'Toast Notification sends branded, signed, trackable Windows toast notifications for MSPs and IT teams handling maintenance, security, help desk, and outage communication.',
     path: '/',
     jsonLd: softwareApplicationLd(),
   });
@@ -22,30 +41,49 @@ export default function Home() {
       <section className="m-hero-technical" aria-labelledby="hero-heading">
         <div className="m-hero-technical-copy">
           <h1 id="hero-heading">
-            Notification infrastructure for Windows fleets.
+            Branded Windows notifications your users can act on.
           </h1>
           <p>
-            Replace ad-hoc scripts and unbranded RMM widgets with a dedicated, cryptographically signed Windows notification platform. Multi-tenant, payload-signed, and fully auditable.
+            Toast Notification gives MSPs and IT teams a dedicated console for sending native Windows toast notifications, proving delivery, and recording user actions across managed endpoints.
           </p>
           <div className="m-hero-ctas" style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
             <Link to="/register" className="m-btn m-btn-primary">
-              Deploy free (up to 25 devices)
+              Request trial access
             </Link>
             <Link to="/docs" className="m-btn m-btn-ghost">
               Read the docs
             </Link>
           </div>
           <div style={{ color: '#64748b', fontSize: '14px' }}>
-            $22/month flat for 26–100 devices. Free up to 25.
+            Reviewed trials, code-signed agent, tenant-scoped deployment values.
           </div>
         </div>
 
         <div className="m-code-block-hero">
           <div className="comment"># Deploy via RMM silent install</div>
-          <div style={{ marginTop: '8px', wordBreak: 'break-all' }}>
-            <span className="command">msiexec</span> <span className="param">/i</span> <span className="string">"ToastNotification.msi"</span> <span className="param">/qn</span> <span className="string">CLIENTID="tenant_xyz"</span> <span className="string">SERVERURL="https://api.toastnotification.com"</span>
+          <div style={{ marginTop: '8px', display: 'grid', gap: '4px' }}>
+            <div><span className="command">msiexec</span> <span className="param">/i</span> <span className="string">"ToastNotification.msi"</span> <span className="param">/qn</span></div>
+            <div><span className="string">CLIENTID="tenant_xyz"</span> <span className="string">SERVERURL="https://toastnotification.com"</span></div>
+            <div><span className="string">ENROLLMENTKEY="tenant_key"</span></div>
           </div>
           <div className="comment" style={{ marginTop: '16px' }}># Output: Agent installed, registered, and waiting for signed payloads.</div>
+        </div>
+      </section>
+
+      <section className="m-section" aria-labelledby="use-cases-heading" style={{ background: 'var(--bg-secondary)', paddingTop: 72, paddingBottom: 72 }}>
+        <div className="m-container" style={{ marginBottom: 40, textAlign: 'center' }}>
+          <h2 id="use-cases-heading" className="m-section-heading">Where teams use it.</h2>
+          <p className="m-section-subhead" style={{ marginTop: 16, maxWidth: 700, marginInline: 'auto' }}>
+            Toast Notification is for operational messages that need endpoint presence, visible branding, and proof of delivery.
+          </p>
+        </div>
+        <div className="m-bento-grid">
+          {USE_CASES.map(item => (
+            <div key={item.title} className="m-bento-item m-bento-small">
+              <h3>{item.title}</h3>
+              <p>{item.body}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -154,12 +192,12 @@ WS-014: payload unsigned`}
 
           <div style={{ display: 'flex', gap: '24px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <div style={{ padding: '32px', background: 'var(--bg-secondary)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', minWidth: '300px', flex: '1', maxWidth: '400px' }}>
-              <div style={{ fontSize: '24px', fontWeight: 600, color: '#f8fafc', marginBottom: '8px' }}>Free Tier</div>
+              <div style={{ fontSize: '24px', fontWeight: 600, color: '#f8fafc', marginBottom: '8px' }}>Reviewed Trial</div>
               <div style={{ fontSize: '36px', fontWeight: 700, color: 'var(--accent)', marginBottom: '16px' }}>$0 <span style={{ fontSize: '16px', fontWeight: 400, color: '#94a3b8' }}>/mo</span></div>
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, textAlign: 'left', color: '#cbd5e1', fontSize: '15px' }}>
-                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>✓ Up to 25 devices</li>
-                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>✓ All features included</li>
-                <li style={{ padding: '12px 0' }}>✓ No credit card required</li>
+                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>Full product evaluation</li>
+                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>Tenant reviewed before activation</li>
+                <li style={{ padding: '12px 0' }}>MSI download after approval</li>
               </ul>
             </div>
             
@@ -182,11 +220,11 @@ WS-014: payload unsigned`}
         <div className="m-final-cta" style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}>
           <h2 id="final-cta-heading">Start in under ten minutes.</h2>
           <p>
-            Register a tenant, deploy the signed MSI to one endpoint, and send your first notification.
+            Request access, deploy the signed MSI to one endpoint after approval, and send your first notification.
           </p>
           <div className="m-final-cta-buttons">
             <Link to="/register" className="m-btn m-btn-primary">
-              Get started free
+              Request trial access
             </Link>
             <Link to="/security" className="m-btn m-btn-ghost">
               Security architecture

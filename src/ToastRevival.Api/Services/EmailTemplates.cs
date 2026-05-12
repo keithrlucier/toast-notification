@@ -1,3 +1,5 @@
+using ToastRevival.Api.Models;
+
 namespace ToastRevival.Api.Services;
 
 public static class EmailTemplates
@@ -115,6 +117,50 @@ public static class EmailTemplates
         </p>
         <p style="margin:0;font-size:13px;color:{TextDim};line-height:1.6;word-break:break-all;">
           Or copy this URL: <span style="color:{TextSub};">{System.Web.HttpUtility.HtmlEncode(resetUrl)}</span>
+        </p>
+        """);
+
+    public static string TrialRequestReview(TrialRequest trial) => Wrap($"""
+        <h1 style="margin:0 0 8px;font-size:24px;font-weight:700;color:{TextMain};letter-spacing:-0.01em;">
+          New trial request
+        </h1>
+        <p style="margin:0 0 24px;font-size:15px;color:{TextSub};line-height:1.6;">
+          Review this request in the Platform Admin console before creating the tenant.
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:13px;color:{TextSub};line-height:1.6;">
+          <tr><td style="padding:6px 0;color:{TextDim};">Company</td><td style="padding:6px 0;color:{TextMain};">{System.Web.HttpUtility.HtmlEncode(trial.CompanyName)}</td></tr>
+          <tr><td style="padding:6px 0;color:{TextDim};">Website</td><td style="padding:6px 0;color:{TextMain};">{System.Web.HttpUtility.HtmlEncode(trial.Website)}</td></tr>
+          <tr><td style="padding:6px 0;color:{TextDim};">Contact</td><td style="padding:6px 0;color:{TextMain};">{System.Web.HttpUtility.HtmlEncode(trial.FullName)} ({System.Web.HttpUtility.HtmlEncode(trial.JobTitle)})</td></tr>
+          <tr><td style="padding:6px 0;color:{TextDim};">Email</td><td style="padding:6px 0;color:{TextMain};">{System.Web.HttpUtility.HtmlEncode(trial.Email)}</td></tr>
+          <tr><td style="padding:6px 0;color:{TextDim};">Phone</td><td style="padding:6px 0;color:{TextMain};">{System.Web.HttpUtility.HtmlEncode(trial.Phone)}</td></tr>
+          <tr><td style="padding:6px 0;color:{TextDim};">Use case</td><td style="padding:6px 0;color:{TextMain};">{System.Web.HttpUtility.HtmlEncode(trial.IntendedUseCase.ToString())}</td></tr>
+        </table>
+        <p style="margin:24px 0 0;font-size:13px;color:{TextDim};line-height:1.6;">
+          Request ID: {trial.Id}
+        </p>
+        """);
+
+    public static string TrialApproved(string fullName, string companyName, string setPasswordUrl) => Wrap($"""
+        <h1 style="margin:0 0 8px;font-size:24px;font-weight:700;color:{TextMain};letter-spacing:-0.01em;">
+          Your Toast Notification trial is approved.
+        </h1>
+        <p style="margin:0 0 32px;font-size:15px;color:{TextSub};line-height:1.6;">
+          Hi {System.Web.HttpUtility.HtmlEncode(fullName)}. We approved trial access for {System.Web.HttpUtility.HtmlEncode(companyName)}.
+          Set your password to open the dashboard and download the Windows agent.
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">
+          <tr>
+            <td align="center">
+              <a href="{setPasswordUrl}"
+                 style="display:inline-block;background:{Amber};color:#0A0E1A;font-size:15px;font-weight:700;
+                        text-decoration:none;padding:14px 32px;border-radius:4px;letter-spacing:-0.01em;">
+                Set your password
+              </a>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:0;font-size:13px;color:{TextDim};line-height:1.6;word-break:break-all;">
+          Or copy this URL: <span style="color:{TextSub};">{System.Web.HttpUtility.HtmlEncode(setPasswordUrl)}</span>
         </p>
         """);
 }

@@ -65,9 +65,9 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 
 ## Keith actions
 
-- [ ] **Configure production Turnstile keys** - Set `Turnstile__SiteKey`, `Turnstile__SecretKey`, and keep `Turnstile__Required=true` in production before deploying the trial gate. Cloudflare action expected by the backend is `trial_register`.
+- [x] **Configure production Turnstile keys** - SHIPPED 2026-05-12. `Turnstile__SiteKey` / `Turnstile__SecretKey` / `Turnstile__Required=true` plus `Registration__ReviewEmail` / `Registration__TrialDays=14` / `Registration__AllowLegacyDirectRegister=false` set on TOASTWEB1 `/opt/toast/.env`. Pre-change backup at `/opt/toast/.env.bak.2026-05-12-pre-m10`. Cloudflare siteverify reachable from prod (fake-token smoke returns 400 "Human verification failed").
 
-- [ ] **Run production EF migration** - Apply `M10TrialApprovalGate` during deploy so the `TrialRequests` table exists before public registration points at the new flow.
+- [x] **Run production EF migration** - SHIPPED 2026-05-12. `M10TrialApprovalGate` applied automatically on service restart (Migrate() runs on startup, idempotent). `TrialRequests` table + indices present in toastrevival DB.
 
 - [x] **Re-sign MSI** — Signed (Keith confirmed 2026-05-11). Current binary is `ToastNotification.Agent-0.4.0.0.msi`.
 

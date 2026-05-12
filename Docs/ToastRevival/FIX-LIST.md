@@ -721,6 +721,18 @@ preventative for a platform below the product's stated floor, and the lab machin
 **Fix:** Cache with 5-minute TTL per tenantId at M9.
 **Blocking:** No.
 
+### INFO-0.4.8-002 — Multi-user (RDS/terminal-server) toast delivery not tested
+
+**Filed:** 2026-05-12 (0.4.8 post-ship — Keith)
+**Surface:** `src/ToastRevival.Agent/LegacyToastShim.cs`, agent scheduled-task configuration
+**Issue:** 0.4.8 switches `Show()` to `Windows.UI.Notifications.ToastNotificationManager.CreateToastNotifier(aumid).Show()`. This path was verified on a single-user Windows Server 2025 session (ScreenConnect console, COL-BU-001). Behavior in a multi-session RDS/terminal-server context is untested. Specific unknowns:
+  1. Does `ToastNotificationManager.Show()` deliver the toast to the calling process's session desktop, or does it attempt a cross-session dispatch that Server drops?
+  2. With multiple concurrent user sessions each running an agent instance (`Local\` mutex is session-scoped, so each session gets its own primary worker), do the `CreateToastNotifier` calls remain isolated per-session, or do they collide on the shared AUMID registration?
+  3. The Start Menu shortcut with `System.AppUserModel.ID` is written per-user (HKCU at install time) — correct — but on an RDS host where the MSI is installed once for all users, does the shortcut ShellFolder install correctly into each user's `%APPDATA%\Microsoft\Windows\Start Menu`?
+**Risk:** MSPs frequently deploy to Windows Server RDS hosts. A toast that silently delivers to the wrong session or drops entirely in multi-user context would be a regression from the expected behavior.
+**Fix:** Test on a Windows Server box with two concurrent user sessions. Confirm each session receives only its own hub-pushed notifications and that `Show()` delivers to the correct session desktop. No code change expected — `Local\` mutex scoping + per-user HKCU should handle it — but needs evidence.
+**Blocking:** No (single-user Server 2025 confirmed working). Block MSP go-live on RDS hosts until verified.
+
 ### INFO-M6-004 (closed 2026-05-09) — Onboarding.tsx welcome step uses emoji placeholder icons
 
 **Filed:** 2026-05-09 (M6 Code Sweep — Abish)

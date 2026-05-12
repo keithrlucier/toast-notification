@@ -39,7 +39,7 @@ public class StripeBillingSyncService : IStripeBillingSyncService
             var itemService = new SubscriptionItemService();
             await itemService.UpdateAsync(
                 subscriptionItem.Id,
-                new SubscriptionItemUpdateOptions { Quantity = billableDevices },
+                new SubscriptionItemUpdateOptions { Quantity = Math.Max(1, billableDevices) },
                 cancellationToken: ct);
         }
         catch (Exception ex)

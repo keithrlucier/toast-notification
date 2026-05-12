@@ -139,7 +139,7 @@ public class BillingController : ControllerBase
             Mode     = "subscription",
             LineItems =
             [
-                new SessionLineItemOptions { Price = priceId, Quantity = billableDevices }
+                new SessionLineItemOptions { Price = priceId, Quantity = Math.Max(1, billableDevices) }
             ],
             SuccessUrl = _config["Stripe:SuccessUrl"] ?? "http://localhost:5173/billing?session=success",
             CancelUrl  = _config["Stripe:CancelUrl"]  ?? "http://localhost:5173/billing",

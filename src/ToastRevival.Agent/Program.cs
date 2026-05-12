@@ -84,11 +84,19 @@ namespace ToastRevival.Agent
                 return DiagMode.Run();
             }
 
+            // Elevation note (no longer fatal). The historical "elevated processes can't show
+            // toasts" rule was a UWP/Windows.UI.Notifications limitation. WinAppSDK 1.7 supports
+            // elevated callers when the AUMID + COM activator are properly registered (we do
+            // both — see NotificationDisplayName.Apply + Package.appxmanifest).
+            //
+            // The previous exit-3 gate broke Windows Server SKUs entirely: the built-in
+            // Administrator account on Server has UAC disabled by default, so the scheduled
+            // task at LeastPrivilege still runs with the unfiltered admin token, IsElevated()
+            // returns true, and the agent quit before ever POSTing /api/devices/register —
+            // which is exactly what Keith hit on Windows Server 2025 (0.4.6.1).
             if (IsElevated())
             {
-                Console.Error.WriteLine("App notifications are not supported for elevated/admin processes. Run unelevated.");
-                DiagLog.Write("EXIT 3: process is elevated.");
-                return 3;
+                DiagLog.Write("WARN: process is running elevated — toast Show() may fail; agent will still register and connect to the hub.");
             }
 
             // 1. Activation mode — skip the mutex, run activation handler, exit.
@@ -443,18 +451,37 @@ namespace ToastRevival.Agent
                     // if the event is subscribed after registration.
                     await using var client = new AgentHubClient(config);
 
-                    AppNotificationManager.Default.Register();
-                    DiagLog.Write("PrimaryMode: Register() returned.");
+                    // Wrap Register so SignalR still connects (and the device shows online in
+                    // the dashboard) even on configurations where AppNotificationManager fails
+                    // to initialize — e.g. elevated processes on locked-down Server SKUs, or
+                    // sessions without an active Action Center. Visual toast delivery may be
+                    // degraded; the device-online signal is more important to preserve.
+                    var registerOk = false;
+                    try
+                    {
+                        AppNotificationManager.Default.Register();
+                        registerOk = true;
+                        DiagLog.Write("PrimaryMode: Register() returned.");
+                    }
+                    catch (Exception ex)
+                    {
+                        DiagLog.Write($"PrimaryMode: AppNotificationManager.Register() failed — agent will run without local toast delivery. {ex.GetType().Name}: {ex.Message}");
+                    }
 
-                    // Phase 2 — Register() just wrote a hash-derived AUMID for this
-                    // unpackaged app and stamped our COM activator CLSID under it.
-                    // Find that AUMID by scanning HKCU for entries whose CustomActivator
-                    // matches our CLSID, and overwrite DisplayName/IconUri there so the
-                    // toast attribution shows the tenant name + tenant logo. This is
-                    // the AUMID Windows actually reads when rendering toasts —
-                    // Phase 1's HKCU write is belt-and-suspenders for non-WinAppSDK
-                    // consumers.
-                    NotificationDisplayName.ApplyToActivatorAumids(config.TenantName, localLogoPath);
+                    // Phase 2 only runs when Register() succeeded — ApplyToActivatorAumids
+                    // scans HKCU for the AUMID Register() just wrote. If Register failed,
+                    // there's no AUMID to find and the scan is a no-op anyway.
+                    if (registerOk)
+                    {
+                        // Register() just wrote a hash-derived AUMID for this unpackaged app
+                        // and stamped our COM activator CLSID under it. Find that AUMID by
+                        // scanning HKCU for entries whose CustomActivator matches our CLSID,
+                        // and overwrite DisplayName/IconUri there so the toast attribution
+                        // shows the tenant name + tenant logo. This is the AUMID Windows
+                        // actually reads when rendering toasts — Phase 1's HKCU write is
+                        // belt-and-suspenders for non-WinAppSDK consumers.
+                        NotificationDisplayName.ApplyToActivatorAumids(config.TenantName, localLogoPath);
+                    }
 
                     using var tray = new TrayIconService(config.ServerUrl);
                     client.ConnectionStateChanged += (_, state) => tray.UpdateState(state);
@@ -550,35 +577,82 @@ namespace ToastRevival.Agent
     /// </summary>
     internal static class DiagMode
     {
+        // OutputType=WinExe means the process is detached from any parent console at launch,
+        // so Console.WriteLine goes nowhere when --diag is invoked from cmd/PowerShell. Reattach
+        // to the parent console (if one exists) so support staff actually see the output.
+        // ATTACH_PARENT_PROCESS = (uint)-1.
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static extern bool AttachConsole(uint dwProcessId);
+
         public static int Run()
         {
+            // Best-effort attach. Failure is fine (e.g. invoked with no parent console) —
+            // we also dump the same content to a file so support always has something to read.
+            try { AttachConsole(0xFFFFFFFFu); } catch { /* best-effort */ }
+
+            var dumpPath = Path.Combine(Path.GetTempPath(), "toastnotification-diag.txt");
+            using var sink = new DualWriter(dumpPath);
+
+            sink.WriteLine($"Toast Notification Agent — version {ThisAssembly.Version}");
+            sink.WriteLine($"OS: {Environment.OSVersion.VersionString}; 64-bit OS={Environment.Is64BitOperatingSystem}; user={Environment.UserDomainName}\\{Environment.UserName}; machine={Environment.MachineName}");
+            sink.WriteLine();
+
             var path = DiagLog.LogFilePath;
-            Console.WriteLine($"Toast Notification Agent — DiagLog path: {(string.IsNullOrEmpty(path) ? "(unavailable)" : path)}");
+            sink.WriteLine($"DiagLog path: {(string.IsNullOrEmpty(path) ? "(unavailable)" : path)}");
 
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
-                Console.WriteLine("Log file not found.");
+                sink.WriteLine("Log file not found.");
+                sink.WriteLine();
+                sink.WriteLine($"Diag output also written to: {dumpPath}");
                 return 0;
             }
 
             try
             {
                 var info = new FileInfo(path);
-                Console.WriteLine($"Log size: {info.Length / 1024.0:F1} KB");
-                Console.WriteLine();
-                Console.WriteLine("--- Last 200 lines ---");
+                sink.WriteLine($"Log size: {info.Length / 1024.0:F1} KB");
+                sink.WriteLine();
+                sink.WriteLine("--- Last 200 lines ---");
 
                 var lines = File.ReadAllLines(path);
                 var start = Math.Max(0, lines.Length - 200);
                 for (var i = start; i < lines.Length; i++)
-                    Console.WriteLine(lines[i]);
+                    sink.WriteLine(lines[i]);
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to read log: {ex.Message}");
+                sink.WriteLine($"Failed to read log: {ex.Message}");
             }
 
+            sink.WriteLine();
+            sink.WriteLine($"Diag output also written to: {dumpPath}");
             return 0;
+        }
+
+        // Writes to both stdout (when AttachConsole succeeded) and a temp-file copy.
+        // Either side may be unavailable; both are best-effort.
+        private sealed class DualWriter : IDisposable
+        {
+            private readonly StreamWriter? _file;
+
+            public DualWriter(string filePath)
+            {
+                try { _file = new StreamWriter(filePath, append: false, System.Text.Encoding.UTF8); }
+                catch { _file = null; }
+            }
+
+            public void WriteLine(string line = "")
+            {
+                try { Console.WriteLine(line); } catch { /* no console attached */ }
+                try { _file?.WriteLine(line); } catch { /* file write failed */ }
+            }
+
+            public void Dispose()
+            {
+                try { _file?.Flush(); _file?.Dispose(); } catch { /* best-effort */ }
+            }
         }
     }
 

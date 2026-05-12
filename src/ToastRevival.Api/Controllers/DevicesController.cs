@@ -200,7 +200,7 @@ public class DevicesController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == tenantId);
         if (tenant is null) return NotFound();
 
-        return Ok(new TenantAttributionResponse(tenant.Name));
+        return Ok(new TenantAttributionResponse(tenant.Name, tenant.LogoUrl));
     }
 
     // Called by agent to confirm it's still alive (heartbeat)

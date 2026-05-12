@@ -408,26 +408,35 @@ namespace ToastRevival.Agent
                 var reregister = false;
                 try
                 {
-                    // Refresh the tenant name from the server so attribution stays accurate
-                    // after an admin renames the tenant and for agents registered before this
-                    // feature was introduced (whose config.json lacks TenantName).
-                    // Best-effort: any error falls back to the name in config (may be null).
+                    // Refresh tenant name + logo URL from the server so attribution
+                    // (top of every Windows toast) stays accurate after a rename or
+                    // logo re-upload, and for agents registered before either field
+                    // existed in config.json. Best-effort: any error falls back to
+                    // the cached name and the bundled icon.
+                    string? localLogoPath = null;
                     using (var refreshCts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
                     {
-                        var freshName = await RegistrationService.TryRefreshTenantNameAsync(config, refreshCts.Token);
-                        if (!string.IsNullOrWhiteSpace(freshName) && freshName != config.TenantName)
+                        var info = await RegistrationService.TryRefreshTenantInfoAsync(config, refreshCts.Token);
+                        if (!string.IsNullOrWhiteSpace(info.Name) && info.Name != config.TenantName)
                         {
-                            config = config with { TenantName = freshName };
+                            config = config with { TenantName = info.Name };
                             ConfigStore.Save(config);
-                            DiagLog.Write($"PrimaryMode: tenant name refreshed to '{freshName}'.");
+                            DiagLog.Write($"PrimaryMode: tenant name refreshed to '{info.Name}'.");
                         }
+
+                        // Download tenant logo to local disk so it can be written
+                        // as the AUMID IconUri below. Must complete BEFORE the first
+                        // AppNotificationManager.Default touch — WinAppSDK snapshots
+                        // the AUMID hive on first access. Passing the same CTS keeps
+                        // the whole refresh bounded at 10s.
+                        localLogoPath = await TenantLogoStore.DownloadAsync(info.LogoUrl, refreshCts.Token);
                     }
 
-                    // Phase 1 — write tenant name under our declared AUMID before any
-                    // AppNotificationManager.Default touch. Wins for legacy Shell32 AUMID
-                    // consumers (jump lists, taskbar pin, anything that respects the
-                    // process explicit AUMID).
-                    NotificationDisplayName.Apply(config.TenantName);
+                    // Phase 1 — write tenant name + tenant-logo path under our declared
+                    // AUMID before any AppNotificationManager.Default touch. Wins for
+                    // legacy Shell32 AUMID consumers (jump lists, taskbar pin, anything
+                    // that respects the process explicit AUMID).
+                    NotificationDisplayName.Apply(config.TenantName, localLogoPath);
 
                     // Keep Register() after AgentHubClient construction. The constructor subscribes
                     // to NotificationInvoked, and Windows App SDK throws COMException 0x80070490
@@ -441,10 +450,11 @@ namespace ToastRevival.Agent
                     // unpackaged app and stamped our COM activator CLSID under it.
                     // Find that AUMID by scanning HKCU for entries whose CustomActivator
                     // matches our CLSID, and overwrite DisplayName/IconUri there so the
-                    // toast attribution shows the tenant name. This is the AUMID Windows
-                    // actually reads when rendering toasts — Phase 1's HKCU write is
-                    // belt-and-suspenders for non-WinAppSDK consumers.
-                    NotificationDisplayName.ApplyToActivatorAumids(config.TenantName);
+                    // toast attribution shows the tenant name + tenant logo. This is
+                    // the AUMID Windows actually reads when rendering toasts —
+                    // Phase 1's HKCU write is belt-and-suspenders for non-WinAppSDK
+                    // consumers.
+                    NotificationDisplayName.ApplyToActivatorAumids(config.TenantName, localLogoPath);
 
                     using var tray = new TrayIconService(config.ServerUrl);
                     client.ConnectionStateChanged += (_, state) => tray.UpdateState(state);

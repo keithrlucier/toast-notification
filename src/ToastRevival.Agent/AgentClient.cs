@@ -69,14 +69,16 @@ internal static class RegistrationService
     private record DeviceTokenResponse(string Token, Guid DeviceId, Guid TenantId, string SigningKey, string? TenantName = null);
 
     /// <summary>
-    /// Fetches the current tenant display name from the server. Called on every
-    /// agent startup so the notification attribution reflects the latest name
-    /// even if the tenant was renamed after this device registered.
+    /// Fetches the current tenant display name and logo URL from the server.
+    /// Called on every agent startup so the notification attribution (top of
+    /// every toast) reflects the latest name + icon even if the tenant was
+    /// renamed or re-branded after this device registered.
     ///
-    /// Returns null on any error (network unavailable, token expired, etc.) so
-    /// callers can fall back gracefully to the name stored in config.json.
+    /// Returns (null, null) on any error (network unavailable, token expired,
+    /// etc.) so callers can fall back gracefully to the name stored in
+    /// config.json and the bundled icon.
     /// </summary>
-    public static async Task<string?> TryRefreshTenantNameAsync(DeviceConfig config, CancellationToken ct)
+    public static async Task<TenantRefreshResult> TryRefreshTenantInfoAsync(DeviceConfig config, CancellationToken ct)
     {
         using var http = new HttpClient
         {
@@ -89,22 +91,34 @@ internal static class RegistrationService
             using var resp = await http.GetAsync("/api/devices/tenant-name", ct);
             if (!resp.IsSuccessStatusCode)
             {
-                DiagLog.Write($"TryRefreshTenantNameAsync: server returned {(int)resp.StatusCode}");
-                return null;
+                DiagLog.Write($"TryRefreshTenantInfoAsync: server returned {(int)resp.StatusCode}");
+                return new TenantRefreshResult(null, null);
             }
 
-            var dto = await resp.Content.ReadFromJsonAsync<TenantNameRefreshDto>(cancellationToken: ct);
-            return string.IsNullOrWhiteSpace(dto?.TenantName) ? null : dto.TenantName;
+            var dto = await resp.Content.ReadFromJsonAsync<TenantAttributionDto>(cancellationToken: ct);
+            var name    = string.IsNullOrWhiteSpace(dto?.TenantName) ? null : dto!.TenantName;
+            var logoUrl = string.IsNullOrWhiteSpace(dto?.LogoUrl)    ? null : dto!.LogoUrl;
+            return new TenantRefreshResult(name, logoUrl);
         }
         catch (Exception ex)
         {
-            DiagLog.Write($"TryRefreshTenantNameAsync: {ex.GetType().Name}: {ex.Message}");
-            return null;
+            DiagLog.Write($"TryRefreshTenantInfoAsync: {ex.GetType().Name}: {ex.Message}");
+            return new TenantRefreshResult(null, null);
         }
     }
 
-    private record TenantNameRefreshDto(string TenantName);
+    /// <summary>Wire shape of GET /api/devices/tenant-name. LogoUrl is optional
+    /// so 0.4.5 servers (which don't return it) deserialize cleanly.</summary>
+    private record TenantAttributionDto(string TenantName, string? LogoUrl = null);
 }
+
+/// <summary>
+/// Snapshot of the tenant identity returned by the server. Name nullable so a
+/// failed refresh doesn't overwrite the cached name in config.json; logoUrl
+/// nullable so the agent falls back to the bundled icon when the tenant
+/// hasn't uploaded a logo.
+/// </summary>
+internal sealed record TenantRefreshResult(string? Name, string? LogoUrl);
 
 /// <summary>
 /// Wire shape returned by GET /api/notifications/pending. PayloadJson + Signature

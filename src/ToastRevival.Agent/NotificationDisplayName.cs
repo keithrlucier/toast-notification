@@ -56,11 +56,16 @@ internal static class NotificationDisplayName
     /// under our declared AUMID. Must run BEFORE any AppNotificationManager.Default
     /// touch. This wins for legacy Shell32 AUMID consumers (jump lists, taskbar pin)
     /// but does NOT control the WinAppSDK toast subsystem — Phase 2 handles that.
+    ///
+    /// <paramref name="customLogoPath"/> overrides the bundled fallback when the
+    /// tenant has uploaded their own logo via Tenant Settings — the agent
+    /// downloads that logo to local disk via <see cref="TenantLogoStore"/>
+    /// before this call. Falls back to Assets\toast-logo.png when null.
     /// </summary>
-    public static void Apply(string? tenantName)
+    public static void Apply(string? tenantName, string? customLogoPath = null)
     {
         var displayName = ResolveDisplayName(tenantName);
-        var logoPath = TryFindLogoPath();
+        var logoPath = ResolveLogoPath(customLogoPath);
 
         try
         {
@@ -89,10 +94,10 @@ internal static class NotificationDisplayName
     /// is what creates the path-alias and GUID-keyed AUMID entries (and would
     /// otherwise re-overwrite any DisplayName we set earlier).
     /// </summary>
-    public static void ApplyToActivatorAumids(string? tenantName)
+    public static void ApplyToActivatorAumids(string? tenantName, string? customLogoPath = null)
     {
         var displayName = ResolveDisplayName(tenantName);
-        var logoPath = TryFindLogoPath();
+        var logoPath = ResolveLogoPath(customLogoPath);
 
         try
         {
@@ -151,10 +156,20 @@ internal static class NotificationDisplayName
     private static string ResolveDisplayName(string? tenantName) =>
         !string.IsNullOrWhiteSpace(tenantName) ? tenantName.Trim() : "Toast Notification";
 
-    private static string? TryFindLogoPath()
+    /// <summary>
+    /// Tenant-uploaded logo (downloaded to local disk by <see cref="TenantLogoStore"/>)
+    /// wins over the bundled fallback. The caller passes null when the tenant
+    /// hasn't configured a logo or the download failed — we then degrade to the
+    /// agent's shipped Assets\toast-logo.png so the tiny attribution icon never
+    /// renders as a blank slot.
+    /// </summary>
+    private static string? ResolveLogoPath(string? customLogoPath)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "toast-logo.png");
-        return File.Exists(path) ? path : null;
+        if (!string.IsNullOrWhiteSpace(customLogoPath) && File.Exists(customLogoPath))
+            return customLogoPath;
+
+        var bundled = Path.Combine(AppContext.BaseDirectory, "Assets", "toast-logo.png");
+        return File.Exists(bundled) ? bundled : null;
     }
 
     private static string? ResolveExePath()

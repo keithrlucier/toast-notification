@@ -30,4 +30,9 @@ public record DeviceTokenResponse(
 public record InteractionRequest(
     [Required, MaxLength(64)] string Action);
 
-public record TenantAttributionResponse(string TenantName);
+// Returned by GET /api/devices/tenant-name (device-JWT). LogoUrl is the tenant's
+// configured notification icon — the agent downloads it on startup and writes
+// the local path as the AUMID IconUri (the tiny attribution icon at the top of
+// every Windows toast). Optional with a default so an old 0.4.5 agent that
+// only reads TenantName continues to deserialize cleanly.
+public record TenantAttributionResponse(string TenantName, string? LogoUrl = null);

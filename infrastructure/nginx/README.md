@@ -6,6 +6,12 @@ Snapshot of the production nginx site config from `/etc/nginx/sites-available/to
 
 `toast.conf` — the live config. Not auto-deployed; this is a snapshot for documentation, audit, and reference. The authoritative copy is on the box.
 
+Production currently has `/etc/nginx/sites-enabled/toast` as a regular file, not
+a symlink to `/etc/nginx/sites-available/toast`. Push config changes to both
+paths unless you intentionally replace the enabled file with a symlink. Do not
+leave `*.bak` files under `sites-enabled/`; nginx includes every file matched by
+that directory.
+
 ## Sync workflow
 
 When the live config is changed in production, snapshot it back to this directory in the same commit that documents the change. Drift between the repo snapshot and the live config is a documentation bug.
@@ -22,8 +28,12 @@ scp -i Docs/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem \
     ubuntu@54.82.103.160:/tmp/toast.conf.new
 ssh -i Docs/Assets/Toast_Web_LightsailDefaultKey-us-east-1.pem \
     ubuntu@54.82.103.160 \
-    'sudo cp /etc/nginx/sites-available/toast /etc/nginx/sites-available/toast.bak.$(date +%Y%m%d-%H%M); \
+    'STAMP=$(date +%Y%m%d-%H%M); \
+     sudo mkdir -p /etc/nginx/sites-available/enabled-backups; \
+     sudo cp /etc/nginx/sites-available/toast /etc/nginx/sites-available/toast.bak.$STAMP; \
+     sudo cp /etc/nginx/sites-enabled/toast /etc/nginx/sites-available/enabled-backups/toast.bak.$STAMP; \
      sudo cp /tmp/toast.conf.new /etc/nginx/sites-available/toast; \
+     sudo cp /tmp/toast.conf.new /etc/nginx/sites-enabled/toast; \
      sudo nginx -t && sudo systemctl reload nginx'
 ```
 

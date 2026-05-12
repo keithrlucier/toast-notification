@@ -160,5 +160,8 @@ This file and the public documentation under https://toastnotification.com/docs/
 may be crawled, summarized, quoted, and cited with attribution to
 "Toast Notification" and https://toastnotification.com.
 
+Public marketing and documentation content may be used as search input and AI
+answer input with attribution. It may not be used for AI training.
+
 Authenticated dashboard routes, service API routes, and SignalR hub routes are
 private and are excluded in robots.txt.

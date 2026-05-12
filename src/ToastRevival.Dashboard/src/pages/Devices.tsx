@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { devicesApi, type Device } from '../api/devices';
 import { DeviceStatus } from '../components/StatusBadge';
 import { ApiError } from '../api/client';
@@ -21,12 +21,14 @@ function formatRelative(iso: string | null): string {
 }
 
 export default function Devices() {
+  const navigate = useNavigate();
   const [devices, setDevices]     = useState<Device[]>([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
   const [search, setSearch]       = useState('');
   const [filter, setFilter]       = useState<'all' | 'online' | 'offline'>('all');
   const [removing, setRemoving]   = useState<string | null>(null);
+  const [selected, setSelected]   = useState<Set<string>>(new Set());
 
   const load = async () => {
     setLoading(true);
@@ -48,6 +50,7 @@ export default function Devices() {
     try {
       await devicesApi.decommission(id);
       setDevices(prev => prev.filter(d => d.id !== id));
+      setSelected(prev => { const next = new Set(prev); next.delete(id); return next; });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to remove device.');
     } finally {
@@ -66,6 +69,23 @@ export default function Devices() {
 
   const online = devices.filter(d => d.isOnline).length;
 
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const allSelected = filtered.length > 0 && filtered.every(d => selected.has(d.id));
+    setSelected(prev => {
+      const next = new Set(prev);
+      filtered.forEach(d => allSelected ? next.delete(d.id) : next.add(d.id));
+      return next;
+    });
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -76,7 +96,20 @@ export default function Devices() {
             {' · '}{online} online
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {selected.size > 0 && (
+            <button
+              className="btn btn-primary"
+              onClick={() => navigate('/compose', {
+                state: { targetType: 'Device', targetIds: Array.from(selected) },
+              })}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M12.5 1.5l-6 11-1.5-4.5L1 6.5l11.5-5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+              </svg>
+              Send to {selected.size} device{selected.size !== 1 ? 's' : ''}
+            </button>
+          )}
           <Link to="/devices/install" className="btn btn-secondary" style={{ textDecoration: 'none' }}>
             Install Agent
           </Link>
@@ -149,6 +182,15 @@ export default function Devices() {
           <table className="data-table">
             <thead>
               <tr>
+                <th style={{ width: 40, paddingLeft: 16 }}>
+                  <input
+                    type="checkbox"
+                    checked={filtered.length > 0 && filtered.every(d => selected.has(d.id))}
+                    ref={el => { if (el) el.indeterminate = filtered.some(d => selected.has(d.id)) && !filtered.every(d => selected.has(d.id)); }}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all"
+                  />
+                </th>
                 <th>Machine</th>
                 <th>User</th>
                 <th>OS</th>
@@ -161,7 +203,18 @@ export default function Devices() {
             </thead>
             <tbody>
               {filtered.map(d => (
-                <tr key={d.id}>
+                <tr
+                  key={d.id}
+                  style={{ background: selected.has(d.id) ? 'rgba(245,158,11,0.06)' : undefined, cursor: 'default' }}
+                >
+                  <td style={{ paddingLeft: 16 }}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(d.id)}
+                      onChange={() => toggleSelect(d.id)}
+                      aria-label={`Select ${d.machineName}`}
+                    />
+                  </td>
                   <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{d.machineName}</td>
                   <td>{d.username}</td>
                   <td style={{ color: 'var(--text-dim)', fontSize: 12 }}>{d.osVersion}</td>

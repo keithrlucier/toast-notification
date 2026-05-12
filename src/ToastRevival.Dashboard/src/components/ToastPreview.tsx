@@ -20,17 +20,29 @@ interface ToastPreviewProps {
 
 interface TenantSettingsLite {
   tenantName: string;
+  logoUrl: string | null;
 }
 
-let _tenantNameCache: Promise<string | null> | null = null;
+interface TenantPreviewIdentity {
+  name: string | null;
+  logoUrl: string | null;
+}
 
-function getTenantName(): Promise<string | null> {
-  if (!_tenantNameCache) {
-    _tenantNameCache = api.get<TenantSettingsLite>('/api/tenant/settings')
-      .then(res => res.tenantName?.trim() || null)
-      .catch(() => null);
+let _tenantIdentityCache: Promise<TenantPreviewIdentity> | null = null;
+
+/** Fetches the signed-in tenant's display name + logo for preview fidelity.
+ *  Cached at module level so the request fires once per dashboard load even
+ *  when ToastPreview is rendered many times (e.g. Templates page grid). */
+function getTenantIdentity(): Promise<TenantPreviewIdentity> {
+  if (!_tenantIdentityCache) {
+    _tenantIdentityCache = api.get<TenantSettingsLite>('/api/tenant/settings')
+      .then(res => ({
+        name: res.tenantName?.trim() || null,
+        logoUrl: res.logoUrl?.trim() || null,
+      }))
+      .catch(() => ({ name: null, logoUrl: null }));
   }
-  return _tenantNameCache;
+  return _tenantIdentityCache;
 }
 
 /* Character truncation limits matching Windows Action Center rendering */
@@ -58,20 +70,23 @@ export default function ToastPreview({
   const displayBody1 = bodyLine1 ? truncate(bodyLine1, BODY_MAX) : undefined;
   const displayBody2 = bodyLine2 ? truncate(bodyLine2, BODY_MAX) : undefined;
 
-  // When the caller hasn't supplied an explicit appName, fetch the tenant's
-  // display name so the preview matches the AUMID DisplayName the installed
-  // agent writes to HKCU before AppNotificationManager.Register(). Cached at
-  // module level so the request fires once per dashboard load even when
-  // ToastPreview is rendered many times (e.g. Templates page grid).
-  const [fetchedAppName, setFetchedAppName] = useState<string | null>(null);
+  // When the caller hasn't supplied an explicit appName / logoUrl, fetch the
+  // tenant's display name + logo so the preview matches what the delivered
+  // toast will show: tenantName mirrors the AUMID DisplayName the agent writes
+  // to HKCU; logoUrl mirrors the per-notification LogoUrl the API defaults to
+  // tenant.LogoUrl when the sender doesn't override it
+  // (NotificationsController.Send). Without both fetches the preview would
+  // diverge from the runtime delivery.
+  const [tenantIdentity, setTenantIdentity] = useState<TenantPreviewIdentity | null>(null);
   useEffect(() => {
-    if (appName) return;
+    if (appName && logoUrl) return;
     let cancelled = false;
-    void getTenantName().then(name => { if (!cancelled) setFetchedAppName(name); });
+    void getTenantIdentity().then(identity => { if (!cancelled) setTenantIdentity(identity); });
     return () => { cancelled = true; };
-  }, [appName]);
+  }, [appName, logoUrl]);
 
-  const headerAppName = (appName?.trim() || fetchedAppName?.trim() || 'Toast Notification');
+  const headerAppName = (appName?.trim() || tenantIdentity?.name || 'Toast Notification');
+  const headerLogoUrl = logoUrl?.trim() || tenantIdentity?.logoUrl || undefined;
 
   return (
     /* Windows 11 desktop background */
@@ -122,8 +137,8 @@ export default function ToastPreview({
             alignItems: 'center',
             justifyContent: 'center',
           }}>
-            {logoUrl ? (
-              <img src={logoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            {headerLogoUrl ? (
+              <img src={headerLogoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                 <rect x="0.5" y="2" width="9" height="6" rx="1" fill="#0F1117" />

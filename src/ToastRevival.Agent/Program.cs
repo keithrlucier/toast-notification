@@ -408,6 +408,21 @@ namespace ToastRevival.Agent
                 var reregister = false;
                 try
                 {
+                    // Refresh the tenant name from the server so attribution stays accurate
+                    // after an admin renames the tenant and for agents registered before this
+                    // feature was introduced (whose config.json lacks TenantName).
+                    // Best-effort: any error falls back to the name in config (may be null).
+                    using (var refreshCts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                    {
+                        var freshName = await RegistrationService.TryRefreshTenantNameAsync(config, refreshCts.Token);
+                        if (!string.IsNullOrWhiteSpace(freshName) && freshName != config.TenantName)
+                        {
+                            config = config with { TenantName = freshName };
+                            ConfigStore.Save(config);
+                            DiagLog.Write($"PrimaryMode: tenant name refreshed to '{freshName}'.");
+                        }
+                    }
+
                     // Keep Register() after AgentHubClient construction. The constructor subscribes
                     // to NotificationInvoked, and Windows App SDK throws COMException 0x80070490
                     // if the event is subscribed after registration.

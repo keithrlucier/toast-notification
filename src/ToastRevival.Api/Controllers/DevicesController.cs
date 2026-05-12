@@ -146,6 +146,29 @@ public class DevicesController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>
+    /// Returns the current tenant display name for notification attribution.
+    /// Called by the agent on every startup so toasts reflect the latest name
+    /// even if the admin renamed the tenant after the device registered.
+    /// Device-JWT only (requires "deviceId" claim).
+    /// </summary>
+    [Authorize]
+    [HttpGet("tenant-name")]
+    public async Task<ActionResult<TenantAttributionResponse>> GetTenantName()
+    {
+        var deviceIdClaim = User.FindFirstValue("deviceId");
+        if (string.IsNullOrEmpty(deviceIdClaim)) return Unauthorized();
+
+        var tenantIdClaim = User.FindFirstValue("tenantId");
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId)) return Unauthorized();
+
+        var tenant = await _db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId);
+        if (tenant is null) return NotFound();
+
+        return Ok(new TenantAttributionResponse(tenant.Name));
+    }
+
     // Called by agent to confirm it's still alive (heartbeat)
     [Authorize]
     [HttpPost("ping")]

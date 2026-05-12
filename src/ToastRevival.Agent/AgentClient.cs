@@ -67,6 +67,43 @@ internal static class RegistrationService
     }
 
     private record DeviceTokenResponse(string Token, Guid DeviceId, Guid TenantId, string SigningKey, string? TenantName = null);
+
+    /// <summary>
+    /// Fetches the current tenant display name from the server. Called on every
+    /// agent startup so the notification attribution reflects the latest name
+    /// even if the tenant was renamed after this device registered.
+    ///
+    /// Returns null on any error (network unavailable, token expired, etc.) so
+    /// callers can fall back gracefully to the name stored in config.json.
+    /// </summary>
+    public static async Task<string?> TryRefreshTenantNameAsync(DeviceConfig config, CancellationToken ct)
+    {
+        using var http = new HttpClient
+        {
+            BaseAddress = new Uri(config.ServerUrl),
+            DefaultRequestHeaders = { Authorization = new AuthenticationHeaderValue("Bearer", config.DeviceToken) },
+        };
+
+        try
+        {
+            using var resp = await http.GetAsync("/api/devices/tenant-name", ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                DiagLog.Write($"TryRefreshTenantNameAsync: server returned {(int)resp.StatusCode}");
+                return null;
+            }
+
+            var dto = await resp.Content.ReadFromJsonAsync<TenantNameRefreshDto>(cancellationToken: ct);
+            return string.IsNullOrWhiteSpace(dto?.TenantName) ? null : dto.TenantName;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"TryRefreshTenantNameAsync: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private record TenantNameRefreshDto(string TenantName);
 }
 
 /// <summary>

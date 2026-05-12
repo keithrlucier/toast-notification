@@ -29,3 +29,5 @@ public record DeviceTokenResponse(
 
 public record InteractionRequest(
     [Required, MaxLength(64)] string Action);
+
+public record TenantAttributionResponse(string TenantName);

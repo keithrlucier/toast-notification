@@ -59,14 +59,8 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="m-code-block-hero">
-          <div className="comment"># Deploy via RMM silent install</div>
-          <div style={{ marginTop: '8px', display: 'grid', gap: '4px' }}>
-            <div><span className="command">msiexec</span> <span className="param">/i</span> <span className="string">"ToastNotification.msi"</span> <span className="param">/qn</span></div>
-            <div><span className="string">CLIENTID="tenant_xyz"</span> <span className="string">SERVERURL="https://toastnotification.com"</span></div>
-            <div><span className="string">ENROLLMENTKEY="tenant_key"</span></div>
-          </div>
-          <div className="comment" style={{ marginTop: '16px' }}># Output: Agent installed, registered, and waiting for signed payloads.</div>
+        <div className="m-hero-image-container" style={{ position: 'relative', width: '100%', maxWidth: '700px', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1)' }}>
+          <img src="/hero-desktop.png" alt="Windows 11 desktop showing a Toast notification on an executive desk" style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'cover' }} />
         </div>
       </section>
 

@@ -565,7 +565,10 @@ public class AuthController : ControllerBase
         user.SmsCodeExpiry       = null;
         await _db.SaveChangesAsync();
 
-        var expiresAt = DateTime.UtcNow.AddMinutes(15);
+        // MfaElevationExpiresInMinutes lives in appsettings.json — keep the
+        // response expiry in lockstep with the JWT exp claim TokenService writes.
+        var minutes = int.TryParse(_config["Jwt:MfaElevationExpiresInMinutes"], out var m) ? m : 480;
+        var expiresAt = DateTime.UtcNow.AddMinutes(minutes);
         var mfaToken  = _tokens.CreateMfaToken(user);
         return Ok(new MfaVerifyResponse(mfaToken, expiresAt));
     }

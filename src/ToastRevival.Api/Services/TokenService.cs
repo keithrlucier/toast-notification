@@ -72,7 +72,7 @@ public class TokenService : ITokenService
         if (user.IsPlatformAdmin)
             claims.Add(new Claim("platformAdmin", "true"));
 
-        return BuildToken(claims.ToArray(), DateTime.UtcNow.AddMinutes(15));
+        return BuildToken(claims.ToArray(), GetExpiresAt("Jwt:MfaElevationExpiresInMinutes", 480, isMinutes: true));
     }
 
     private string BuildToken(Claim[] claims, DateTime expires)

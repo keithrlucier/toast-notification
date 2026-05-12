@@ -104,10 +104,10 @@ export default function Compose() {
   const [scenario, setScenario] = useState(prefill?.scenario ?? '');
   const [buttons,  setButtons]  = useState<ActionButton[]>(prefill?.actionButtons ?? []);
 
-  // Target
-  const [targetMode,     setTargetMode]     = useState<TargetMode>('All');
-  const [selectedDevices,setSelectedDevices]= useState<string[]>([]);
-  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  // Target — can be pre-populated from navigation state (e.g. from Devices page)
+  const [targetMode,     setTargetMode]     = useState<TargetMode>((prefill?.targetType as TargetMode | undefined) ?? 'All');
+  const [selectedDevices,setSelectedDevices]= useState<string[]>(prefill?.targetType === 'Device' ? (prefill?.targetIds ?? []) : []);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>(prefill?.targetType === 'Group'  ? (prefill?.targetIds ?? []) : []);
   const [scheduledAt,    setScheduledAt]    = useState('');
 
   // Resources
@@ -151,7 +151,7 @@ export default function Compose() {
     return groups.filter(g => selectedGroups.includes(g.id)).reduce((s, g) => s + g.deviceCount, 0);
   })();
 
-  const requiresMfa = targetMode === 'All' && estimatedDeviceCount > 1;
+  const requiresMfa = targetMode === 'All';
   const requiresConfirm = estimatedDeviceCount > 1 || requiresMfa;
 
   const buildRequest = (): SendNotificationRequest => ({

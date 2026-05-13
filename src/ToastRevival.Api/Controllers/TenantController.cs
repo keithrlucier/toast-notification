@@ -14,9 +14,19 @@ namespace ToastRevival.Api.Controllers;
 [EnableRateLimiting("tenant-per-minute")]
 public class TenantController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private static readonly HashSet<string> AllowedLogoExtensions =
+        [".png", ".jpg", ".jpeg", ".gif", ".webp"];
 
-    public TenantController(AppDbContext db) => _db = db;
+    private const long MaxLogoSizeBytes = 2 * 1024 * 1024;
+
+    private readonly AppDbContext _db;
+    private readonly IWebHostEnvironment _env;
+
+    public TenantController(AppDbContext db, IWebHostEnvironment env)
+    {
+        _db = db;
+        _env = env;
+    }
 
     [HttpGet("settings")]
     public async Task<ActionResult<TenantSettingsResponse>> GetSettings()
@@ -76,7 +86,7 @@ public class TenantController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(req.TenantName))
             tenant.Name = req.TenantName.Trim();
-        tenant.LogoUrl             = string.IsNullOrWhiteSpace(req.LogoUrl)             ? null : req.LogoUrl.Trim();
+        tenant.LogoUrl             = NormalizeLogoUrlForStorage(req.LogoUrl);
         tenant.PrimaryColor        = string.IsNullOrWhiteSpace(req.PrimaryColor)        ? null : req.PrimaryColor.Trim();
         tenant.DefaultAudioSetting = string.IsNullOrWhiteSpace(req.DefaultAudioSetting) ? null : req.DefaultAudioSetting;
 
@@ -93,18 +103,20 @@ public class TenantController : ControllerBase
     /// The URL is stored in Tenant.LogoUrl and used as the notification icon.
     /// </summary>
     [HttpPost("logo")]
+    [RequestSizeLimit(2 * 1024 * 1024 + 4096)]
     public async Task<ActionResult<object>> UploadLogo(IFormFile file)
     {
         if (!IsAdmin()) return Forbid();
-        if (file is null || file.Length == 0) return BadRequest("No file uploaded.");
-        if (file.Length > 2 * 1024 * 1024) return BadRequest("Logo must be under 2 MB.");
+        if (file is null || file.Length == 0) return BadRequest(new { message = "No file uploaded." });
+        if (file.Length > MaxLogoSizeBytes) return BadRequest(new { message = "Logo must be under 2 MB." });
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (ext is not (".png" or ".jpg" or ".jpeg" or ".gif" or ".webp"))
-            return BadRequest("Unsupported file type. Use PNG, JPG, GIF, or WebP.");
+        if (!AllowedLogoExtensions.Contains(ext))
+            return BadRequest(new { message = "Unsupported file type. Use PNG, JPG, GIF, or WebP." });
 
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
-        var dir      = Path.Combine("wwwroot", "assets", "logos");
+        var webRoot  = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
+        var dir      = Path.Combine(webRoot, "assets", "logos");
         Directory.CreateDirectory(dir);
 
         var fileName = $"{tenantId}{ext}";
@@ -113,8 +125,7 @@ public class TenantController : ControllerBase
         await using (var stream = System.IO.File.Create(filePath))
             await file.CopyToAsync(stream);
 
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
-        var url     = $"{baseUrl}/assets/logos/{fileName}";
+        var url = $"/assets/logos/{fileName}";
 
         // Persist the URL to the tenant record immediately
         var tenant = await _db.Tenants.FindAsync(tenantId);
@@ -219,6 +230,20 @@ public class TenantController : ControllerBase
         if (string.IsNullOrWhiteSpace(key)) return null;
         if (key.Length <= 4) return new string('•', key.Length);
         return new string('•', 8) + key[^4..];
+    }
+
+    private static string? NormalizeLogoUrlForStorage(string? logoUrl)
+    {
+        var trimmed = logoUrl?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+            && uri.AbsolutePath.StartsWith("/assets/logos/", StringComparison.OrdinalIgnoreCase))
+        {
+            return uri.PathAndQuery;
+        }
+
+        return trimmed;
     }
 
     private bool IsAdmin()

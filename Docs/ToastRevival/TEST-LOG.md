@@ -30,6 +30,89 @@
 
 ---
 
+## 2026-05-12 (M11 production deploy — D7 + sidebar + TOCTOU + logo fix + TOAST_REQUIRE_BILLING)
+
+### Scope shipped to TOASTWEB1
+
+This is the production deploy that landed M11 work to https://toastnotification.com. Commits included since previous deploy (HEAD `088afdf` on origin/main):
+
+| Commit | Change |
+|---|---|
+| `088afdf` | M11 D7 — marketing pricing page rewrite (three-tier honest copy, origin story lead, AggregateOffer JSON-LD, llms.txt three-tier block) |
+| `376d823` | TOCTOU fix — `pg_advisory_xact_lock` atomic trial device registration |
+| `85b644d` | Docs only — M11 D2–D7 status |
+| `a5b9a8a` | Tenant-aware sidebar branding + dynamic favicon + Layout.tsx kicker fix |
+| `76ae2ef` | M11 D2/D3/D6 — `TOAST_REQUIRE_BILLING` env var, `DISABLEAUTOUPDATE` MSI property, 2-device trial cap, three-tier Onboarding |
+| `eb388b0` | Tenant logo auto-inject removed from notification send path |
+| `af79544` | Docs only — code signing requirements expanded |
+| `d676728` | `.gitignore` — `.github-pat` |
+| `7147729` | Docs only — public repo target locked |
+| `cc53c62` | M11 dev meeting documentation |
+| `eff6c6c` | M11 D1 — Docker self-hosted infrastructure (does not affect prod deploy) |
+| `07a054d` | Toast template XML doc comments |
+
+### Pre-deploy critical step — environment variable
+
+`TOAST_REQUIRE_BILLING` was added to `LicenseService.CanRegisterDeviceAsync` in commit `76ae2ef`. Default value is `false` (self-host friendly — short-circuits device cap check). Production is a SaaS deployment with Stripe live; **must be `true`** or all device-cap enforcement silently disables.
+
+Before service restart:
+```
+ssh ubuntu@54.82.103.160
+sudo cp /opt/toast/.env /opt/toast/.env.bak.2026-05-12-pre-m11
+echo 'TOAST_REQUIRE_BILLING=true' | sudo tee -a /opt/toast/.env > /dev/null
+sudo chown toast:toast /opt/toast/.env
+sudo chmod 600 /opt/toast/.env
+```
+
+Backup retained at `/opt/toast/.env.bak.2026-05-12-pre-m11` (root:root, 1685 bytes — original env without TOAST_REQUIRE_BILLING).
+
+### Deploy procedure
+
+1. `dotnet publish src/ToastRevival.Api --configuration Release --runtime linux-x64 --no-self-contained --output ./publish/api` — 0 warnings, 0 errors
+2. `cd src/ToastRevival.Dashboard && npm run build` — passed, SEO prerender clean (10 routes regenerated)
+3. `tar -czf publish/api.tar.gz -C publish/api .` (16 MB) + `tar -czf publish/dashboard.tar.gz -C src/ToastRevival.Dashboard/dist .` (27 MB)
+4. `scp` both to `ubuntu@54.82.103.160:/tmp/`
+5. Server-side backup tarball at `/tmp/toast-prerollback-20260513-015819.tar.gz` (845 MB — full prior `/opt/toast/api` + `/opt/toast/dashboard`)
+6. Extract: `sudo tar -xzf /tmp/api.tar.gz -C /opt/toast/api/` + dashboard equivalent
+7. `sudo chown -R toast:toast /opt/toast/api /opt/toast/dashboard`
+8. `sudo systemctl daemon-reload && sudo systemctl restart toast-api`
+
+### Post-deploy verification
+
+- `sudo systemctl is-active toast-api` → `active`
+- `curl https://toastnotification.com/api/health` → `{"status":"healthy","version":"1.0.0.0","uptimeSeconds":16,"checks":{"db":{"healthy":true,"latencyMs":25,"error":null},"queue":{"healthy":true,"depth":0}}}`
+- `curl https://toastnotification.com/login` → 200 (SPA route)
+- `curl -L https://toastnotification.com/pricing` → emits `Free Trial`, `Managed SaaS`, `Roll Your Own`, `2 devices`, `14 days`, `986,000` in prerendered body
+- `curl https://toastnotification.com/` → emits `Free Trial`, `Managed SaaS`, `Three ways to run it`
+- `curl https://toastnotification.com/llms.txt` → emits `Free Trial`, `Managed SaaS`, `Roll Your Own`, `2 devices`
+- Agent drain loop confirmed working in `journalctl -u toast-api` (NotificationDeliveries queries running normally)
+
+### Rollback
+
+If needed:
+```
+sudo systemctl stop toast-api
+sudo tar -xzf /tmp/toast-prerollback-20260513-015819.tar.gz -C /opt/toast/
+sudo mv /opt/toast/.env.bak.2026-05-12-pre-m11 /opt/toast/.env
+sudo systemctl start toast-api
+```
+
+### Behavioral changes now live in production
+
+1. **Trial device cap = 2** (was 25). Existing trial tenants are now subject to the new cap. Existing trial tenants with >2 devices are not retroactively pruned — `CanRegisterDeviceAsync` blocks future registrations, not past ones.
+2. **TOCTOU lock active** on `POST /api/devices/register` for trial tenants. Concurrent registrations serialize per-tenant.
+3. **Tenant logo no longer auto-injected** into notifications when the Logo URL field is blank in Compose. Operators who relied on the implicit fallback must explicitly fill Logo URL.
+4. **Sidebar branding** shows tenant name + logo for tenant users; "Toast Notification / Platform Console" for platform admins.
+5. **Dynamic favicon** updates to tenant logo on login.
+6. **Pricing page** rewritten to three-tier honest copy (Free Trial / Managed SaaS / Roll Your Own).
+
+### Boundaries
+
+- TOCTOU concurrent-registration test was not run against production. Test exists in `tests/ToastRevival.Api.Tests/TrialDeviceCapConcurrencyTests.cs`; CI is canonical execution lane (Defender-blocked locally per earlier session note).
+- Agent `DISABLEAUTOUPDATE` registry key (M11.D3) ships in next signed MSI bundle — backend deploy does not include agent changes.
+
+---
+
 ## 2026-05-12 (M11.D1 — Docker Compose infrastructure)
 
 ### Build Checks

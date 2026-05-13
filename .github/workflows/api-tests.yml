@@ -40,7 +40,10 @@ jobs:
     env:
       # Bypasses the Testcontainers code path in PostgresFixture and
       # uses the GitHub-managed Postgres service container instead.
-      TOAST_TEST_CONNECTION_STRING: "Host=localhost;Port=5432;Database=toastrevival_test;Username=postgres;Password=postgres"
+      # Maximum Pool Size=20 caps each ApiTestFactory's Npgsql connection pool
+      # so the suite (LoadFixture factory + TrialDeviceCapConcurrencyTests factory)
+      # stays well under postgres:16-alpine's default max_connections=100.
+      TOAST_TEST_CONNECTION_STRING: "Host=localhost;Port=5432;Database=toastrevival_test;Username=postgres;Password=postgres;Maximum Pool Size=20"
 
     steps:
       - name: Checkout

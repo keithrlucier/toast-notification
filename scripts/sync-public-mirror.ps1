@@ -63,7 +63,9 @@ param(
     [switch] $Force
 )
 
-$ErrorActionPreference = "Stop"
+# Use Continue so git stderr warnings (CRLF, "Already on...") don't throw.
+# Critical operations check $LASTEXITCODE explicitly.
+$ErrorActionPreference = "Continue"
 
 # === Paths ===
 $privateRoot = (Resolve-Path (Split-Path -Parent $PSScriptRoot)).Path
@@ -98,10 +100,11 @@ if (-not (Test-Path $publicRoot)) {
     git -C $publicRoot fetch origin
     git -C $publicRoot checkout main
     git -C $publicRoot reset --hard origin/main
+    if ($LASTEXITCODE -ne 0) { throw "git reset --hard origin/main failed" }
 }
 
 # Bail early if this tag is already on the public side and we're not forcing.
-$publicTag = (git -C $publicRoot tag --list $Tag).Trim()
+$publicTag = ("$(git -C $publicRoot tag --list $Tag)").Trim()
 if ($publicTag -eq $Tag -and -not $Force) {
     Write-Host "==> Tag $Tag already exists on the public mirror. Pass -Force to retag." -ForegroundColor Yellow
     exit 0
@@ -239,7 +242,7 @@ try {
     # === DryRun exit point ===
     if ($DryRun) {
         Write-Host ""
-        Write-Host "==> DRY RUN — public worktree at $publicRoot" -ForegroundColor Yellow
+        Write-Host "==> DRY RUN -- public worktree at $publicRoot" -ForegroundColor Yellow
         Write-Host ""
         git -C $publicRoot add --all
         git -C $publicRoot status --short
@@ -291,7 +294,8 @@ try {
 
     Write-Host ""
     Write-Host "==> Public mirror release $Tag complete." -ForegroundColor Green
-    Write-Host "    $($PublicRepoUrl -replace '\.git$','')/releases/tag/$Tag"
+    $displayUrl = $PublicRepoUrl -replace '\.git$', ''
+    Write-Host "    $displayUrl/releases/tag/$Tag"
 }
 finally {
     # Restore the private repo to whatever branch/ref it was on before.

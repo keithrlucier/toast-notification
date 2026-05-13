@@ -19,8 +19,8 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    // Avoid /assets/ path collision with the nginx upload proxy
-    // (M5.C asset library serves /assets/{tenantId}/{file} from the API).
+    // Avoid /assets/ path collision with the nginx upload proxy — the asset
+    // library serves /assets/{tenantId}/{file} from the API.
     assetsDir: 'static',
     sourcemap: false,
   },

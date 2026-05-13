@@ -38,8 +38,8 @@ public class AuditController : ControllerBase
     {
         if (!IsAdmin()) return Forbid();
 
-        // FIX-M8C-001: AuditLog has no global query filter (PlatformAdmin
-        // SystemController needs the cross-tenant view). Per-tenant audit
+        // AuditLog has no global query filter — the PlatformAdmin
+        // SystemController needs the cross-tenant view. Per-tenant audit
         // endpoints must scope to the caller's tenantId explicitly.
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
@@ -77,9 +77,9 @@ public class AuditController : ControllerBase
     {
         if (!IsAdmin()) return Forbid();
 
-        // FIX-M8C-001: scope export to caller's tenantId (AuditLog has no
-        // global query filter; PlatformAdmin SystemController is the only
-        // cross-tenant audit view).
+        // Scope export to caller's tenantId — AuditLog has no global query
+        // filter, and the PlatformAdmin SystemController is the only
+        // cross-tenant audit view.
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
 

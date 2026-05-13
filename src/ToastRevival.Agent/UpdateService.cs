@@ -8,7 +8,7 @@ namespace ToastRevival.Agent;
 /// <summary>
 /// Velopack auto-update service for the MSI/RMM deployment channel.
 ///
-/// Architecture note (M2.D):
+/// Architecture notes:
 ///   - Only active when running as a Velopack-managed install (IsInstalled == true).
 ///     MSI-bootstrapped installs at %ProgramFiles% are not Velopack-managed and do
 ///     not self-update — that is intentional and correct for MSP environments where
@@ -20,17 +20,19 @@ namespace ToastRevival.Agent;
 ///   - Enterprise MSPs can set HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate=1
 ///     to suppress all update activity. IT can also set UpdateFeedUrl to an internal mirror.
 ///
-/// INFO-M2D-001: LocalAppData cleanup on MSI uninstall. When MSI uninstalls the
-///   ProgramFiles copy, any Velopack-managed files at %LocalAppData%\ToastNotification.Agent\
-///   remain as orphans. The MSI CA runs as SYSTEM and cannot access user-scoped LocalAppData.
-///   Fix deferred to M9: add a user-context CA or VelopackApp.Build().WithBeforeUninstall()
-///   hook that cleans up the LocalAppData tree when Velopack itself uninstalls.
-///
-/// INFO-M2D-002: First logon after initial Velopack update still starts from %ProgramFiles%.
-///   The scheduled task always launches the ProgramFiles bootstrap binary. On first logon
-///   after a Velopack update, TrySelfRedirect fires and relaunches from %LocalAppData%
-///   (two process starts that logon, ~50ms cost). From the second logon onward the
-///   user runs purely from the Velopack-managed path. Acceptable for MSP context.
+/// Known limitations:
+///   - LocalAppData cleanup on MSI uninstall: when MSI uninstalls the
+///     ProgramFiles copy, any Velopack-managed files at
+///     %LocalAppData%\ToastNotification.Agent\ remain as orphans. The MSI CA
+///     runs as SYSTEM and cannot access user-scoped LocalAppData. Cleanup is
+///     left to the user-context VelopackApp WithBeforeUninstall hook when the
+///     Velopack channel itself uninstalls.
+///   - First logon after initial Velopack update still starts from
+///     %ProgramFiles%. The scheduled task always launches the ProgramFiles
+///     bootstrap binary. On first logon after a Velopack update,
+///     TrySelfRedirect fires and relaunches from %LocalAppData% (two process
+///     starts that logon, ~50ms cost). From the second logon onward the user
+///     runs purely from the Velopack-managed path.
 /// </summary>
 internal static class UpdateService
 {
@@ -109,8 +111,8 @@ internal static class UpdateService
             return false;
         }
 
-        // INFO-M2D-005: verify the managed binary is signed by Toast2IT, LLC
-        // before launching. Prevents a local-user attacker from planting a
+        // Verify the managed binary is signed by Toast2IT, LLC before
+        // launching. Prevents a local-user attacker from planting a
         // higher-versioned malicious binary at the Velopack managed path.
         if (!IsSignedByToast2IT(managedExe))
         {

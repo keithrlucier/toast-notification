@@ -1,4 +1,4 @@
-/* Marketing site — Diana spec, M7.A locked. Token aliases use index.css authoritative names. */
+/* Marketing site stylesheet. Token aliases use index.css authoritative names. */
 @import './bento.css';
 
 .marketing-root {
@@ -1105,10 +1105,10 @@
   .m-tier-price { font-size: 32px; }
 }
 
-/* ─────────── Corporate Edition additions (M7.B) ─────────── */
+/* ─────────── Corporate Edition additions ─────────── */
 
-/* Footer override — slim 3-col layout matches the corporate footer (brand + Product + Legal),
-   not the original 5-col layout the M7.A spec stubbed. */
+/* Footer override — slim 3-col layout matches the corporate footer
+   (brand + Product + Legal). */
 .m-footer-grid--slim {
   grid-template-columns: 2fr 1fr 1fr 1fr;
 }
@@ -1999,7 +1999,7 @@
   }
 }
 
-/* ─────────── Docs (M7.C) ─────────── */
+/* ─────────── Docs ─────────── */
 
 .m-docs {
   width: 100%;
@@ -2142,9 +2142,9 @@
   scroll-margin-top: 96px;
 }
 
-/* Docs body copy renders at --text-primary (FIX-M7C-005, Diana). Chrome
-   surfaces (sidebar, footer, labels) keep --text-secondary; reading-grade
-   prose lands a notch darker than utility text for sustained readability. */
+/* Docs body copy renders at --text-primary. Chrome surfaces (sidebar,
+   footer, labels) keep --text-secondary; reading-grade prose lands a notch
+   darker than utility text for sustained readability. */
 .m-docs-content p {
   font-family: var(--font-sans);
   font-size: 16px;

@@ -107,7 +107,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
              .HasForeignKey(d => d.DeviceId)
              .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(d => new { d.NotificationId, d.DeviceId }).IsUnique();
-            // INFO-M2B-003: composite index for the catch-up query (DeviceId, Status, CreatedAt)
+            // Composite index for the catch-up query (DeviceId, Status, CreatedAt).
             e.HasIndex(d => new { d.DeviceId, d.Status, d.CreatedAt });
             e.HasQueryFilter(d => d.TenantId == _tenantProvider.TenantId);
         });
@@ -122,14 +122,14 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
         });
 
         // AuditLog intentionally has no global filter — admins can query across tenants.
-        // INFO-M5D-002: index on Timestamp for export/range queries.
+        // Index on Timestamp supports export/range queries.
         builder.Entity<AuditLog>(e =>
         {
             e.HasIndex(a => new { a.TenantId, a.Timestamp });
             e.HasIndex(a => a.Timestamp);
         });
 
-        // INFO-M5C-002: partial index on (Status, ScheduledAt) for scheduler sweep
+        // Partial index on (Status, ScheduledAt) for the scheduler sweep.
         builder.Entity<Notification>(e =>
         {
             e.HasIndex(n => new { n.Status, n.ScheduledAt })

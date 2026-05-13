@@ -91,8 +91,8 @@
     <Property Id="CLIENTID" />
     <Property Id="SERVERURL" />
     <!--
-      Optional pre-shared enrollment key (INFO-M1-003). When the backend tenant
-      has an EnrollmentKey set, this must match or device registration is rejected.
+      Optional pre-shared enrollment key. When the backend tenant has an
+      EnrollmentKey set, this must match or device registration is rejected.
       Pass via: msiexec /i ... /qn CLIENTID=... SERVERURL=... ENROLLMENTKEY=...
     -->
     <Property Id="ENROLLMENTKEY" />

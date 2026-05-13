@@ -39,7 +39,7 @@ public class MfaService
     ///   - the code is empty / malformed,
     ///   - OtpNet's <see cref="Totp.VerifyTotp"/> rejects the code (wrong
     ///     digits, outside the ±1 step window),
-    ///   - the matched step is &lt;= LastTotpStep (replay — SEC-005).
+    ///   - the matched step is &lt;= LastTotpStep (replay).
     ///
     /// Window: ±1 step (30 s each side) to tolerate clock skew. The replay
     /// guard intentionally rejects equality (matched &lt;= last) so a code
@@ -63,11 +63,10 @@ public class MfaService
                 return false;
             }
 
-            // SEC-005 / INFO-M3-001: replay rejection. matchedStep is
-            // floor(unixSeconds / 30) of the step OtpNet picked. If we have
-            // already accepted that step (or an earlier one) for this user,
-            // this is a replay or a stale code — reject without mutating
-            // LastTotpStep.
+            // Replay rejection. matchedStep is floor(unixSeconds / 30) of the
+            // step OtpNet picked. If we have already accepted that step (or
+            // an earlier one) for this user, this is a replay or a stale code
+            // — reject without mutating LastTotpStep.
             if (user.LastTotpStep.HasValue && matchedStep <= user.LastTotpStep.Value)
                 return false;
 

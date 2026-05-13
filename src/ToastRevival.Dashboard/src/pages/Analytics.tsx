@@ -23,7 +23,7 @@ interface Breakdown {
   byTemplate: Record<string, number>;
 }
 
-// Diana's custom tooltip — dark background, no default Recharts styling
+// Custom tooltip — dark background, no default Recharts styling
 function ChartTooltip({ active, payload, label }: {
   active?: boolean;
   payload?: Array<{ name: string; value: number; color: string }>;
@@ -114,7 +114,7 @@ export default function Analytics() {
           <h1>Analytics</h1>
           <p className="subtitle">Delivery performance and notification trends</p>
         </div>
-        {/* Time range selector — segmented button control per Diana's spec */}
+        {/* Time range selector — segmented button control */}
         <div style={{
           display: 'flex',
           border: '1px solid rgba(15,23,42,0.14)',

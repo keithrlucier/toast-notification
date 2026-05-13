@@ -3,7 +3,7 @@ param(
     [string] $OutputDir
 )
 
-# M9.C -- Diana's production tile spec.
+# Production MSIX tile spec.
 #
 # Brand expression matches the marketing site (https://toastnotification.com):
 #   Background  #0A0F1A   near-black panel
@@ -202,7 +202,7 @@ New-PanelTile     -Width 150 -Height 150 -Path $square150 -BellPaddingPct 0.18
 New-PanelTile     -Width 50  -Height 50  -Path $store     -BellPaddingPct 0.10
 New-WidePanelTile -Width 310 -Height 150 -Path $wide310   -Wordmark "Toast Notification"
 
-Write-Host "Generated MSIX tile assets (M9.C -- production brand):"
+Write-Host "Generated MSIX tile assets (production brand):"
 Write-Host "  $square44"
 Write-Host "  $square150"
 Write-Host "  $wide310"

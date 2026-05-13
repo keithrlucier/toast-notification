@@ -73,9 +73,9 @@ public sealed class HealthEndpointTests
     {
         // The defensive-headers middleware runs before authentication, so
         // the health response must carry the same headers every other API
-        // response carries. SEC-001 regression — if a future middleware
-        // reorder bypasses the defensive layer for anonymous routes, this
-        // test catches it before it ships.
+        // response carries. If a future middleware reorder bypasses the
+        // defensive layer for anonymous routes, this test catches it before
+        // it ships.
         await _load.ResetAsync();
         var factory = _load.Factory;
 

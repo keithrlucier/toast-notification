@@ -9,9 +9,9 @@ public record TenantSettingsResponse(
     int RateLimitPerMinute,
     int RateLimitPerHour,
     int RateLimitPerDay,
-    // M9.C: per-tenant enrollment key surfaced to admin UI for the deploy command.
-    // Returned to admins only — non-admins see null. Devices must POST this in
-    // /api/devices/register when the tenant has a key set (INFO-M1-003).
+    // Per-tenant enrollment key surfaced to admin UI for the deploy command.
+    // Returned to admins only — non-admins see null. Devices must POST this
+    // in /api/devices/register when the tenant has a key set.
     string? EnrollmentKey);
 
 public class UpdateTenantSettingsRequest

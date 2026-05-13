@@ -16,7 +16,7 @@ using ToastRevival.Api.Services;
 namespace ToastRevival.Api.Tests;
 
 /// <summary>
-/// Helpers for the M8.C pen-test surface. Two responsibilities:
+/// Helpers for the security pen-test surface. Two responsibilities:
 ///
 /// 1. <see cref="SeedTenantAsync"/> — seed a tenant with one admin user and
 ///    N devices via DI scope. Distinct from <see cref="LoadHarness"/> in two

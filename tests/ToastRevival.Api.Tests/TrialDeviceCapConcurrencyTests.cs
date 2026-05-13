@@ -11,7 +11,7 @@ using Xunit;
 namespace ToastRevival.Api.Tests;
 
 /// <summary>
-/// INFO-M11-SW-001 regression — TOCTOU race between
+/// Regression test for a TOCTOU race between
 /// <c>LicenseService.CanRegisterDeviceAsync</c> and the device INSERT in
 /// <c>DevicesController.Register</c>. Before the fix two concurrent
 /// <c>POST /api/devices/register</c> calls for the same trial tenant could
@@ -51,7 +51,7 @@ public sealed class TrialDeviceCapConcurrencyTests
             extraConfig: new Dictionary<string, string?>
             {
                 // Without this the cap short-circuits to true and the race
-                // is moot. INFO-M11-001 governs the bypass.
+                // is moot — TOAST_REQUIRE_BILLING governs the bypass.
                 ["TOAST_REQUIRE_BILLING"] = "true",
             });
 

@@ -47,10 +47,10 @@ builder.Services.AddIdentityCore<AppUser>(opts =>
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException("Jwt:Key is required.");
 
-// Closes INFO-M1-006: a production deployment that forgets the Jwt__Key
-// environment override silently falls through to whatever short placeholder
-// sits in appsettings.json. HMAC-SHA256 wants 32+ bytes of key material;
-// anything shorter weakens the signature beyond useful guarantee. Block it.
+// A production deployment that forgets the Jwt__Key environment override
+// silently falls through to whatever short placeholder sits in appsettings.json.
+// HMAC-SHA256 wants 32+ bytes of key material; anything shorter weakens the
+// signature beyond useful guarantee. Block it.
 if (!builder.Environment.IsDevelopment() && jwtKey.Length < 32)
 {
     throw new InvalidOperationException(
@@ -126,9 +126,9 @@ builder.Services.AddRateLimiter(opts =>
         });
     });
 
-    // INFO-M2B-005: dedicated higher-budget policy for catch-up so a
-    // flaky-network reconnect storm doesn't exhaust the shared device-per-hour
-    // budget. 60/hr vs 10/hr for ReportInteraction.
+    // Dedicated higher-budget policy for catch-up so a flaky-network
+    // reconnect storm doesn't exhaust the shared device-per-hour budget.
+    // 60/hr vs 10/hr for ReportInteraction.
     opts.AddPolicy("device-catchup-per-hour", ctx =>
     {
         var partitionKey = ctx.User.FindFirst("deviceId")?.Value
@@ -209,16 +209,16 @@ builder.Services.AddScoped<IContentModerationService, ContentSafetyService>();
 builder.Services.AddScoped<IBlocklistService, BlocklistService>();
 builder.Services.AddSingleton<MfaService>();
 
-// M5.D export
+// PDF export
 builder.Services.AddSingleton<IPdfExportService, PdfExportService>();
 
-// M6 licensing
+// Licensing
 builder.Services.AddScoped<ILicenseService, LicenseService>();
 builder.Services.AddScoped<IStripeBillingSyncService, StripeBillingSyncService>();
 builder.Services.AddSingleton<IBillingConfigService, BillingConfigService>();
 builder.Services.AddSingleton<IMessagingConfigService, MessagingConfigService>();
 
-// M9.A transactional messaging (Mailjet email + ClickSend SMS)
+// Transactional messaging (Mailjet email + ClickSend SMS)
 builder.Services.AddHttpClient<IEmailService, MailjetEmailService>();
 builder.Services.AddHttpClient<ISmsService, ClickSendSmsService>();
 builder.Services.AddHttpClient<ITurnstileVerifier, CloudflareTurnstileVerifier>();

@@ -11,9 +11,9 @@ using Xunit;
 namespace ToastRevival.Api.Tests;
 
 /// <summary>
-/// M8.C — closes INFO-M8B-002 (registration-path load scenario).
+/// Registration-path load scenario.
 ///
-/// The M8.B load harness pre-seeds devices via DB scope to keep the test
+/// The fanout load harness pre-seeds devices via DB scope to keep its test
 /// focused on hub fanout, deliberately skipping <c>POST /api/devices/register</c>.
 /// That leaves the registration path itself unexercised under concurrency —
 /// which is where the meaningful failure modes live: the unique-index on
@@ -34,7 +34,7 @@ namespace ToastRevival.Api.Tests;
 ///      from concurrent-registration churn.
 ///
 /// Default-skipped — opt-in via <c>TOAST_TEST_RUN_REGISTRATION_LOAD=1</c>.
-/// Same gating pattern M8.B established for the 1,000-device fanout variant.
+/// Same gating pattern as the 1,000-device fanout variant.
 /// </summary>
 [Collection(nameof(LoadCollection))]
 public sealed class RegistrationLoadTests
@@ -67,7 +67,7 @@ public sealed class RegistrationLoadTests
         {
             // Opt-in: this scenario steals device-per-hour budget on the
             // shared TestServer "anon" partition; not safe to run on every
-            // CI cadence yet (INFO-M8B-002 carry-forward).
+            // CI cadence yet.
             return;
         }
 

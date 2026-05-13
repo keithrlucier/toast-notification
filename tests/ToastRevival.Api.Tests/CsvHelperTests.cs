@@ -7,10 +7,10 @@ namespace ToastRevival.Api.Tests;
 /// Unit tests for <see cref="CsvHelper"/>. Pure-function utility; no DB,
 /// fixture, or HTTP wiring needed — runs in milliseconds.
 ///
-/// Closes SEC-004 (INFO-M5D-003): CSV formula injection in audit / delivery
-/// exports. Excel/LibreOffice/Sheets treat cells starting with =, +, -, @
-/// as formulas. A controlled string in the audit log Action or ResourceId
-/// could trigger formula execution when an admin opens the export.
+/// Covers CSV formula injection in audit / delivery exports. Excel /
+/// LibreOffice / Google Sheets treat cells starting with =, +, -, @ as
+/// formulas. A controlled string in the audit log Action or ResourceId could
+/// trigger formula execution when an admin opens the export.
 /// </summary>
 public sealed class CsvHelperTests
 {

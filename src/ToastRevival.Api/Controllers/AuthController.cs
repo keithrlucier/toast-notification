@@ -49,7 +49,7 @@ public class AuthController : ControllerBase
         _logger = logger;
     }
 
-    // ─── New M9.A registration flow ────────────────────────────────────────────
+    // ─── Public registration flow ──────────────────────────────────────────────
 
     /// <summary>
     /// Step 1 of 3. Creates tenant + user (no password yet), sends ClickSend
@@ -350,8 +350,8 @@ public class AuthController : ControllerBase
             return BadRequest(new { errors = result.Errors.Select(e => e.Description).ToArray() });
         }
 
-        // Seed 6 default notification templates for this tenant.
-        // INFO-M5-001: if seeding fails the transaction rolls back cleanly.
+        // Seed 6 default notification templates for this tenant. If seeding
+        // fails the transaction rolls back cleanly.
         try
         {
             foreach (var template in TemplatesController.BuildDefaultTemplates(tenant.Id))
@@ -615,9 +615,10 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(user.MfaSecret))
             return BadRequest("Authenticator app MFA is not set up on this account.");
 
-        // MfaService.Verify mutates user.LastTotpStep on success (SEC-005 /
-        // INFO-M3-001 replay guard). Persist the change so the next call
-        // sees the new floor and rejects a replayed code.
+        // MfaService.Verify mutates user.LastTotpStep on success (replay
+        // guard against an attacker who intercepted a valid TOTP within its
+        // ±1 step window). Persist the change so the next call sees the new
+        // floor and rejects a replayed code.
         if (!_mfa.Verify(user, req.Code))
             return Unauthorized("Invalid or expired TOTP code.");
 

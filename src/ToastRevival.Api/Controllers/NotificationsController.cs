@@ -244,7 +244,7 @@ public class NotificationsController : ControllerBase
     }
 
     /// <summary>
-    /// Device-authenticated catch-up endpoint (M2.B). Returns the same signed
+    /// Device-authenticated catch-up endpoint. Returns the same signed
     /// payload + signature pairs the hub fanout would have pushed for any
     /// Pending deliveries the agent missed while disconnected. Agent calls this
     /// on every Reconnected event and once after cold StartAsync.

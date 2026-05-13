@@ -115,7 +115,7 @@ public sealed class EndToEndNotificationTests
 
             var sendReq = new SendNotificationRequest(
                 Title: "E2E test notification",
-                BodyLine1: "Integration test from M8.A",
+                BodyLine1: "Integration test send",
                 BodyLine2: "Round-trip: send → SignalR → verify → report",
                 Scenario: ToastScenario.Default,
                 TargetType: TargetType.Device,

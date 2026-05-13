@@ -17,13 +17,14 @@
 
 # === Internal operational docs ===
 # Anything under Docs/ToastRevival/ is internal milestone/handoff/evidence
-# tracking and never ships publicly. The two public docs at Docs/ are kept
-# (rollyourown.md, PUBLIC-MIRROR.md).
+# tracking and never ships publicly. PUBLIC-MIRROR.md documents the team's
+# internal sync workflow and stays private — public users do not need to know
+# how we generate the public mirror.
 Docs/ToastRevival/
+Docs/PUBLIC-MIRROR.md
 
-# Keep the two public-facing docs at Docs/ root explicitly.
+# Keep the public-facing operator doc at Docs/ root explicitly.
 !Docs/rollyourown.md
-!Docs/PUBLIC-MIRROR.md
 
 # Asset directories with private screenshots, SSH keys, internal-only images.
 Docs/Assets/

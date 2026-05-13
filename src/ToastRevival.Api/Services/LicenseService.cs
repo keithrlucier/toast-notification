@@ -33,13 +33,14 @@ public class LicenseService : ILicenseService
     public async Task<bool> TryRegisterDeviceAtomicAsync(
         Tenant tenant, Device device, CancellationToken ct = default)
     {
-        // INFO-M11-SW-001: previously the controller called CanRegisterDeviceAsync,
-        // then issued a separate INSERT — two concurrent /devices/register calls for
-        // the same trial tenant could both pass the 2-device gate before either row
-        // committed, exceeding the cap. Serialize per-tenant at a transaction-scoped
-        // PostgreSQL advisory lock so the check and the insert are one critical
-        // section. The lock auto-releases on commit OR rollback; different tenants
-        // hash to different keys and proceed in parallel.
+        // Previously the controller called CanRegisterDeviceAsync, then issued
+        // a separate INSERT — two concurrent /devices/register calls for the
+        // same trial tenant could both pass the 2-device gate before either
+        // row committed, exceeding the cap. Serialize per-tenant at a
+        // transaction-scoped PostgreSQL advisory lock so the check and the
+        // insert are one critical section. The lock auto-releases on commit
+        // OR rollback; different tenants hash to different keys and proceed
+        // in parallel.
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
 
         await _db.Database.ExecuteSqlRawAsync(

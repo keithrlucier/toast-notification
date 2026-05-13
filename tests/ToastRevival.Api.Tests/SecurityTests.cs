@@ -15,18 +15,18 @@ using Xunit;
 namespace ToastRevival.Api.Tests;
 
 /// <summary>
-/// M8.C — security pen-test surface. Eighteen probes across four lanes:
-/// tenant isolation, auth bypass, content injection, privilege escalation.
-/// All tests share the M8.B <see cref="LoadFixture"/> for factory amortization;
-/// each test calls <c>_load.ResetAsync()</c> first to start from an empty
-/// schema. Tests that target a controller-level guard (rate limit, gate,
-/// MFA) seed the minimum data the guard needs and assert the response
-/// without exercising adjacent paths.
+/// Security pen-test surface. Probes across four lanes: tenant isolation,
+/// auth bypass, content injection, privilege escalation. All tests share the
+/// <see cref="LoadFixture"/> for factory amortization; each test calls
+/// <c>_load.ResetAsync()</c> first to start from an empty schema. Tests that
+/// target a controller-level guard (rate limit, gate, MFA) seed the minimum
+/// data the guard needs and assert the response without exercising adjacent
+/// paths.
 ///
-/// Caught and patched in-milestone: FIX-M8C-001 — AuditController List/Export
-/// were not scoping to the caller's tenantId, leaking cross-tenant audit
-/// rows to any tenant admin. <see cref="TenantIsolation_AuditList_DoesNotLeakOtherTenantsRows"/>
-/// would have failed before the patch landed.
+/// One regression caught here: AuditController List/Export were not scoping
+/// to the caller's tenantId, leaking cross-tenant audit rows to any tenant
+/// admin. <see cref="TenantIsolation_AuditList_DoesNotLeakOtherTenantsRows"/>
+/// would have failed before the fix landed.
 /// </summary>
 [Collection(nameof(LoadCollection))]
 public sealed class SecurityTests
@@ -190,9 +190,9 @@ public sealed class SecurityTests
     [Fact]
     public async Task PendingEndpoint_LimitParamControlsPageSize_ClampsToBounds()
     {
-        // INFO-M2B-002 (M9.B): explicit ?limit= query param on /api/notifications/pending.
-        // Default 100 (backwards compat for v0.3.x agents that omit the param);
-        // clamps to [1, 500]. Wire shape stays an array — agents in the field
+        // Explicit ?limit= query param on /api/notifications/pending. Default
+        // 100 (backwards compat for v0.3.x agents that omit the param); clamps
+        // to [1, 500]. Wire shape stays an array — agents in the field
         // unmarshal `List<PendingNotificationItem>` and need no rebuild.
         await _load.ResetAsync();
         var factory = _load.Factory;
@@ -261,11 +261,12 @@ public sealed class SecurityTests
     [Fact]
     public async Task TenantIsolation_AuditList_DoesNotLeakOtherTenantsRows()
     {
-        // FIX-M8C-001 regression test. The AuditLog entity has no global query
-        // filter (the PlatformAdmin SystemController needs cross-tenant
-        // visibility); without an explicit .Where(l => l.TenantId == tenantId)
-        // in the per-tenant AuditController, A's admin sees B's audit rows.
-        // The fix scopes both List and Export to the caller's tenantId claim.
+        // Regression test for cross-tenant audit leak. The AuditLog entity
+        // has no global query filter (the PlatformAdmin SystemController
+        // needs cross-tenant visibility); without an explicit
+        // .Where(l => l.TenantId == tenantId) in the per-tenant
+        // AuditController, A's admin sees B's audit rows. The fix scopes
+        // both List and Export to the caller's tenantId claim.
         await _load.ResetAsync();
         var factory = _load.Factory;
 
@@ -565,10 +566,11 @@ public sealed class SecurityTests
 
         var t = await SecurityHarness.SeedTenantAsync(factory, role: UserRole.Admin, deviceCount: 1);
 
-        // The </script> sequence is dangerous in HTML JSON-LD contexts
-        // (FIX-M7D-001 covered the dashboard surface). On the API path, the
-        // payload is signed JSON, never rendered as HTML — but the wire shape
-        // must round-trip cleanly so the agent's deserializer doesn't choke.
+        // The </script> sequence is dangerous in HTML JSON-LD contexts (the
+        // dashboard surface guards against it separately). On the API path,
+        // the payload is signed JSON, never rendered as HTML — but the wire
+        // shape must round-trip cleanly so the agent's deserializer doesn't
+        // choke.
         // Asserting here on the wire-delivered payload exercises the
         // production NotificationPayloadBuilder.BuildSigned path inside the
         // hosted queue service without exposing internals to the test project.

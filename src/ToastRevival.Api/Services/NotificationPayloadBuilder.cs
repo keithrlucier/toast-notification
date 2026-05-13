@@ -13,9 +13,8 @@ namespace ToastRevival.Api.Services;
 /// from the hub and once from catch-up; both copies must HMAC-verify against
 /// the same key without the agent caring which path delivered it.
 ///
-/// Standing rule (M2.A #14): pre-serialize on the producer, ship the JSON
-/// string + signature as separate transport args, never trust transport-side
-/// reserialization.
+/// Pre-serialize on the producer, ship the JSON string + signature as
+/// separate transport args, never trust transport-side reserialization.
 /// </summary>
 internal static class NotificationPayloadBuilder
 {

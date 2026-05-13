@@ -11,9 +11,9 @@ namespace ToastRevival.Api.Services;
 public class NotificationQueueService : BackgroundService, INotificationQueueService
 {
     /// <summary>
-    /// Time a Notification is allowed to sit in the Sending state before it is
-    /// considered orphaned by the M2.B startup recovery sweep. Five minutes is
-    /// long enough to swallow a normal restart with an in-flight fanout, short
+    /// Time a Notification is allowed to sit in the Sending state before the
+    /// startup recovery sweep considers it orphaned. Five minutes is long
+    /// enough to swallow a normal restart with an in-flight fanout, short
     /// enough that a stuck row doesn't shadow real product behavior for an hour.
     /// </summary>
     private static readonly TimeSpan OrphanThreshold = TimeSpan.FromMinutes(5);
@@ -53,8 +53,8 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        // M2.B: recover orphan Sending rows from a previous process that crashed
-        // mid-fanout (INFO-M2A-003). Run once before entering the channel loop.
+        // Recover orphan Sending rows from a previous process that crashed
+        // mid-fanout. Run once before entering the channel loop.
         try
         {
             await RecoverOrphansAsync(ct);
@@ -64,8 +64,8 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
             _logger.LogError(ex, "Orphan recovery sweep failed at startup");
         }
 
-        // INFO-M1-005: re-enqueue scheduled notifications that became due while
-        // the service was offline (startup backfill).
+        // Re-enqueue scheduled notifications that became due while the
+        // service was offline (startup backfill).
         await EnqueueDueScheduledAsync(ct);
 
         // Run the scheduler loop and the queue consumer concurrently until cancellation.

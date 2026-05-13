@@ -15,24 +15,24 @@ using ToastRevival.Api.Services;
 namespace ToastRevival.Api.Tests;
 
 /// <summary>
-/// Harness for the M8.B load deliverable (D4). Seeds a tenant + N devices
-/// directly via the DB scope (skipping the rate-limited
-/// <c>/api/devices/register</c> endpoint, which is covered by M8.A's E2E test
-/// and would cap an unauth'd burst at the device-per-hour anon partition),
-/// opens N concurrent SignalR LongPolling connections, posts one notification
-/// targeting all N devices, and measures per-device receive latency.
+/// Fanout load harness. Seeds a tenant + N devices directly via the DB scope
+/// (skipping the rate-limited <c>/api/devices/register</c> endpoint, which is
+/// covered by the E2E suite and would cap an unauth'd burst at the
+/// device-per-hour anon partition), opens N concurrent SignalR LongPolling
+/// connections, posts one notification targeting all N devices, and measures
+/// per-device receive latency.
 ///
-/// Why pre-seed instead of registering through the public API: M8.A already
-/// proves the registration path. M8.B is exercising the fanout path —
-/// queue → hub group → device — which is exactly what the
+/// Why pre-seed instead of registering through the public API: the E2E suite
+/// already proves the registration path. This harness exercises the fanout
+/// path — queue → hub group → device — which is exactly what the
 /// <see cref="ToastRevival.Api.Services.NotificationQueueService"/>
-/// background service does in production. Seeding bypasses authentication and
-/// rate-limiting code that isn't on the load path.
+/// background service does in production. Seeding bypasses authentication
+/// and rate-limiting code that isn't on the load path.
 ///
-/// Why LongPolling: the in-process TestServer doesn't speak WebSockets. Payload
-/// signing and delivery semantics are transport-agnostic, so LongPolling is a
-/// faithful exercise of the producer-side code. WebSocket-transport variant
-/// is INFO-M8A-003 (M8.C).
+/// Why LongPolling: the in-process TestServer doesn't speak WebSockets.
+/// Payload signing and delivery semantics are transport-agnostic, so
+/// LongPolling is a faithful exercise of the producer-side code. A
+/// WebSocket-transport variant is tracked separately.
 /// </summary>
 internal static class LoadHarness
 {
@@ -207,7 +207,7 @@ internal static class LoadHarness
                 new AuthenticationHeaderValue("Bearer", tenant.AdminToken);
 
             var sendReq = new SendNotificationRequest(
-                Title:      "M8.B fanout load test",
+                Title:      "Fanout load test",
                 BodyLine1:  $"Targeting {deviceCount} devices",
                 BodyLine2:  null,
                 Scenario:   ToastScenario.Default,

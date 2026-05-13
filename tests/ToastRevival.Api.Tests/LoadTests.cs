@@ -12,9 +12,9 @@ using Xunit.Abstractions;
 namespace ToastRevival.Api.Tests;
 
 /// <summary>
-/// M8.B deliverable D4 — load testing harness exercising the fanout path
-/// (POST → queue → hub → device receive) at concurrency. Default test runs
-/// at 100 devices on every CI push; the 1,000-device test is opt-in via the
+/// Load testing harness exercising the fanout path (POST → queue → hub →
+/// device receive) at concurrency. Default test runs at 100 devices on every
+/// CI push; the 1,000-device test is opt-in via the
 /// <c>TOAST_TEST_RUN_LOAD_1K=1</c> environment variable so the CI runner
 /// stays predictable in wall time and Linux file-descriptor pressure.
 /// </summary>
@@ -163,8 +163,8 @@ public sealed class LoadTests
 
     private void EmitReport(LoadHarness.FanoutRunResult r)
     {
-        _output.WriteLine($"[M8.B fanout] devices={r.DeviceCount} received={r.Received} verifyFailures={r.VerifyFailures}");
-        _output.WriteLine($"[M8.B fanout] elapsed={r.TotalElapsed.TotalMilliseconds:F0}ms first={r.FirstReceiveMs:F0}ms last={r.LastReceiveMs:F0}ms");
-        _output.WriteLine($"[M8.B fanout] p50={r.P50Ms:F0}ms p95={r.P95Ms:F0}ms p99={r.P99Ms:F0}ms");
+        _output.WriteLine($"[fanout] devices={r.DeviceCount} received={r.Received} verifyFailures={r.VerifyFailures}");
+        _output.WriteLine($"[fanout] elapsed={r.TotalElapsed.TotalMilliseconds:F0}ms first={r.FirstReceiveMs:F0}ms last={r.LastReceiveMs:F0}ms");
+        _output.WriteLine($"[fanout] p50={r.P50Ms:F0}ms p95={r.P95Ms:F0}ms p99={r.P99Ms:F0}ms");
     }
 }

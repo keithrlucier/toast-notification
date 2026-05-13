@@ -9,14 +9,14 @@ using Xunit;
 namespace ToastRevival.Api.Tests;
 
 /// <summary>
-/// M8.C — closes INFO-M8A-003 (WebSocket-transport hub variant test). The
-/// M8.A E2E and the M8.B load harness both force <see cref="HttpTransportType.LongPolling"/>
-/// because TestServer's default <c>HttpMessageHandlerFactory</c> can't speak
+/// WebSocket-transport hub variant test. The E2E suite and the fanout load
+/// harness both force <see cref="HttpTransportType.LongPolling"/> because
+/// TestServer's default <c>HttpMessageHandlerFactory</c> can't speak
 /// WebSockets. This test uses <c>factory.Server.CreateWebSocketClient()</c>
 /// to exercise the WebSocket handshake path — specifically the query-string
-/// JWT extraction at <c>Program.cs:65-75</c>
-/// (<c>JwtBearerEvents.OnMessageReceived</c> reading <c>access_token</c>
-/// from the query when the request path starts with <c>/hubs</c>).
+/// JWT extraction in <c>JwtBearerEvents.OnMessageReceived</c> reading
+/// <c>access_token</c> from the query when the request path starts with
+/// <c>/hubs</c>.
 ///
 /// Production agents use SignalR's default transport negotiation, which
 /// settles on WebSockets when both ends support it. The query-string JWT

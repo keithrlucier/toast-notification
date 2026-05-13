@@ -9,8 +9,8 @@ public static class CsvHelper
     /// 1. Standard CSV quoting — when the value contains a comma, quote, or
     ///    newline, wrap in double quotes and escape interior quotes by
     ///    doubling them. (RFC 4180.)
-    /// 2. Formula-injection neutralization (SEC-004 / INFO-M5D-003) — when
-    ///    the value starts with <c>=</c>, <c>+</c>, <c>-</c>, <c>@</c>,
+    /// 2. Formula-injection neutralization — when the value starts with
+    ///    <c>=</c>, <c>+</c>, <c>-</c>, <c>@</c>,
     ///    <c>\t</c>, or <c>\r</c>, prefix with a single apostrophe. Excel,
     ///    LibreOffice Calc, and Google Sheets all honor a leading
     ///    apostrophe as the "treat this cell as literal text" sentinel and

@@ -12,19 +12,19 @@ namespace ToastRevival.Agent;
 /// provides dashboard shortcut, test notification, log viewer, manual reconnect,
 /// and quit.
 ///
-/// Diana's M2.C spec:
+/// Visual state palette:
 ///   Connected       #F59E0B amber, static
 ///   Reconnecting    #F59E0B amber, 700ms pulse between 100% and 55% brightness
 ///   Disconnected    #F59E0B amber, static
 ///   Error           #DC2626 red, static
 ///   Connecting      #7A7A92 dim, static
 ///
-/// M9.C: production bell glyphs replace M0A's placeholder circles. Bell is
-/// rendered via GraphicsPath at icon construction time, tinted by state color.
-/// Single shape across all five states — only the fill color tells the user
-/// which state. Renders crisply at 16×16 native and at high-DPI resampling.
+/// Production bell glyphs are rendered via GraphicsPath at icon construction
+/// time, tinted by state color. Single shape across all five states — only the
+/// fill color tells the user which state. Renders crisply at 16×16 native and
+/// at high-DPI resampling.
 ///
-/// INFO-M2C-001: HICONs created via Bitmap.GetHicon() are not explicitly freed.
+/// Note: HICONs created via Bitmap.GetHicon() are not explicitly freed.
 /// Acceptable for process-lifetime tray icons — handles are released on process exit.
 /// </summary>
 internal sealed class TrayIconService : IDisposable
@@ -223,7 +223,7 @@ internal sealed class TrayIconService : IDisposable
     }
 
     /// <summary>
-    /// M9.C / Diana: bell glyph rendered as a filled GraphicsPath. Uses normalized
+    /// Bell glyph rendered as a filled GraphicsPath. Uses normalized
     /// coordinates [0..1] scaled to <paramref name="size"/> so the same path
     /// data renders cleanly at 16×16 (system tray native), 32×32 (high-DPI
     /// scaling), or any other size Windows asks for. The bell silhouette is

@@ -5,8 +5,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ToastRevival.Api.Migrations
 {
     /// <summary>
-    /// SEC-005 / INFO-M3-001: adds AppUser.LastTotpStep so MfaService.Verify
-    /// can reject TOTP code replay within the ±1 step verification window.
+    /// Adds AppUser.LastTotpStep so MfaService.Verify can reject TOTP code
+    /// replay within the ±1 step verification window.
     /// </summary>
     public partial class M3MfaTotpReplay : Migration
     {

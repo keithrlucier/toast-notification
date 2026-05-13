@@ -11,7 +11,7 @@ public record RegisterRequest(
     string? Subdomain = null,
     string? DisplayName = null);
 
-// M9.A — new two-step registration flow
+// Two-step registration flow
 public record RegisterInitRequest(
     [Required] string FullName,
     [Required] string TenantName,

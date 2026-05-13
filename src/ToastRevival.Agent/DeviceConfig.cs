@@ -82,8 +82,9 @@ internal static class ConfigStore
         var json = JsonSerializer.SerializeToUtf8Bytes(config, JsonOptions);
         var cipherBytes = Protect(json);
 
-        // Write to a temp file then move atomically to prevent half-written config
-        // surviving a crash mid-write (INFO-M2A-002 — DPAPI CurrentUser scope).
+        // Write to a temp file then move atomically to prevent half-written
+        // config surviving a crash mid-write. DPAPI CurrentUser scope means
+        // only the OS user account that wrote the config can read it back.
         var temp = path + ".tmp";
         File.WriteAllBytes(temp, cipherBytes);
         File.Move(temp, path, overwrite: true);

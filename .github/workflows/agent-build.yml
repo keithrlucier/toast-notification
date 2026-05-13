@@ -39,7 +39,7 @@ jobs:
         run: .\scripts\build-msi.ps1 -Version "0.2.${{ github.run_number }}.0"
 
       - name: Upload unsigned MSI
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unsigned-msi
           path: artifacts/installer/*.msi

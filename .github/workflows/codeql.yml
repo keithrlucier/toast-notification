@@ -46,7 +46,7 @@ jobs:
           dotnet-version: "8.0.x"
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -70,6 +70,6 @@ jobs:
         # output visible in the workflow log without failing the run.
         # Remove this once code scanning is enabled in repo settings.
         continue-on-error: true
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"

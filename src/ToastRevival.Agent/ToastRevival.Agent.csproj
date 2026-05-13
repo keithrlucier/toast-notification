@@ -18,7 +18,7 @@
          version-info resource fields that Task Manager, File Properties, and
          the WinAppSDK auto-derived AUMID DisplayName fallback all read from.
          Without these the defaults leak AssemblyName ("ToastNotification.Agent")
-         into user-visible surfaces — Diana's rule. -->
+         into user-visible surfaces. -->
     <AssemblyTitle>Toast Notification</AssemblyTitle>
     <Product>Toast Notification</Product>
     <Company>Toast2IT, LLC</Company>

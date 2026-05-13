@@ -9,12 +9,11 @@ namespace ToastRevival.Api.Tests;
 /// Unit tests for <see cref="MfaService"/>. Pure-function (with mutation
 /// of the passed-in <see cref="AppUser"/>) — no DB or fixture wiring.
 ///
-/// Closes SEC-005 (INFO-M3-001): TOTP code replay within the ±1 step
-/// verification window. <see cref="MfaService.Verify"/> now records the
-/// matched step on the user and rejects any subsequent code whose matched
-/// step is &lt;= the recorded value. Caller (AuthController.MfaVerify)
-/// persists via <c>SaveChangesAsync</c> so the floor survives across
-/// requests.
+/// Covers TOTP code replay within the ±1 step verification window.
+/// <see cref="MfaService.Verify"/> records the matched step on the user and
+/// rejects any subsequent code whose matched step is &lt;= the recorded
+/// value. The caller (AuthController.MfaVerify) persists via
+/// <c>SaveChangesAsync</c> so the floor survives across requests.
 /// </summary>
 public sealed class MfaServiceTests
 {
@@ -32,11 +31,11 @@ public sealed class MfaServiceTests
     [Fact]
     public void Verify_RejectsSameCodeOnSecondCall_BlocksReplayWithinStep()
     {
-        // SEC-005 / INFO-M3-001: an attacker who intercepts a valid TOTP
-        // submission within its 30-second window must not be able to replay
-        // it before the legitimate user does. The step-floor guard rejects
-        // the second submission because its matched step is no greater than
-        // the first call's recorded step.
+        // An attacker who intercepts a valid TOTP submission within its
+        // 30-second window must not be able to replay it before the
+        // legitimate user does. The step-floor guard rejects the second
+        // submission because its matched step is no greater than the first
+        // call's recorded step.
         var user = NewEnrolledUser(out var code);
 
         Assert.True(_mfa.Verify(user, code));

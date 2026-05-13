@@ -8,12 +8,12 @@ public class Tenant
 
     // Per-tenant HMAC-SHA256 signing key (base64). Generated at tenant creation,
     // returned to agents at device registration so they can verify notification
-    // payloads before rendering. Rotation is M3 work.
+    // payloads before rendering.
     public string SigningKey { get; set; } = null!;
 
-    // Optional pre-shared key required for device registration (INFO-M1-003).
-    // When null, device registration is open — any caller that knows the TenantId
-    // may register. When set, the agent must include the matching key in its
+    // Optional pre-shared key required for device registration. When null,
+    // device registration is open — any caller that knows the TenantId may
+    // register. When set, the agent must include the matching key in its
     // RegisterDeviceRequest or registration is rejected.
     public string? EnrollmentKey { get; set; }
 
@@ -23,18 +23,18 @@ public class Tenant
     public DateTime? LicenseEnd { get; set; }
     public SubscriptionTier SubscriptionTier { get; set; } = SubscriptionTier.Standard;
     public BillingStatus BillingStatus { get; set; } = BillingStatus.Active;
-    // Stripe billing (M6)
+    // Stripe billing
     public string? StripeCustomerId { get; set; }
     public string? StripeSubscriptionId { get; set; }
     public DateTime? PastDueAt { get; set; }
 
-    // Branding & notification defaults (M5.B D3)
+    // Branding & notification defaults
     public string? LogoUrl { get; set; }
     public string? PrimaryColor { get; set; }
     public string? DefaultAudioSetting { get; set; }
     public ToastScenario DefaultScenario { get; set; } = ToastScenario.Default;
 
-    // Per-tenant content moderation policy (M11 ModerationSettings).
+    // Per-tenant content moderation policy.
     // When ModerationEnabled is false, ContentSafetyService short-circuits to Pass
     // for both text and image. Thresholds use Azure Content Safety severity scale (0..6):
     //   - ModerationReviewSeverity: scores >= this go to PendingReview (admin must approve)

@@ -41,9 +41,9 @@ public class DevicesController : ControllerBase
     /// Called by the agent on first run. No authentication required.
     /// TenantId comes from the MSI property set by the MSP during deployment.
     ///
-    /// Enrollment key gating (INFO-M1-003): when a tenant has an EnrollmentKey
-    /// set, the request must include the matching key or registration is rejected
-    /// with 403. Tenants without an EnrollmentKey allow open registration.
+    /// Enrollment key gating: when a tenant has an EnrollmentKey set, the
+    /// request must include the matching key or registration is rejected with
+    /// 403. Tenants without an EnrollmentKey allow open registration.
     /// </summary>
     [HttpPost("register")]
     [EnableRateLimiting("device-per-hour")]
@@ -98,12 +98,12 @@ public class DevicesController : ControllerBase
         }
         else
         {
-            // M6 D3: license enforcement applies only to NEW seats. A reinstall on an
-            // existing seat (handled above) must not be blocked by license depletion.
-            // INFO-M11-SW-001: the cap check + device INSERT + ConsumedCount bump run
-            // atomically inside the service under a per-tenant advisory lock so two
-            // concurrent registrations for the same trial tenant can't both pass the
-            // 2-device gate before either commits.
+            // License enforcement applies only to NEW seats. A reinstall on an
+            // existing seat (handled above) must not be blocked by license
+            // depletion. The cap check + device INSERT + ConsumedCount bump
+            // run atomically inside the service under a per-tenant advisory
+            // lock so two concurrent registrations for the same trial tenant
+            // can't both pass the 2-device gate before either commits.
             device = new Device
             {
                 TenantId = req.TenantId,

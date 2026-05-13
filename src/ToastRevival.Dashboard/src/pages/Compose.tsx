@@ -114,7 +114,7 @@ export default function Compose() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [groups,  setGroups]  = useState<DeviceGroup[]>([]);
 
-  // Template slug → DB Guid mapping (INFO-M4-001)
+  // Template slug → DB Guid mapping
   const [templateDbIds, setTemplateDbIds] = useState<Record<string, string>>({});
   const [appliedTemplateSlug, setAppliedTemplateSlug] = useState('');
 

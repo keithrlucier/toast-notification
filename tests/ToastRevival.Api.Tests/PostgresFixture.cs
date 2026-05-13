@@ -19,10 +19,10 @@ namespace ToastRevival.Api.Tests;
 /// This lets the test run in environments without Docker (CI service
 /// containers, dev machines with local Postgres).
 ///
-/// Docker pre-flight (M8.B, closes INFO-M8A-001): when the env override is
-/// absent and Docker is unreachable, <see cref="InitializeAsync"/> throws a
-/// targeted <see cref="InvalidOperationException"/> with a friendly message
-/// pointing the developer at the env-var override. Without this, Testcontainers
+/// Docker pre-flight: when the env override is absent and Docker is
+/// unreachable, <see cref="InitializeAsync"/> throws a targeted
+/// <see cref="InvalidOperationException"/> with a friendly message pointing
+/// the developer at the env-var override. Without this, Testcontainers
 /// surfaces an internal connection failure stack trace that isn't actionable.
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime

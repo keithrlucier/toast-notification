@@ -7,10 +7,10 @@ namespace ToastRevival.Api.Tests;
 /// <summary>
 /// Collection-scoped fixture that boots one <see cref="ApiTestFactory"/> on top
 /// of <see cref="PostgresFixture"/> and exposes a <see cref="Respawner"/> for
-/// per-test database cleanup. Closes INFO-M8A-002: the M8.A pattern of building
-/// a fresh factory per test is fine for one test but quadratic-ish for a load
-/// suite — the load harness opens hundreds of SignalR connections per run, so
-/// the cost of a per-test web host is real.
+/// per-test database cleanup. The pattern of building a fresh factory per
+/// test is fine for one test but quadratic-ish for a load suite — the load
+/// harness opens hundreds of SignalR connections per run, so the cost of a
+/// per-test web host is real.
 ///
 /// Lifecycle:
 ///   - <see cref="InitializeAsync"/> warms the API once (forces

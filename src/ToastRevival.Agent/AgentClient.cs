@@ -146,12 +146,12 @@ internal sealed record PendingNotificationItem(
 internal sealed class AgentHubClient : IAsyncDisposable
 {
     /// <summary>
-    /// Sliding-expiration window for the notificationId de-dup cache (M2.B,
-    /// INFO-M2A-004). SignalR can redeliver buffered ReceiveNotification
-    /// messages after a reconnect, and the catch-up endpoint can serve a
-    /// notification the hub already pushed in the same connection — both
-    /// paths share this cache so a notification is rendered + acknowledged
-    /// at most once per hour-long sliding window.
+    /// Sliding-expiration window for the notificationId de-dup cache. SignalR
+    /// can redeliver buffered ReceiveNotification messages after a reconnect,
+    /// and the catch-up endpoint can serve a notification the hub already
+    /// pushed in the same connection — both paths share this cache so a
+    /// notification is rendered + acknowledged at most once per hour-long
+    /// sliding window.
     /// </summary>
     private static readonly TimeSpan DedupWindow = TimeSpan.FromHours(1);
 
@@ -161,7 +161,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
     private readonly DeviceConfig _config;
     private readonly HubConnection _hub;
     private readonly HttpClient _http;
-    // INFO-M2B-004: bounded dedup cache. 50k entries × ~100 bytes ≈ 5MB ceiling.
+    // Bounded dedup cache. 50k entries × ~100 bytes ≈ 5MB ceiling.
     private readonly MemoryCache _renderedCache = new(new MemoryCacheOptions { SizeLimit = 50_000 });
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _pingLoop;
@@ -170,14 +170,11 @@ internal sealed class AgentHubClient : IAsyncDisposable
     /// Lower bound for the next catch-up call. Null on first run so the
     /// initial GET drains the full backlog — the most common scenario is an
     /// agent that rebooted and reconnects with Pending deliveries that
-    /// pre-date this process. After each successful catch-up, set to UtcNow
-    /// so subsequent calls only fetch deliveries created since the last
-    /// drain.
-    ///
-    /// FIX-M2B-001 (caught by Abish in Code Sweep): initializing this to
-    /// UtcNow at ctor time would have made the first call exclude every
-    /// pre-existing Pending delivery (CreatedAt &lt; ctor_time), defeating
-    /// the very milestone shipping. Stay null on first call.
+    /// pre-date this process. Initializing to UtcNow at ctor time would have
+    /// the first call exclude every pre-existing Pending delivery
+    /// (CreatedAt &lt; ctor_time). After each successful catch-up, set to
+    /// UtcNow so subsequent calls only fetch deliveries created since the
+    /// last drain.
     /// </summary>
     private DateTime? _lastCatchupSince = null;
 
@@ -197,8 +194,8 @@ internal sealed class AgentHubClient : IAsyncDisposable
             {
                 opts.AccessTokenProvider = () => Task.FromResult<string?>(_config.DeviceToken);
             })
-            // Reconnect intervals match Anthony's M2 plan: 0, 2, 5, 10, 30 seconds.
-            // After 30s the SignalR client keeps trying at the last interval.
+            // Reconnect intervals: 0, 2, 5, 10, 30 seconds. After 30s the
+            // SignalR client keeps trying at the last interval.
             .WithAutomaticReconnect(new TimeSpan[]
             {
                 TimeSpan.Zero,
@@ -227,7 +224,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
         {
             DiagLog.Write($"Hub reconnected: connectionId={id}");
             ConnectionStateChanged?.Invoke(this, AgentConnectionState.Connected);
-            // M2.B: drain anything sent while we were disconnected. Fire-and-forget
+            // Drain anything sent while we were disconnected. Fire-and-forget
             // semantics — do not block the SignalR client's event pump.
             try
             {
@@ -319,9 +316,9 @@ internal sealed class AgentHubClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// M9.C / INFO-M9B-001: max page size requested per /pending call. Server
-    /// clamps this to [1, 500]; we request the ceiling so a long-offline drain
-    /// finishes in fewer round-trips, each round-trip costing one slot of the
+    /// Max page size requested per /pending call. Server clamps this to
+    /// [1, 500]; we request the ceiling so a long-offline drain finishes in
+    /// fewer round-trips, each round-trip costing one slot of the
     /// device-catchup-per-hour=60/hr rate-limit budget. With CatchupPageSize=500
     /// the per-hour drain ceiling is 30,000 notifications.
     /// </summary>
@@ -333,11 +330,10 @@ internal sealed class AgentHubClient : IAsyncDisposable
     /// pipeline as live hub messages. Idempotent via the de-dup cache —
     /// notifications already rendered in this process lifetime are skipped.
     ///
-    /// M9.C / INFO-M9B-001: pages until a partial page is returned. Each loop
-    /// iteration advances `since` to the last item's CreatedAt + 1 tick so
-    /// the next GET excludes the rows we just processed. A partial page
-    /// (Count &lt; CatchupPageSize) means the server returned everything that
-    /// matched — exit the loop.
+    /// Pages until a partial page is returned. Each loop iteration advances
+    /// `since` to the last item's CreatedAt + 1 tick so the next GET excludes
+    /// the rows we just processed. A partial page (Count &lt; CatchupPageSize)
+    /// means the server returned everything that matched — exit the loop.
     /// </summary>
     private async Task RunCatchupAsync(CancellationToken ct)
     {
@@ -358,8 +354,8 @@ internal sealed class AgentHubClient : IAsyncDisposable
             if (ct.IsCancellationRequested) return;
 
             // First call (since == null) omits the `since` query param so the
-            // server drains the full Pending backlog — see FIX-M2B-001.
-            // Always include limit so newer servers honor our preferred page size.
+            // server drains the full Pending backlog. Always include limit so
+            // newer servers honor our preferred page size.
             var url = since.HasValue
                 ? $"/api/notifications/pending?since={Uri.EscapeDataString(since.Value.ToString("o"))}&limit={CatchupPageSize}"
                 : $"/api/notifications/pending?limit={CatchupPageSize}";

@@ -123,6 +123,7 @@ Important security facts:
 - Microsoft Store deployment: https://toastnotification.com/docs/deploy/store/
 - Intune deployment: https://toastnotification.com/docs/deploy/intune/
 - RMM deployment: https://toastnotification.com/docs/deploy/rmm/
+- Content moderation: https://toastnotification.com/docs/moderation/
 - API reference: https://toastnotification.com/docs/api/
 - Security architecture: https://toastnotification.com/security/
 

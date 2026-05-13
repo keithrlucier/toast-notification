@@ -103,6 +103,21 @@ public class NotificationsController : ControllerBase
             moderationResult = AggregateModerationResults(textResult, imageResult);
         }
 
+        // M11: per-tenant "require approval for all" override. When this is on, every
+        // notification routes to PendingReview regardless of moderation engine output,
+        // unless it was Block (which stays Block — admin approval is for review-tier
+        // content, not for content the tenant policy already rejected).
+        var (requireApprovalAll, blockedMessage) = await _db.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId)
+            .Select(t => new ValueTuple<bool, string?>(t.ModerationRequireApprovalAll, t.ModerationBlockedMessage))
+            .FirstOrDefaultAsync();
+
+        if (requireApprovalAll && moderationResult.Decision == ModerationDecision.Pass)
+        {
+            moderationResult = moderationResult with { Decision = ModerationDecision.Review };
+        }
+
         // Short-circuit on Block — do not persist, return 422
         if (moderationResult.Decision == ModerationDecision.Block)
         {
@@ -111,7 +126,9 @@ public class NotificationsController : ControllerBase
                 error = "content_blocked",
                 message = blocklistHit is not null
                     ? $"Content blocked by tenant blocklist (matched term: '{blocklistHit.BlocklistTerm}')."
-                    : "Content blocked by moderation policy.",
+                    : !string.IsNullOrWhiteSpace(blockedMessage)
+                        ? blockedMessage
+                        : "Content blocked by moderation policy.",
                 scores = moderationResult.TextScores,
             });
         }

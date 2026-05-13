@@ -19,6 +19,10 @@ const NAV_GROUPS: { heading: string; links: { to: string; label: string; end?: b
     ],
   },
   {
+    heading: 'Operations',
+    links: [{ to: DOCS_PATHS.moderation, label: 'Content moderation' }],
+  },
+  {
     heading: 'API reference',
     links: [{ to: DOCS_PATHS.api, label: 'REST API' }],
   },

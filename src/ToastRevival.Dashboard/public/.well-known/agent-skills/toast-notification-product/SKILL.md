@@ -15,6 +15,7 @@ it is priced, how it is deployed, or where its public documentation lives.
 - Pricing: https://toastnotification.com/pricing/
 - Security: https://toastnotification.com/security/
 - Documentation: https://toastnotification.com/docs/
+- Content moderation: https://toastnotification.com/docs/moderation/
 - API documentation: https://toastnotification.com/docs/api/
 
 ## Ground Rules

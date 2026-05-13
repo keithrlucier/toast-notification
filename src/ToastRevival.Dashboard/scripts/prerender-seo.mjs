@@ -232,6 +232,7 @@ const routes = [
         <li><a href="/docs/deploy/store">Microsoft Store deployment</a>: install and register the Windows agent from Store distribution.</li>
         <li><a href="/docs/deploy/intune">Intune deployment</a>: deploy the agent to managed corporate endpoints.</li>
         <li><a href="/docs/deploy/rmm">RMM silent install</a>: deploy through RMM tooling with MSI properties.</li>
+        <li><a href="/docs/moderation">Content moderation</a>: configure scanning policy, severity thresholds, the admin approval queue, and bring-your-own Azure Content Safety credentials.</li>
         <li><a href="/docs/api">API reference</a>: authentication, notifications, devices, templates, and audit endpoints.</li>
       </ul>
     `,
@@ -292,6 +293,27 @@ const routes = [
       <h1>RMM silent install</h1>
       <p>MSPs can deploy Toast Notification through RMM tools that support silent MSI installation. The MSI accepts tenant ID and server URL properties so endpoints enroll into the correct tenant.</p>
       <p>This deployment path is compatible with common RMM platforms that can execute msiexec with command-line properties.</p>
+    `,
+  },
+  {
+    path: '/docs/moderation',
+    title: 'Content moderation',
+    description:
+      'Configure per-tenant content moderation in Toast Notification: scanning toggles, severity thresholds, the admin approval queue, custom blocklist terms, and bring-your-own Azure Content Safety credentials.',
+    priority: '0.7',
+    changefreq: 'monthly',
+    body: `
+      <h1>Content moderation in Toast Notification</h1>
+      <p>Every outgoing notification flows through a per-tenant moderation pipeline: tenant blocklist, then Azure Content Safety text scan, then optional image scan. Administrators configure scanning, severity thresholds, and an admin approval queue from the dashboard at Settings → Tenant.</p>
+      <ul>
+        <li>Master enable plus separate text and image scan toggles.</li>
+        <li>Severity thresholds on the Azure Content Safety 0-6 scale. Default Review at 2, Block at 5.</li>
+        <li>Require admin approval for every notification, regardless of scan result.</li>
+        <li>Custom blocked-content message returned to senders on rejection.</li>
+        <li>Bring your own Azure Content Safety endpoint and key per tenant for billing and data residency.</li>
+        <li>Tenant blocklist managed alongside the approval queue on the Moderation page.</li>
+      </ul>
+      <p>Notifications classified as Review save with status PendingReview and wait for admin approval. Notifications classified as Block return HTTP 422 with an explanation and are never persisted.</p>
     `,
   },
   {

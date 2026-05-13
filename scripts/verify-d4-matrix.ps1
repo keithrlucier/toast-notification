@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Run at each checkpoint listed below. Outputs pass/fail for each check.
-    Requires admin elevation. Designed for Keith's Win11 lab machine.
+    Requires admin elevation. Intended for a Windows 11 lab/staging machine.
 
 .PARAMETER Phase
     Check        — snapshot current task + notification policy state (safe, read-only)

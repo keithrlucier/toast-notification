@@ -93,7 +93,7 @@ namespace ToastRevival.Agent
             // Administrator account on Server has UAC disabled by default, so the scheduled
             // task at LeastPrivilege still runs with the unfiltered admin token, IsElevated()
             // returns true, and the agent quit before ever POSTing /api/devices/register —
-            // which is exactly what Keith hit on Windows Server 2025 (0.4.6.1).
+            // which reproduces on Windows Server 2025 with 0.4.6.1.
             if (IsElevated())
             {
                 DiagLog.Write("WARN: process is running elevated — toast Show() may fail; agent will still register and connect to the hub.");

@@ -75,10 +75,6 @@ in a binary they're deploying to their fleet. The source is open for review.
 For most MSP operators evaluating this tool, that's an acceptable trade-off —
 they already accept this trust model for dozens of RMM-deployed agents.
 
-*Implementation requirement (M11.D3):* The `DISABLEAUTOUPDATE` WiX property and
-registry key are not yet implemented. This must ship before the public repo goes
-live. See `FIX-LIST.md` INFO-M11-002.
-
 ### Path B: Compile from Source and Sign Yourself
 
 Self-hosters who need the agent binary to carry their own organization's name in
@@ -119,18 +115,16 @@ agent on the Windows trusted publishers list. You deploy. We sign.
 
 ---
 
-## 5. Security & Default Configuration
+## 5. First-Run Admin Bootstrap
 
-If we make this repo public, we must assume malicious actors will read the source code.
+Self-hosted instances ship with no users in the database. The first person to
+register at `/register` is promoted to `SuperAdmin` + `IsPlatformAdmin`
+automatically. Subsequent registrations require approval through the admin
+dashboard's Trial Requests queue, or invite-only flows configured per tenant.
+This is the same registration pipeline managed SaaS uses, with the trial
+approval gate enforced in both modes.
 
-* **Secrets:** Ensure no AWS Lightsail IPs, passwords, or SafeNet PINs are hardcoded anywhere in the git history. (Code Sweep confirms `Docs/Assets/*.pem` are properly gitignored, but a history scrub may be required before public launch).
-* **Admin Bootstrapping:** Self-hosted instances need a "First Run" experience. If the database has 0 users, the first person to hit `/register` becomes the `SuperAdmin` + `IsPlatformAdmin`. Subsequent registrations must be invite-only or tenant-scoped.
-
----
-
-## 6. Next Steps for Implementation Team
-
-1. **Dockerization Sprint:** Write the `Dockerfiles` and `docker-compose.yml`. Verify the system spins up locally on a clean machine using only Docker Desktop.
-2. **Feature Flag Sprint:** Implement `TOAST_REQUIRE_BILLING=false` and audit the frontend to ensure Stripe logic is hidden.
-3. **Documentation:** Write a `README-SELF-HOST.md` with the 3-step Docker compose instructions.
-4. **Public Repo Prep:** Audit git history for `.env` files or password leaks before flipping the GitHub repository from Private to Public.
+For day-to-day self-host operations — environment variables, three-step
+deploy, reverse proxy and TLS, billing-disabled defaults, upgrade procedure,
+and the agent distribution paths — see
+[`README-SELF-HOST.md`](../README-SELF-HOST.md).

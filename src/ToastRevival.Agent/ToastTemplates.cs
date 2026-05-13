@@ -29,6 +29,21 @@ internal sealed record ToastTemplateButton(string Label, string Action, bool IsP
 
 internal static class ToastTemplateCatalog
 {
+    /// <summary>
+    /// A minimal plain-text notification with no images and no sound.
+    /// Use for low-priority informational messages that require no immediate action.
+    /// <para>
+    /// <b>Persistence:</b> Auto-dismisses per the system's default notification timer
+    /// (typically 5–7 seconds on Windows 11). Moves to Action Center on dismiss.
+    /// </para>
+    /// <para>
+    /// <b>Scenario:</b> <see cref="AppNotificationScenario.Default"/> — no special behavior;
+    /// respects Do Not Disturb / Focus Assist.
+    /// </para>
+    /// <para><b>Images:</b> None.</para>
+    /// <para><b>Sound:</b> Silent.</para>
+    /// <para><b>Buttons:</b> Acknowledge.</para>
+    /// </summary>
     public static ToastTemplate Plain { get; } = new(
         ToastTemplateKey.Plain,
         Title: "Toast Notification agent spike",
@@ -40,6 +55,21 @@ internal static class ToastTemplateCatalog
         Scenario: AppNotificationScenario.Default,
         Sound: null);
 
+    /// <summary>
+    /// A branded announcement with a full-width hero image and tenant logo.
+    /// Use for company-wide communications — policy updates, news, scheduled events.
+    /// <para>
+    /// <b>Persistence:</b> Auto-dismisses per the system's default notification timer.
+    /// Moves to Action Center on dismiss.
+    /// </para>
+    /// <para>
+    /// <b>Scenario:</b> <see cref="AppNotificationScenario.Default"/> — no special behavior;
+    /// respects Do Not Disturb / Focus Assist.
+    /// </para>
+    /// <para><b>Images:</b> Hero image (364×180) + tenant logo override.</para>
+    /// <para><b>Sound:</b> System default notification sound.</para>
+    /// <para><b>Buttons:</b> View details.</para>
+    /// </summary>
     public static ToastTemplate Announcement { get; } = new(
         ToastTemplateKey.Announcement,
         Title: "Company announcement",
@@ -51,6 +81,23 @@ internal static class ToastTemplateCatalog
         Scenario: AppNotificationScenario.Default,
         Sound: AppNotificationSoundEvent.Default);
 
+    /// <summary>
+    /// A high-priority security alert that breaks through Do Not Disturb and Focus Assist sessions.
+    /// Use for time-sensitive security events that must reach the user regardless of their focus state —
+    /// sign-in anomalies, account lockouts, threat detections.
+    /// <para>
+    /// <b>Persistence:</b> Auto-dismisses per the system timer. Does NOT stay on screen indefinitely —
+    /// use <see cref="Reminder"/> if you need persistent-until-dismissed behavior. The looping
+    /// <see cref="AppNotificationSoundEvent.Alarm"/> audio continues until the user acts or dismisses.
+    /// </para>
+    /// <para>
+    /// <b>Scenario:</b> <see cref="AppNotificationScenario.Urgent"/> (Windows 11 22H2+) — bypasses
+    /// Focus Assist and Do Not Disturb. On older Windows versions this degrades to Default behavior.
+    /// </para>
+    /// <para><b>Images:</b> Hero image (364×180) + tenant logo override.</para>
+    /// <para><b>Sound:</b> Looping alarm audio (<see cref="AppNotificationSoundEvent.Alarm"/>).</para>
+    /// <para><b>Buttons:</b> Acknowledge (primary), Report to IT.</para>
+    /// </summary>
     public static ToastTemplate Alert { get; } = new(
         ToastTemplateKey.Alert,
         Title: "Security alert",
@@ -66,6 +113,24 @@ internal static class ToastTemplateCatalog
         Scenario: AppNotificationScenario.Urgent,
         Sound: AppNotificationSoundEvent.Alarm);
 
+    /// <summary>
+    /// An actionable prompt for tasks the user must complete — password expiry, compliance deadlines,
+    /// certificate renewals. Offers a direct action button alongside a deferral option.
+    /// <para>
+    /// <b>Persistence:</b> Auto-dismisses per the system's default notification timer. Despite the
+    /// reminder sound, this template uses <see cref="AppNotificationScenario.Default"/> and does NOT
+    /// stay on screen indefinitely. Use <see cref="Reminder"/> if the notification must persist until
+    /// the user explicitly dismisses it.
+    /// </para>
+    /// <para>
+    /// <b>Scenario:</b> <see cref="AppNotificationScenario.Default"/> — respects Do Not Disturb /
+    /// Focus Assist. The <see cref="AppNotificationSoundEvent.Reminder"/> is a sound choice only;
+    /// it does not change persistence behavior.
+    /// </para>
+    /// <para><b>Images:</b> Tenant logo override only (no hero image).</para>
+    /// <para><b>Sound:</b> Reminder chime (<see cref="AppNotificationSoundEvent.Reminder"/>).</para>
+    /// <para><b>Buttons:</b> Reset now (primary), Remind later.</para>
+    /// </summary>
     public static ToastTemplate ActionRequired { get; } = new(
         ToastTemplateKey.ActionRequired,
         Title: "Action required",
@@ -81,6 +146,25 @@ internal static class ToastTemplateCatalog
         Scenario: AppNotificationScenario.Default,
         Sound: AppNotificationSoundEvent.Reminder);
 
+    /// <summary>
+    /// The only built-in template that persists on screen until the user explicitly dismisses it.
+    /// Use for maintenance windows, outage notices, or any message that must not silently expire —
+    /// situations where a user who misses the notification could be caught off guard by a system event.
+    /// <para>
+    /// <b>Persistence:</b> <b>Stays on screen indefinitely until dismissed.</b> The banner does not
+    /// auto-dismiss on the system timer. The notification remains in Action Center after dismissal.
+    /// This is the correct template when delivery confirmation matters.
+    /// </para>
+    /// <para>
+    /// <b>Scenario:</b> <see cref="AppNotificationScenario.Reminder"/> — Windows keeps the banner
+    /// visible until the user acts on it or explicitly closes it. Respects Do Not Disturb /
+    /// Focus Assist (will not break through focus sessions — use <see cref="Alert"/> if that is
+    /// required).
+    /// </para>
+    /// <para><b>Images:</b> Tenant logo override only (no hero image).</para>
+    /// <para><b>Sound:</b> Reminder chime (<see cref="AppNotificationSoundEvent.Reminder"/>).</para>
+    /// <para><b>Buttons:</b> Got it (primary).</para>
+    /// </summary>
     public static ToastTemplate Reminder { get; } = new(
         ToastTemplateKey.Reminder,
         Title: "Maintenance reminder",
@@ -92,6 +176,22 @@ internal static class ToastTemplateCatalog
         Scenario: AppNotificationScenario.Reminder,
         Sound: AppNotificationSoundEvent.Reminder);
 
+    /// <summary>
+    /// A visually rich, branded notification for positive milestones — new hire onboarding,
+    /// certifications, anniversaries, team recognition. The hero image makes it stand out
+    /// against standard system notifications.
+    /// <para>
+    /// <b>Persistence:</b> Auto-dismisses per the system's default notification timer.
+    /// Moves to Action Center on dismiss.
+    /// </para>
+    /// <para>
+    /// <b>Scenario:</b> <see cref="AppNotificationScenario.Default"/> — no special behavior;
+    /// respects Do Not Disturb / Focus Assist.
+    /// </para>
+    /// <para><b>Images:</b> Hero image (364×180) + tenant logo override.</para>
+    /// <para><b>Sound:</b> System default notification sound.</para>
+    /// <para><b>Buttons:</b> Thanks (primary).</para>
+    /// </summary>
     public static ToastTemplate Celebration { get; } = new(
         ToastTemplateKey.Celebration,
         Title: "Welcome to the team!",
@@ -103,6 +203,23 @@ internal static class ToastTemplateCatalog
         Scenario: AppNotificationScenario.Default,
         Sound: AppNotificationSoundEvent.Default);
 
+    /// <summary>
+    /// A compact, text-only notification for upcoming maintenance windows, patch cycles,
+    /// or service interruptions. No images keep it lightweight and fast to render on
+    /// endpoints with limited bandwidth or constrained GPU resources.
+    /// <para>
+    /// <b>Persistence:</b> Auto-dismisses per the system's default notification timer.
+    /// Moves to Action Center on dismiss. If the notification must stay on screen until
+    /// acknowledged, use <see cref="Reminder"/> instead.
+    /// </para>
+    /// <para>
+    /// <b>Scenario:</b> <see cref="AppNotificationScenario.Default"/> — no special behavior;
+    /// respects Do Not Disturb / Focus Assist.
+    /// </para>
+    /// <para><b>Images:</b> Tenant logo override only (no hero image).</para>
+    /// <para><b>Sound:</b> System default notification sound.</para>
+    /// <para><b>Buttons:</b> Details (primary), Acknowledge.</para>
+    /// </summary>
     public static ToastTemplate Maintenance { get; } = new(
         ToastTemplateKey.Maintenance,
         Title: "Scheduled maintenance window",

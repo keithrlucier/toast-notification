@@ -96,11 +96,45 @@
       Pass via: msiexec /i ... /qn CLIENTID=... SERVERURL=... ENROLLMENTKEY=...
     -->
     <Property Id="ENROLLMENTKEY" />
+    <!--
+      Set DISABLEAUTOUPDATE=1 to write a registry sentinel that tells the agent to
+      skip all Velopack update checks. Required for self-hosted deployments pointing
+      the agent at an on-premises backend — there is no releases.toastnotification.com
+      feed to poll. Also useful for MSP environments where the RMM tool owns patching.
+
+      Pass via: msiexec /i ToastNotification.Agent.msi /qn CLIENTID=... SERVERURL=... DISABLEAUTOUPDATE=1
+
+      The agent reads HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate at
+      startup. A non-zero value causes UpdateService.RunUpdateLoopAsync to return
+      immediately. The value persists across upgrades because the registry key is
+      managed by this component, not by the application binary itself.
+    -->
+    <Property Id="DISABLEAUTOUPDATE" />
+
+    <!--
+      Writes HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate = 1 when
+      DISABLEAUTOUPDATE=1 is passed on the msiexec command line. The Condition element
+      causes Windows Installer to skip this component when the property is absent or
+      not "1", so the key is not created on standard installs.
+      On uninstall the key is removed automatically (KeyPath="yes" on the RegistryValue).
+    -->
+    <ComponentGroup Id="DisableAutoUpdateReg" Directory="INSTALLFOLDER">
+      <Component Id="DisableAutoUpdateRegistry" Guid="C3E7F2A1-D48B-4F6E-B290-5A1C8D9E0F23">
+        <Condition>DISABLEAUTOUPDATE = "1"</Condition>
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\Toast2IT\Toast Notification"
+                       Name="DisableAutoUpdate"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
 
     <Feature Id="Main" Title="Toast Notification Agent" Level="1">
       <ComponentGroupRef Id="AgentFiles" />
       <ComponentGroupRef Id="LogonTaskAssets" />
       <ComponentGroupRef Id="Shortcuts" />
+      <ComponentGroupRef Id="DisableAutoUpdateReg" />
     </Feature>
 
     <!--

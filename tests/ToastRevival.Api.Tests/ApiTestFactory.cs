@@ -1,7 +1,11 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.IdentityModel.Tokens;
 
 namespace ToastRevival.Api.Tests;
 
@@ -59,6 +63,27 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
             {
                 config.AddInMemoryCollection(_extraConfig);
             }
+        });
+
+        // Program.cs captures Jwt:Key/Issuer/Audience from builder.Configuration at
+        // service-registration time — before our ConfigureAppConfiguration callback
+        // appends appsettings.Test.json. PostConfigure runs after all Configure calls
+        // and sees the fully-resolved test config, so the JWT middleware validates
+        // against the same key/issuer/audience that TokenService uses to sign tokens.
+        builder.ConfigureServices((ctx, services) =>
+        {
+            services.PostConfigure<JwtBearerOptions>(
+                JwtBearerDefaults.AuthenticationScheme,
+                opts =>
+                {
+                    var key = ctx.Configuration["Jwt:Key"]!;
+                    opts.TokenValidationParameters.IssuerSigningKey =
+                        new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
+                    opts.TokenValidationParameters.ValidIssuer =
+                        ctx.Configuration["Jwt:Issuer"];
+                    opts.TokenValidationParameters.ValidAudience =
+                        ctx.Configuration["Jwt:Audience"];
+                });
         });
     }
 }

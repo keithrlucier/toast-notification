@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
+using ToastRevival.Api.Services;
 
 namespace ToastRevival.Api.Tests;
 
@@ -65,13 +66,13 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
             }
         });
 
-        // Program.cs captures Jwt:Key/Issuer/Audience from builder.Configuration at
-        // service-registration time — before our ConfigureAppConfiguration callback
-        // appends appsettings.Test.json. PostConfigure runs after all Configure calls
-        // and sees the fully-resolved test config, so the JWT middleware validates
-        // against the same key/issuer/audience that TokenService uses to sign tokens.
         builder.ConfigureServices((ctx, services) =>
         {
+            // Program.cs captures Jwt:Key/Issuer/Audience from builder.Configuration at
+            // service-registration time — before our ConfigureAppConfiguration callback
+            // appends appsettings.Test.json. PostConfigure runs after all Configure calls
+            // and sees the fully-resolved test config, so the JWT middleware validates
+            // against the same key/issuer/audience that TokenService uses to sign tokens.
             services.PostConfigure<JwtBearerOptions>(
                 JwtBearerDefaults.AuthenticationScheme,
                 opts =>
@@ -84,6 +85,23 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
                     opts.TokenValidationParameters.ValidAudience =
                         ctx.Configuration["Jwt:Audience"];
                 });
+
+            // Replace real email/SMS senders with no-ops so tests that exercise auth
+            // flows don't need real credentials and don't fire external API calls.
+            services.AddTransient<IEmailService, NullEmailService>();
+            services.AddTransient<ISmsService, NullSmsService>();
         });
     }
+}
+
+file-private sealed class NullEmailService : IEmailService
+{
+    public Task SendAsync(string toEmail, string toName, string subject, string htmlBody)
+        => Task.CompletedTask;
+}
+
+file-private sealed class NullSmsService : ISmsService
+{
+    public Task SendAsync(string toPhone, string message)
+        => Task.CompletedTask;
 }

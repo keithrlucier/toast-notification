@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+.github-pat
 Docs/ToastRevival/.env
 
 # SSH private keys (Lightsail, etc.) — never commit

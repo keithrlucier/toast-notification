@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+    xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+    xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+    xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+    xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+    xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+    IgnorableNamespaces="uap uap5 rescap com desktop">
+
+  <Identity
+      Name="FileUnityCloud.ToastNotification"
+      Publisher="CN=A6ED11E0-AF8D-4915-9F9C-DC58C9005BEE"
+      Version="0.4.0.0"
+      ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Toast Notification</DisplayName>
+    <PublisherDisplayName>TOAST2IT, LLC</PublisherDisplayName>
+    <Logo>Images\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application
+        Id="App"
+        Executable="ToastNotification.Agent.exe"
+        EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+          DisplayName="Toast Notification"
+          Description="Managed Windows toast notifications for MSP-managed endpoints."
+          BackgroundColor="#0F1117"
+          Square150x150Logo="Images\Square150x150Logo.png"
+          Square44x44Logo="Images\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Images\Wide310x150Logo.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="ToastNotification.Agent.exe" Arguments="----AppNotificationActivated:" DisplayName="Toast Notification Activator">
+              <com:Class Id="7FA7762F-41EC-4D72-9F06-58964AB36FEA" DisplayName="Toast Notification Activator" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="7FA7762F-41EC-4D72-9F06-58964AB36FEA" />
+        </desktop:Extension>
+        <uap5:Extension Category="windows.startupTask">
+          <uap5:StartupTask TaskId="ToastNotificationAgent" Enabled="true" DisplayName="Toast Notification" />
+        </uap5:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+</Package>

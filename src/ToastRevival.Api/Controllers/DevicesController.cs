@@ -1,0 +1,247 @@
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
+using ToastRevival.Api.Data;
+using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Models;
+using ToastRevival.Api.Services;
+
+namespace ToastRevival.Api.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class DevicesController : ControllerBase
+{
+    private readonly AppDbContext _db;
+    private readonly ITokenService _tokens;
+    private readonly IAuditService _audit;
+
+    private readonly ILicenseService _license;
+    private readonly IStripeBillingSyncService _billingSync;
+
+    public DevicesController(
+        AppDbContext db,
+        ITokenService tokens,
+        IAuditService audit,
+        ILicenseService license,
+        IStripeBillingSyncService billingSync)
+    {
+        _db = db;
+        _tokens = tokens;
+        _audit = audit;
+        _license = license;
+        _billingSync = billingSync;
+    }
+
+    /// <summary>
+    /// Called by the agent on first run. No authentication required.
+    /// TenantId comes from the MSI property set by the MSP during deployment.
+    ///
+    /// Enrollment key gating (INFO-M1-003): when a tenant has an EnrollmentKey
+    /// set, the request must include the matching key or registration is rejected
+    /// with 403. Tenants without an EnrollmentKey allow open registration.
+    /// </summary>
+    [HttpPost("register")]
+    [EnableRateLimiting("device-per-hour")]
+    public async Task<ActionResult<DeviceTokenResponse>> Register([FromBody] RegisterDeviceRequest req)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == req.TenantId);
+        if (tenant is null) return NotFound("Tenant not found.");
+
+        if (!string.IsNullOrWhiteSpace(tenant.EnrollmentKey))
+        {
+            if (string.IsNullOrWhiteSpace(req.EnrollmentKey) ||
+                !CryptographicOperations.FixedTimeEquals(
+                    System.Text.Encoding.UTF8.GetBytes(req.EnrollmentKey),
+                    System.Text.Encoding.UTF8.GetBytes(tenant.EnrollmentKey)))
+            {
+                return StatusCode(403, "Invalid enrollment key.");
+            }
+        }
+
+        // Idempotent registration. The MSI uninstall wipes per-user config.json on
+        // purpose (so a reinstall starts clean), but that meant every reinstall on
+        // the same machine produced a brand-new Device row, leaving the old row
+        // orphaned — visible to admins as duplicates and (worse) double-counting
+        // against the seat license. Match on TenantId + DeviceName + Username and
+        // refresh credentials on the existing (non-decommissioned) row instead of
+        // creating a sibling. Decommissioned rows are not reused — those represent
+        // a deliberate admin action and a re-registration should provision a new
+        // device row + go through the license CanRegisterDeviceAsync gate.
+        var existing = await _db.Devices.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(d =>
+                d.TenantId == req.TenantId &&
+                d.DeviceName == req.DeviceName &&
+                d.Username == req.Username &&
+                d.Status != DeviceStatus.Decommissioned);
+
+        var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
+        var tokenHash = HashToken(rawToken);
+
+        Device device;
+        string auditAction;
+        if (existing is not null)
+        {
+            existing.OsVersion = req.OsVersion;
+            existing.AgentVersion = req.AgentVersion;
+            existing.RegistrationToken = tokenHash;
+            existing.Status = DeviceStatus.Active;
+            device = existing;
+            auditAction = "device.re-register";
+            await _db.SaveChangesAsync();
+            // Seat count is unchanged — we're reusing an existing row, not adding one.
+        }
+        else
+        {
+            // M6 D3: license enforcement applies only to NEW seats. A reinstall on an
+            // existing seat (handled above) must not be blocked by license depletion.
+            // INFO-M11-SW-001: the cap check + device INSERT + ConsumedCount bump run
+            // atomically inside the service under a per-tenant advisory lock so two
+            // concurrent registrations for the same trial tenant can't both pass the
+            // 2-device gate before either commits.
+            device = new Device
+            {
+                TenantId = req.TenantId,
+                DeviceName = req.DeviceName,
+                Username = req.Username,
+                OsVersion = req.OsVersion,
+                AgentVersion = req.AgentVersion,
+                RegistrationToken = tokenHash,
+            };
+
+            if (!await _license.TryRegisterDeviceAtomicAsync(tenant, device))
+            {
+                return StatusCode(403, "Subscription canceled. Please renew to register devices.");
+            }
+
+            auditAction = "device.register";
+
+            // Stripe sync stays outside the transaction — it's network I/O and
+            // safe to retry; the seat is already committed.
+            await _billingSync.SyncSubscriptionQuantityAsync(tenant);
+        }
+
+        var jwt = _tokens.CreateDeviceToken(device);
+
+        await _audit.LogAsync(req.TenantId, null, auditAction, "Device",
+            device.Id.ToString(), new { device.DeviceName, device.Username },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new DeviceTokenResponse(jwt, device.Id, req.TenantId, tenant.SigningKey, tenant.Name));
+    }
+
+    [Authorize]
+    [HttpGet]
+    [EnableRateLimiting("tenant-per-minute")]
+    public async Task<ActionResult<IEnumerable<DeviceResponse>>> List()
+    {
+        var devices = await _db.Devices
+            .Include(d => d.GroupMemberships)
+            .ThenInclude(m => m.DeviceGroup)
+            .Where(d => d.Status != DeviceStatus.Decommissioned)
+            .OrderBy(d => d.DeviceName)
+            .ToListAsync();
+
+        return Ok(devices.Select(ToResponse));
+    }
+
+    [Authorize]
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<DeviceResponse>> Get(Guid id)
+    {
+        var device = await _db.Devices
+            .Include(d => d.GroupMemberships)
+            .ThenInclude(m => m.DeviceGroup)
+            .Where(d => d.Id == id && d.Status != DeviceStatus.Decommissioned)
+            .FirstOrDefaultAsync();
+
+        return device is null ? NotFound() : Ok(ToResponse(device));
+    }
+
+    [Authorize]
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Decommission(Guid id)
+    {
+        var device = await _db.Devices.FindAsync(id);
+        if (device is null) return NotFound();
+
+        device.Status = DeviceStatus.Decommissioned;
+        await _db.SaveChangesAsync();
+
+        // M6 D4: maintain ConsumedCount
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var tenant = await _db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId);
+        if (tenant is not null)
+        {
+            await _license.DecrementConsumedAsync(tenant);
+            await _billingSync.SyncSubscriptionQuantityAsync(tenant);
+        }
+
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        await _audit.LogAsync(tenantId, userId, "device.decommission", "Device", id.ToString());
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Returns the current tenant display name for notification attribution.
+    /// Called by the agent on every startup so toasts reflect the latest name
+    /// even if the admin renamed the tenant after the device registered.
+    /// Device-JWT only (requires "deviceId" claim).
+    /// </summary>
+    [Authorize]
+    [HttpGet("tenant-name")]
+    public async Task<ActionResult<TenantAttributionResponse>> GetTenantName()
+    {
+        var deviceIdClaim = User.FindFirstValue("deviceId");
+        if (string.IsNullOrEmpty(deviceIdClaim)) return Unauthorized();
+
+        var tenantIdClaim = User.FindFirstValue("tenantId");
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId)) return Unauthorized();
+
+        var tenant = await _db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId);
+        if (tenant is null) return NotFound();
+
+        return Ok(new TenantAttributionResponse(tenant.Name, tenant.LogoUrl));
+    }
+
+    // Called by agent to confirm it's still alive (heartbeat)
+    [Authorize]
+    [HttpPost("ping")]
+    [EnableRateLimiting("device-per-hour")]
+    public async Task<IActionResult> Ping()
+    {
+        var deviceIdClaim = User.FindFirstValue("deviceId");
+        if (!Guid.TryParse(deviceIdClaim, out var deviceId)) return Unauthorized();
+
+        var device = await _db.Devices.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(d => d.Id == deviceId);
+        if (device is null) return NotFound();
+
+        device.LastPing = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    private static DeviceResponse ToResponse(Device d) =>
+        new(d.Id, d.DeviceName, d.Username, d.OsVersion, d.AgentVersion,
+            d.Status.ToString(), d.LastPing, d.RegisteredAt,
+            d.GroupMemberships
+                .Where(m => m.DeviceGroup.TenantId == d.TenantId)
+                .Select(m => m.DeviceGroupId)
+                .Distinct()
+                .ToList());
+
+    private static string HashToken(string token)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return Convert.ToHexString(bytes).ToLower();
+    }
+}

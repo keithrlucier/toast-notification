@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package
+      Name="Toast Notification Agent"
+      Manufacturer="Toast2IT, LLC"
+      Version="$(var.ProductVersion)"
+      UpgradeCode="A6F3D8F1-7B22-4E5A-9E3C-2A4F8B1C9D70"
+      Scope="perMachine"
+      Compressed="yes"
+      InstallerVersion="500">
+
+    <SummaryInformation Description="Toast Notification Agent installer" />
+
+    <Icon Id="ProductIcon" SourceFile="$(var.AgentSrcDir)\ToastNotification.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
+    <Property Id="ARPHELPLINK"    Value="https://toastnotification.com/docs/getting-started" />
+    <Property Id="ARPURLINFOABOUT" Value="https://toastnotification.com" />
+
+    <!-- EULA dialog (WixUI_Minimal: one screen with license acceptance). -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    <ui:WixUI Id="WixUI_Minimal" />
+
+    <!--
+      OS floor is enforced at runtime by Program.cs — OperatingSystem.IsWindowsVersionAtLeast(10,0,19041).
+      MSI Launch conditions using VersionNT/VersionNT64 return the compatibility-shim
+      version (603) on Windows 10/11 when no Windows 10 manifest entry is present,
+      making any >= 1000 check always fail. Runtime enforcement is the correct gate.
+    -->
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Toast Notification" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppStartMenuFolder" Name="Toast Notification" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="AgentFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**" />
+    </ComponentGroup>
+
+    <ComponentGroup Id="LogonTaskAssets" Directory="INSTALLFOLDER">
+      <Component Id="LogonTaskXml" Guid="78C12E0A-1F86-4D72-8B53-9F4D0A6E1C88">
+        <File Id="ToastNotificationLogonXml"
+              Source="$(var.LogonTaskXmlPath)"
+              Name="ToastNotificationLogon.xml"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="Shortcuts">
+      <Component Id="StartMenuShortcut" Directory="AppStartMenuFolder" Guid="2D1A8E37-B7F0-4F4B-AE5C-71E2A9D6CA42">
+        <Shortcut Id="StartMenuAgentShortcut"
+                  Name="Toast Notification"
+                  Target="[INSTALLFOLDER]ToastNotification.Agent.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Description="Launch the Toast Notification agent.">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="Toast2IT.ToastNotification" />
+          <ShortcutProperty Key="System.AppUserModel.ToastActivatorCLSID" Value="{7FA7762F-41EC-4D72-9F06-58964AB36FEA}" />
+        </Shortcut>
+        <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
+        <RegistryValue Root="HKMU"
+                       Key="Software\Toast2IT\Toast Notification\Install"
+                       Name="StartMenuShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      MSI public properties for silent RMM deployment.
+
+      Usage:
+        msiexec /i ToastNotification.Agent.msi /qn CLIENTID=<tenant-guid> SERVERURL=https://api.example.com
+
+      When both are provided, the WriteBootstrapJson custom action calls the agent
+      exe in setup-bootstrap mode to write %ProgramFiles%\Toast Notification\bootstrap.json.
+      The agent reads bootstrap.json on first launch to register with the backend without
+      requiring environment variables on the endpoint.
+
+      These properties are OPTIONAL — an MSP can omit them and configure bootstrap.json
+      via other means (GPO preference, RMM file deployment, manual placement).
+    -->
+    <Property Id="CLIENTID" />
+    <Property Id="SERVERURL" />
+    <!--
+      Optional pre-shared enrollment key (INFO-M1-003). When the backend tenant
+      has an EnrollmentKey set, this must match or device registration is rejected.
+      Pass via: msiexec /i ... /qn CLIENTID=... SERVERURL=... ENROLLMENTKEY=...
+    -->
+    <Property Id="ENROLLMENTKEY" />
+    <!--
+      Set DISABLEAUTOUPDATE=1 to write a registry sentinel that tells the agent to
+      skip all Velopack update checks. Required for self-hosted deployments pointing
+      the agent at an on-premises backend — there is no releases.toastnotification.com
+      feed to poll. Also useful for MSP environments where the RMM tool owns patching.
+
+      Pass via: msiexec /i ToastNotification.Agent.msi /qn CLIENTID=... SERVERURL=... DISABLEAUTOUPDATE=1
+
+      The agent reads HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate at
+      startup. A non-zero value causes UpdateService.RunUpdateLoopAsync to return
+      immediately. The value persists across upgrades because the registry key is
+      managed by this component, not by the application binary itself.
+    -->
+    <Property Id="DISABLEAUTOUPDATE" />
+
+    <!--
+      Writes HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate = 1 when
+      DISABLEAUTOUPDATE=1 is passed on the msiexec command line. The Condition element
+      causes Windows Installer to skip this component when the property is absent or
+      not "1", so the key is not created on standard installs.
+      On uninstall the key is removed automatically (KeyPath="yes" on the RegistryValue).
+    -->
+    <ComponentGroup Id="DisableAutoUpdateReg" Directory="INSTALLFOLDER">
+      <!--
+        WiX 5 moved the install-time predicate from the <Condition> child
+        element (WiX 3) onto a Condition attribute on the Component itself.
+        The legacy <Condition> child fails with WIX0005 at build time.
+      -->
+      <Component Id="DisableAutoUpdateRegistry"
+                 Guid="C3E7F2A1-D48B-4F6E-B290-5A1C8D9E0F23"
+                 Condition="DISABLEAUTOUPDATE = &quot;1&quot;">
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\Toast2IT\Toast Notification"
+                       Name="DisableAutoUpdate"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Toast Notification Agent" Level="1">
+      <ComponentGroupRef Id="AgentFiles" />
+      <ComponentGroupRef Id="LogonTaskAssets" />
+      <ComponentGroupRef Id="Shortcuts" />
+      <ComponentGroupRef Id="DisableAutoUpdateReg" />
+    </Feature>
+
+    <!--
+      Scheduled Task plumbing.
+
+      Replaces the M0A Startup-folder shortcut with a logon-triggered Scheduled Task
+      registered under \Toast2IT\ToastNotificationAgentLogon. The task runs in the
+      logged-on user's context (group principal BUILTIN\Users, RunLevel=LeastPrivilege)
+      because Windows App SDK toast notifications hard-fail under elevated/admin
+      processes (see Program.cs:17-22). Better GPO and Intune compatibility than the
+      per-machine Startup folder.
+
+      The schtasks.exe Create/Delete invocations run as deferred custom actions in the
+      install/uninstall script, executing as SYSTEM (Impersonate="no") because
+      registering a per-user-group task requires the privilege.
+
+      Uninstall returns "ignore" so a missing-task error on uninstall (e.g., a user
+      manually removed the task before uninstalling the MSI) does not break removal.
+    -->
+    <CustomAction Id="InstallScheduledTask"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationLogon.xml&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <!--
+      Run the agent immediately after install so the device registers without
+      requiring a logoff/logon cycle. schtasks /Run fires the task in the
+      logged-on user's session (LeastPrivilege, unelevated) — the same context
+      the LogonTrigger would use. Return="ignore" because if no interactive
+      session exists (e.g. silent RMM push) the run fails cleanly and the
+      LogonTrigger handles first-run at next logon.
+    -->
+    <CustomAction Id="StartAgentNow"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Run /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
+      KillAgent runs IMMEDIATE (before InstallValidate) so the process is dead
+      before Windows Installer checks for locked files. Running it deferred
+      (after InstallInitialize) is too late — InstallValidate already showed
+      the "close applications" dialog by then.
+    -->
+    <CustomAction Id="KillAgent"
+                  Directory="TARGETDIR"
+                  ExeCommand="&quot;[System64Folder]taskkill.exe&quot; /F /IM ToastNotification.Agent.exe /T"
+                  Execute="immediate"
+                  Return="ignore" />
+
+    <CustomAction Id="UninstallScheduledTask"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Delete /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
+      D9: Write bootstrap.json next to the exe using the agent's own setup-bootstrap
+      mode (XML comments cannot contain the literal CLI double-dash; the actual flag
+      is on the ExeCommand attribute below). Runs before InstallScheduledTask so the
+      task fires into a pre-configured agent at first logon. Conditioned on both
+      CLIENTID and SERVERURL being provided; if either is empty the step is skipped
+      and the MSP must drop bootstrap.json through another channel.
+
+      [CLIENTID] and [SERVERURL] are resolved from MSI properties in the immediate
+      phase when the install script is built — deferred CAs see the expanded values
+      in the ExeCommand string at execution time.
+    -->
+    <CustomAction Id="WriteBootstrapJson"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]ToastNotification.Agent.exe&quot; --setup-bootstrap [CLIENTID] &quot;[SERVERURL]&quot; [ENROLLMENTKEY]"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <!--
+      D9 uninstall: delete bootstrap.json. Return="ignore" — a missing file
+      (e.g. agent already ran and registered, or never bootstrapped) must not
+      block removal.
+    -->
+    <CustomAction Id="DeleteBootstrapJson"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]cmd.exe&quot; /c del /f /q &quot;[INSTALLFOLDER]bootstrap.json&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
+      Uninstall: wipe the per-user config directory so a reinstall triggers
+      fresh device registration instead of reusing a stale/decommissioned deviceId.
+      Runs impersonated (user context) so %LOCALAPPDATA% resolves to the correct
+      profile. Return="ignore" — directory may not exist and that is fine.
+    -->
+    <CustomAction Id="DeleteUserConfig"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]cmd.exe&quot; /c rd /s /q &quot;%LOCALAPPDATA%\Toast2IT\Toast Notification&quot;"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <!-- Write bootstrap.json first; schedule task fires into a configured agent. -->
+      <Custom Action="WriteBootstrapJson"     After="InstallFiles"          Condition="NOT REMOVE AND CLIENTID &lt;&gt; &quot;&quot; AND SERVERURL &lt;&gt; &quot;&quot;" />
+      <Custom Action="InstallScheduledTask"   After="WriteBootstrapJson"    Condition="NOT REMOVE" />
+      <Custom Action="StartAgentNow"          After="InstallScheduledTask"  Condition="NOT REMOVE" />
+      <Custom Action="KillAgent"              Before="InstallValidate"        Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="UninstallScheduledTask" Before="DeleteUserConfig"      Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="DeleteUserConfig"       Before="DeleteBootstrapJson"  Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="DeleteBootstrapJson"    Before="RemoveFiles"          Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+
+  </Package>
+</Wix>

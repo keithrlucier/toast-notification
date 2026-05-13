@@ -66,6 +66,17 @@ Three-component product with shared .NET 8 ecosystem:
 - Auto-update via Velopack (toggle-able via registry key)
 - RMM tools: NinjaOne, Datto RMM, ConnectWise Automate, etc.
 
+### 4. Self-Hosted / Roll Your Own (M11 — Docker Compose)
+- Full source published at public GitHub repo (pending git history audit — M11.D4)
+- Three-container Docker Compose stack: ASP.NET Core 8 API + Vite/nginx dashboard + postgres:16
+- Self-hosters run their own backend; point the agent MSI at their instance via `SERVERURL=`
+- Billing disabled by default (empty Stripe keys)
+- Content Safety and Turnstile gracefully degrade when keys are omitted
+- Agent auto-update disabled via `DISABLEAUTOUPDATE=1` MSI property (M11.D3 — pending)
+- No device cap, no SaaS license required
+- Three-tier business model (2026-05-12): 2-device/14-day admin-approved trial → $22/mo SaaS (0–100 devices) → Roll Your Own (free, forever)
+- Architecture reference: `Docs/rollyourown.md`
+
 ## Code Signing (MSI and MSIX)
 
 The Sectigo OV cert lives on a Thales SafeNet hardware token. Keith plugs in the token, unlocks it via the SafeNet tray app, and the cert becomes available to Windows CryptoAPI for any signing tool. Cert details:

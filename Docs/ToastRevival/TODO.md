@@ -63,6 +63,26 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 
 ---
 
+---
+
+## Engineering backlog (M11 — Self-Hosted Distribution, opened 2026-05-12)
+
+- [x] **Docker Compose infrastructure** — SHIPPED 2026-05-12 (commit `eff6c6c`). API + Dashboard + Postgres containers. Billing disabled (empty Stripe keys). Turnstile/ContentSafety gracefully degrade. Named volumes for DB data and uploaded assets. `.env.example` documents all config keys. `README-SELF-HOST.md` is the self-hoster entry point.
+
+- [ ] **LicenseService billing bypass audit** (INFO-M11-001) — Verify `CanRegisterDeviceAsync` behavior when `Stripe__SecretKey` is empty. Self-hosters must not hit a device cap. If the method currently blocks on `BillingStatus.Active` when no Stripe subscription exists, add `TOAST_REQUIRE_BILLING` env flag to short-circuit. Anthony owns the code audit; Carl approves the approach before any code changes.
+
+- [ ] **2-device trial cap alignment** — Current free tier: devices 1–25 always free, 26+ requires Stripe. New model: trial tenants get 2 devices for 14 days. `LicenseService` + `appsettings.json` + `Onboarding.tsx` copy need to align. Pricing model changes in M11.D6.
+
+- [ ] **`DISABLEAUTOUPDATE` MSI property** — WiX property that writes a registry key preventing the agent from polling `releases.toastnotification.com`. Required for self-hosters with `SERVERURL` pointing at their own backend. Anthony scopes the WiX change; ships in the next signed MSI bundle.
+
+- [ ] **Git history sanitization audit** — Full scan of commit history for server IPs, `.pem` files, passwords, or internal paths before the public repo goes live. Anthony runs the audit; Carl reviews findings before any rewrite/filter.
+
+- [ ] **Public GitHub repo creation** — `Toast2IT/toast-notification` (or personal account — TBD with Keith). First commit: clean sanitized source. `README-SELF-HOST.md` becomes the repo README.
+
+- [ ] **Marketing site pricing page rewrite** — Three-tier honest copy. Diana leads. No comparison tables, no urgency CTAs, no "free trial!" badges. Origin story in the lead. Connects to the honest tone in `README-SELF-HOST.md`.
+
+---
+
 ## Keith actions
 
 - [x] **Configure production Turnstile keys** - SHIPPED 2026-05-12. `Turnstile__SiteKey` / `Turnstile__SecretKey` / `Turnstile__Required=true` plus `Registration__ReviewEmail` / `Registration__TrialDays=14` / `Registration__AllowLegacyDirectRegister=false` set on TOASTWEB1 `/opt/toast/.env`. Pre-change backup at `/opt/toast/.env.bak.2026-05-12-pre-m10`. Cloudflare siteverify reachable from prod (fake-token smoke returns 400 "Human verification failed").

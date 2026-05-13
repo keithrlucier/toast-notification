@@ -1,5 +1,39 @@
 # ToastRevival - Test Log
 
+## 2026-05-12 (M11.D1 — Docker Compose infrastructure)
+
+### Build Checks
+
+- `dotnet build src\ToastRevival.Api\ToastRevival.Api.csproj`: **0 warnings, 0 errors** (no API code changed — infrastructure files only).
+- `npm run build` from `src\ToastRevival.Dashboard`: **not re-run** (no dashboard code changed).
+- Docker build: **not yet verified locally** — Docker Desktop not available in the dev session context. Local smoke test deferred to D2 verification.
+
+### Scope Verified (Abish code sweep, 2026-05-12)
+
+- `src/ToastRevival.Api/Dockerfile`: multi-stage build, API project only (Agent excluded — Windows-only). `ASPNETCORE_URLS=http://+:8080`. `/app/wwwroot/assets` declared as VOLUME.
+- `src/ToastRevival.Dashboard/Dockerfile`: `node:20-alpine` build stage → `nginx:alpine` runtime. `npm run build` includes `prerender-seo.mjs` (file I/O only, no network calls — safe in Docker build context).
+- `src/ToastRevival.Dashboard/nginx.conf`: `/api/` proxy with forwarded headers, `/hubs/` WebSocket upgrade, `/` SPA fallback (`try_files $uri $uri/ /index.html`).
+- `docker-compose.yml`: postgres:16-alpine with healthcheck; API `depends_on: condition: service_healthy`; Stripe keys empty (billing disabled); `AllowedOrigins__0` wired; named volumes `db-data` + `assets`.
+- `.env.example`: no real secrets — all placeholders. `JWT_KEY` guard comment (32+ chars) present. `TURNSTILE_REQUIRED=false` default.
+- `README-SELF-HOST.md`: no codename "ToastRevival", no server IPs, no internal docs referenced. Product name "Toast Notification" throughout.
+
+### Boundaries
+
+- End-to-end `docker compose up` smoke test NOT run this session — requires Docker Desktop.
+- LicenseService behavior with empty Stripe keys NOT yet verified (INFO-M11-001).
+- `DISABLEAUTOUPDATE` registry key NOT yet implemented (INFO-M11-002).
+- Git history sanitization NOT yet run (INFO-M11-004).
+
+### Next Verification Gate (M11.D2)
+
+Before D2 closes:
+1. `docker compose up -d` on a clean Linux host — API, dashboard, and postgres must all reach healthy state.
+2. Navigate to `http://host` — dashboard must load.
+3. Register via `/register` — trial request must queue (not provision tenant directly).
+4. Verify `LicenseService.CanRegisterDeviceAsync` with no Stripe subscription (INFO-M11-001 resolution).
+
+---
+
 ## 2026-05-12 (Trial approval gate, install page, SEO refresh)
 
 ### Build Checks

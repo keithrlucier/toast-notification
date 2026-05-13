@@ -1,5 +1,45 @@
 # ToastRevival - Fix List
 
+---
+
+## M11 Open Items (opened 2026-05-12)
+
+### INFO-M11-001 — LicenseService self-hosted bypass — **OPEN**
+
+**Filed:** 2026-05-12 (M11 dev meeting kickoff).
+**Surface:** `src/ToastRevival.Api/Services/LicenseService.cs` — `CanRegisterDeviceAsync`
+**Issue:** Self-hosted deployments run with empty `Stripe__SecretKey`. Current `CanRegisterDeviceAsync` logic may block device registration if it checks for `BillingStatus.Active` when no Stripe subscription exists. Self-hosters must not hit a device cap or billing wall.
+**Required verification:** Read `LicenseService.CanRegisterDeviceAsync` — confirm what it returns when `Stripe__SecretKey` is empty/null and no `StripeSubscriptionId` exists on the tenant row. If it returns false or throws, add `TOAST_REQUIRE_BILLING` env flag to short-circuit the check.
+**Owner:** Anthony (code audit) + Carl (approach sign-off before any change).
+**Blocking:** M11.D2.
+
+### INFO-M11-002 — DISABLEAUTOUPDATE MSI property — **OPEN**
+
+**Filed:** 2026-05-12 (M11 dev meeting kickoff).
+**Surface:** `installer/ToastRevival.Agent.Setup.wxs` + `src/ToastRevival.Agent/Services/UpdateService.cs`
+**Issue:** Self-hosters point the agent at their own backend. The Velopack auto-update feed (`releases.toastnotification.com`) must not be polled — it would overwrite the self-hoster's configuration with our managed build. Need a `DISABLEAUTOUPDATE` WiX property that writes a registry key; `UpdateService.cs` reads the key and returns early.
+**Owner:** Anthony.
+**Blocking:** M11.D3.
+
+### INFO-M11-003 — 2-device trial cap not yet enforced — **OPEN**
+
+**Filed:** 2026-05-12 (M11 dev meeting kickoff).
+**Surface:** `src/ToastRevival.Api/Services/LicenseService.cs` — free tier threshold (currently 25 devices). `src/ToastRevival.Dashboard/src/pages/Onboarding.tsx` — copy references old tier model.
+**Issue:** New model is 2-device / 14-day trial for approved tenants. Current free tier allows up to 25 devices. Trial tenants need their own tier logic separate from the ongoing free tier for self-hosted operators.
+**Note:** This is a pricing model change — needs Carl's architecture sign-off before touching `LicenseService`. Don't change before understanding whether trial tenants and self-hosted operators share the same code path.
+**Owner:** Anthony (code) + Carl (arch) + Diana (Onboarding copy).
+**Blocking:** M11.D6.
+
+### INFO-M11-004 — Git history sanitization required before public repo — **OPEN**
+
+**Filed:** 2026-05-12 (M11 dev meeting kickoff).
+**Surface:** Full git history.
+**Issue:** Before the repo goes public, the full commit history must be scanned for: server IPs (54.82.103.160, 172.26.3.164, 52.21.249.120), `.pem` file contents (SSH keys), Stripe keys, database passwords, or any other credentials. `Docs/Assets/*.pem` is gitignored but confirm no historical commit ever included the content. Use `git log -p --all` + grep, or `trufflehog`.
+**Owner:** Anthony (audit) + Carl (final sign-off).
+**Blocking:** M11.D4 (public repo creation cannot proceed until this is clean).
+
+---
+
 ## Resolved 2026-05-10 (session 3)
 
 ### INFO-MSIX-004 (A/B/C) — **RESOLVED 2026-05-10**

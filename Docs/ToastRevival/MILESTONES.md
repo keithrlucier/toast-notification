@@ -569,6 +569,69 @@ Four low/nice-to-have INFO items closed. No new milestone, no EF migration, no s
 
 ---
 
+---
+
+## M10: Trial Approval Gate + Tenant Install Surface  **[COMPLETE 2026-05-12]**
+**Goal**: Replace open tenant self-registration with an admin-reviewed approval flow. Add a dedicated MSI install surface for approved tenants.
+
+### Deliverables (all closed)
+- **D1** [x]: `TrialRequest` EF model + `M10TrialApprovalGate` migration — stores company, contact, phone, job title, use case, Turnstile metadata.
+- **D2** [x]: Public `/register` now queues a `TrialRequest` instead of creating a tenant. `AllowLegacyDirectRegister=false` in production.
+- **D3** [x]: Platform admin `/system/trial-requests` — lists pending requests with company/contact/use-case, approve or reject actions. Approval provisions tenant + sends password setup email.
+- **D4** [x]: Cloudflare Turnstile bot protection wired to registration form. `TurnstileVerifier` middleware. `Turnstile__Required=true` in production.
+- **D5** [x]: `/devices/install` tenant install surface — tenant admin sees prefilled msiexec command with CLIENTID + ENROLLMENTKEY. Devices and Onboarding pages link directly.
+- **D6** [x]: Marketing + SEO refresh — pricing, docs, Home.tsx, JSON-LD, `llms.txt` aligned with reviewed-trial model and block pricing ($22/mo flat). No fake stats.
+
+### Code Sweep
+- Sweep #34 (Abish): 40-file bundle shipped in 2 commits. 6 INFO tickets. Cloudflare Turnstile validator follows defense-in-depth. M9.A/login/MFA endpoints preserved. Banned-terms clean.
+- Verdict: SHIP.
+
+### Build
+- `dotnet build`: 0 warnings, 0 errors.
+- `npm run build`: passed (tsc + Vite + prerender-seo.mjs). Existing chunk-size warning unchanged.
+
+---
+
+## M11: Self-Hosted Docker Distribution + Business Model Refresh  **[IN PROGRESS — opened 2026-05-12]**
+**Goal**: Make Toast Notification publicly self-hostable via Docker Compose. Refresh the three-tier business model to reflect the project's honest origin and current reality. No SaaS hype.
+
+### Origin context
+Built in 2020 for MSPs during the COVID-19 WFH explosion. 986,000 legitimate messages delivered across 17 production tenants. Teams and Slack crushed the generic use case. This is now a passion project for the shops where OS-level fleet notification without a third-party dependency still matters. The self-hosted path is genuinely free, no strings.
+
+### Business model (three tiers)
+| Tier | What they get | Cost |
+|---|---|---|
+| Free Trial | 2 devices, fully functional, 14 days, admin-approved | $0 |
+| Managed SaaS | 0–100 devices, we handle hosting/updates/backups | $22/mo |
+| Roll Your Own | Full Docker Compose source, self-hosted, no device cap | $0 |
+
+### Deliverables
+- **D1** [x **COMPLETE 2026-05-12**]: Docker Compose infrastructure — `src/ToastRevival.Api/Dockerfile` (multi-stage ASP.NET Core 8), `src/ToastRevival.Dashboard/Dockerfile` (Vite → nginx alpine), `src/ToastRevival.Dashboard/nginx.conf` (SPA routing + API/SignalR proxy), `docker-compose.yml` (3-service stack: toast-api, toast-dashboard, toast-db), `.env.example` (all config keys documented), `README-SELF-HOST.md` (origin story + 3-step deploy). Billing disabled by default (empty Stripe keys). Turnstile and Content Safety gracefully degrade. Named volumes for DB data and uploaded assets. Commit `eff6c6c`.
+- **D2** [ ]: `LicenseService` billing bypass audit — verify `CanRegisterDeviceAsync` behavior with empty `Stripe__SecretKey`. Self-hosters must not hit a device-cap wall. Add `TOAST_REQUIRE_BILLING` env flag or confirm empty-key path already passes freely.
+- **D3** [ ]: `DISABLEAUTOUPDATE` MSI property — WiX property + registry key that prevents the agent from polling `releases.toastnotification.com`. Required for self-hosters pointing the agent at their own backend.
+- **D4** [ ]: Git history sanitization audit — scan full history for committed server IPs, passwords, SSH keys, or `.pem` files before the public repo goes live. BFG or `git filter-repo` if needed.
+- **D5** [ ]: Create public GitHub repo — `Toast2IT/toast-notification` (or under Keith's personal account). First commit is the sanitized source. README-SELF-HOST.md becomes the repo README.
+- **D6** [ ]: Pricing model alignment — update `LicenseService` free-trial tier: 2-device cap for trial tenants specifically (currently cap is 25). Update `appsettings.json` + `Onboarding.tsx` copy to reflect new three-tier model.
+- **D7** [ ]: Marketing site pricing page rewrite — honest three-tier copy. Diana leads. No comparison tables, no urgency CTAs. Origin story in the lead.
+
+### Open Research
+- Does `LicenseService.CanRegisterDeviceAsync` return true for all devices when `Stripe__SecretKey` is empty? Verify in code — don't assume.
+- What is the expiry UX after 14 days? Agent goes quiet? Dashboard locks? Tenant gets a nudge and upgrade path?
+- GitHub org: `Toast2IT` already exists on Partner Center — use it? Or Keith's personal account for the repo?
+- `DISABLEAUTOUPDATE`: registry key name + WiX property syntax TBD at D3.
+
+### Code Sweep
+- D1 sweep (Abish, 2026-05-12): Doc-only + additive infrastructure. Zero blast radius on existing code. No server IPs, no codename leaks, no secrets. SHIP.
+- D2–D7: sweeps queued per deliverable.
+
+### Team Assignment
+- Carl: architecture decisions (billing bypass, public repo strategy, git history)
+- Anthony: D2 (LicenseService audit), D3 (DISABLEAUTOUPDATE), D4 (history sanitization), D5 (repo creation + first push)
+- Diana: D7 (marketing pricing page rewrite)
+- Abish: code sweeps on each deliverable
+
+---
+
 ## Milestone Summary
 
 | Milestone | Focus | Key Risk | Est. Complexity |
@@ -583,3 +646,5 @@ Four low/nice-to-have INFO items closed. No new milestone, no EF migration, no s
 | M7 | Marketing site | Design consistency with dashboard | Low |
 | M8 | Testing & beta | Real-world deployment diversity | High |
 | M9 | Launch | Store certification, infrastructure hardening | Medium |
+| M10 | Trial approval gate | Turnstile + registration flow correctness | Low |
+| M11 | Self-hosted distribution | LicenseService bypass + git history sanitization | Medium |

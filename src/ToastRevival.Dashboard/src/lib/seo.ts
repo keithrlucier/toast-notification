@@ -127,7 +127,7 @@ export function softwareApplicationLd(): Record<string, unknown> {
     url: SITE_URL,
     offers: {
       '@type': 'Offer',
-      name: 'Standard',
+      name: 'Managed SaaS',
       price: '22.00',
       priceCurrency: 'USD',
       priceSpecification: {
@@ -137,7 +137,8 @@ export function softwareApplicationLd(): Record<string, unknown> {
       },
       eligibleQuantity: {
         '@type': 'QuantitativeValue',
-        minValue: 100,
+        minValue: 0,
+        maxValue: 100,
         unitText: 'device',
       },
       availability: 'https://schema.org/InStock',
@@ -154,19 +155,27 @@ export function pricingProductLd(): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'Product',
-    name: `${SITE_NAME} - Standard plan`,
+    name: `${SITE_NAME} - Managed SaaS plan`,
     description:
-      'Reviewed trial access and simple fleet block pricing. Standard is $22 per month for 26-100 devices. Includes every feature, no tiers.',
+      'Three tiers: Free Trial (2 devices, 14 days, reviewed), Managed SaaS ($22/month up to 100 devices), or Roll Your Own (Docker Compose self-host, free, no device cap). Every tier ships every feature.',
     brand: { '@type': 'Brand', name: SITE_NAME },
     offers: {
       '@type': 'AggregateOffer',
       priceCurrency: 'USD',
-      lowPrice: '22.00',
-      offerCount: 1,
+      lowPrice: '0.00',
+      highPrice: '22.00',
+      offerCount: 3,
       offers: [
         {
           '@type': 'Offer',
-          name: 'Standard',
+          name: 'Free Trial',
+          price: '0.00',
+          priceCurrency: 'USD',
+          availability: 'https://schema.org/InStock',
+        },
+        {
+          '@type': 'Offer',
+          name: 'Managed SaaS',
           price: '22.00',
           priceCurrency: 'USD',
           priceSpecification: {
@@ -174,6 +183,13 @@ export function pricingProductLd(): Record<string, unknown> {
             price: '22.00',
             priceCurrency: 'USD',
           },
+          availability: 'https://schema.org/InStock',
+        },
+        {
+          '@type': 'Offer',
+          name: 'Roll Your Own (self-hosted)',
+          price: '0.00',
+          priceCurrency: 'USD',
           availability: 'https://schema.org/InStock',
         },
       ],

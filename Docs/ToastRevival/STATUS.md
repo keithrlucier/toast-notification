@@ -2,9 +2,11 @@
 
 > Repo / project codename: **ToastRevival** (internal). Product / user-facing brand: **Toast Notification** (toastnotification.com).
 
-Last updated: 2026-05-12
+Last updated: 2026-05-13
 
 ## Project State
+
+**M11 D7 pricing page rewrite shipped (2026-05-13).** Public `/pricing` is now on the locked M11 three-tier model — Free Trial (2 devices, 14 days, reviewed), Managed SaaS ($22/month flat up to 100 devices), Roll Your Own (Docker Compose self-host, $0, no device cap). Origin story (2020 MSP COVID build, 986k notifications, 17 tenants) leads. Three equal-weight tier cards — no "Most Popular" badge, no comparison table, no urgency CTAs. RYO card links to https://github.com/keithrlucier/toast-notification. Home.tsx pricing teaser converted to matching `m-tier-grid` 3-card layout; legacy ✓ checkmark Unicode glyphs removed from UI bullets. Crawler/LLM surfaces aligned: Llms.tsx + llms.txt pricing facts rewritten; prerender-seo.mjs route bodies and AggregateOffer JSON-LD shapes updated; seo.ts `softwareApplicationLd` and `pricingProductLd` rewritten to declare 3 Offers (Free Trial $0, Managed SaaS $22, RYO $0) with corrected eligibleQuantity 0–100 on the paid tier. Build clean. Grep verification: zero remaining "26-100" / "101-200" / "$44/month" / "fleet block" patterns in dist. Code Sweep #41 (Abish) SHIP verdict.
 
 **Trial approval gate + tenant install surface added (2026-05-12).** Public `/register` is now a reviewed trial request instead of direct tenant creation. The request collects company, website, contact, phone, job title, intended use case, notes, IP/user-agent, and Cloudflare Turnstile verification metadata before storing a pending `TrialRequest`. Platform admins can review pending/approved/rejected requests at `/system/trial-requests` and approve into a tenant-owner account with a password setup email. Legacy direct registration is disabled by default outside test config. Tenant admins now have a first-class `/devices/install` page with tenant ID, server URL, MSI download URL, and a prefilled `msiexec` deployment command using the tenant enrollment key.
 
@@ -72,7 +74,7 @@ See `EVIDENCE/2026-05-07-m0-d2-msix-build.md`, `-publisher-fix.md`, `-signed.md`
 
 **Codex: no open tasks as of 2026-05-10.**
 
-**Next: M7.D (SEO + JSON-LD + sitemap + llms.txt + favicon + OG image — same Lightsail deploy), M8 (integration testing + closed beta), M9 (launch). Store copy + Diana tile assets deferred polish before M9 marketing push.**
+**Next: M11 close (D1–D7 all shipped) → deploy aligned marketing surfaces to production (toast-api unchanged; `cd dashboard && npm run build` + nginx static swap) → M8 beta (integration testing + closed beta), M9 (launch). Store copy + Diana tile assets deferred polish before M9 marketing push.**
 
 ## M0A Deliverables - All Closed
 

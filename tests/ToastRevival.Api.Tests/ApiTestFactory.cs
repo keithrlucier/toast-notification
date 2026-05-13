@@ -94,13 +94,13 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
     }
 }
 
-file-private sealed class NullEmailService : IEmailService
+file sealed class NullEmailService : IEmailService
 {
     public Task SendAsync(string toEmail, string toName, string subject, string htmlBody)
         => Task.CompletedTask;
 }
 
-file-private sealed class NullSmsService : ISmsService
+file sealed class NullSmsService : ISmsService
 {
     public Task SendAsync(string toPhone, string message)
         => Task.CompletedTask;

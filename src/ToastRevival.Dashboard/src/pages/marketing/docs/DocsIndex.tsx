@@ -23,6 +23,11 @@ const HUB_LINKS = [
     body: 'msiexec with CLIENTID, SERVERURL, and ENROLLMENTKEY properties. Tested with NinjaOne, Datto, ConnectWise Automate, Atera, and any RMM that supports silent MSI deployment.',
   },
   {
+    to: '/docs/moderation',
+    title: 'Content moderation',
+    body: 'Configure per-tenant scanning policy, severity thresholds, the admin approval queue, custom blocklist terms, and bring-your-own Azure Content Safety credentials.',
+  },
+  {
     to: '/docs/api',
     title: 'REST API reference',
     body: 'Authentication, devices, notifications, and webhooks. Bearer-token JWT for users and devices. JSON over HTTPS.',

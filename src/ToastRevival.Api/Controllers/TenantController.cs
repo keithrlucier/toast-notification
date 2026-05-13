@@ -127,6 +127,100 @@ public class TenantController : ControllerBase
         return Ok(new { url });
     }
 
+    /// <summary>
+    /// M11 — per-tenant content moderation policy. Admin+ only.
+    /// Custom Azure Content Safety key is returned masked (last 4 chars only);
+    /// the dashboard never receives the raw key after first save.
+    /// </summary>
+    [HttpGet("moderation")]
+    public async Task<ActionResult<TenantModerationSettingsResponse>> GetModeration(
+        [FromServices] IConfiguration config)
+    {
+        if (!IsAdmin()) return Forbid();
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var t = await _db.Tenants.FindAsync(tenantId);
+        if (t is null) return NotFound();
+
+        var platformConfigured =
+            !string.IsNullOrWhiteSpace(config["ContentSafety:Endpoint"]) &&
+            !string.IsNullOrWhiteSpace(config["ContentSafety:Key"]);
+
+        return Ok(new TenantModerationSettingsResponse(
+            Enabled:                     t.ModerationEnabled,
+            ScanText:                    t.ModerationScanText,
+            ScanImages:                  t.ModerationScanImages,
+            ReviewSeverity:              t.ModerationReviewSeverity,
+            BlockSeverity:               t.ModerationBlockSeverity,
+            RequireApprovalAll:          t.ModerationRequireApprovalAll,
+            CustomEndpoint:              t.ModerationCustomEndpoint,
+            CustomKeyMasked:             MaskKey(t.ModerationCustomKey),
+            BlockedMessage:              t.ModerationBlockedMessage,
+            PlatformEndpointConfigured:  platformConfigured));
+    }
+
+    [HttpPut("moderation")]
+    public async Task<IActionResult> UpdateModeration([FromBody] UpdateTenantModerationSettingsRequest req)
+    {
+        if (!IsAdmin()) return Forbid();
+
+        // Validate severity windows on the Azure Content Safety 0..6 scale and the
+        // invariant that BlockSeverity > ReviewSeverity (otherwise everything that
+        // would Review immediately Blocks instead).
+        if (req.ReviewSeverity < 0 || req.ReviewSeverity > 6)
+            return BadRequest("ReviewSeverity must be between 0 and 6.");
+        if (req.BlockSeverity < 0 || req.BlockSeverity > 6)
+            return BadRequest("BlockSeverity must be between 0 and 6.");
+        if (req.BlockSeverity <= req.ReviewSeverity)
+            return BadRequest("BlockSeverity must be greater than ReviewSeverity.");
+
+        // Custom endpoint must be a valid HTTPS URL when set
+        if (!string.IsNullOrWhiteSpace(req.CustomEndpoint))
+        {
+            if (!Uri.TryCreate(req.CustomEndpoint, UriKind.Absolute, out var parsed)
+                || parsed.Scheme != "https")
+            {
+                return BadRequest("CustomEndpoint must be an absolute https:// URL.");
+            }
+        }
+
+        if (req.BlockedMessage is { Length: > 500 })
+            return BadRequest("BlockedMessage must be 500 characters or fewer.");
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var t = await _db.Tenants.FindAsync(tenantId);
+        if (t is null) return NotFound();
+
+        t.ModerationEnabled            = req.Enabled;
+        t.ModerationScanText           = req.ScanText;
+        t.ModerationScanImages         = req.ScanImages;
+        t.ModerationReviewSeverity     = req.ReviewSeverity;
+        t.ModerationBlockSeverity      = req.BlockSeverity;
+        t.ModerationRequireApprovalAll = req.RequireApprovalAll;
+        t.ModerationCustomEndpoint     = string.IsNullOrWhiteSpace(req.CustomEndpoint)
+            ? null
+            : req.CustomEndpoint.Trim();
+        t.ModerationBlockedMessage     = string.IsNullOrWhiteSpace(req.BlockedMessage)
+            ? null
+            : req.BlockedMessage.Trim();
+
+        // Key handling: null/empty = leave unchanged; "__clear__" = remove; anything else = replace.
+        if (req.CustomKey == "__clear__")
+            t.ModerationCustomKey = null;
+        else if (!string.IsNullOrWhiteSpace(req.CustomKey))
+            t.ModerationCustomKey = req.CustomKey.Trim();
+
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    private static string? MaskKey(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return null;
+        if (key.Length <= 4) return new string('•', key.Length);
+        return new string('•', 8) + key[^4..];
+    }
+
     private bool IsAdmin()
     {
         var role = Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;

@@ -26,6 +26,14 @@ jobs:
         # WiX 7 (latest) introduced the OSMF EULA and fails install on CI with WIX7015.
         run: dotnet tool install -g wix --version 5.0.2
 
+      - name: Install WiX UI extension
+        shell: powershell
+        # build-msi.ps1 invokes `wix build -ext WixToolset.UI.wixext` for the
+        # WixUI_InstallDir dialog. The extension must be installed globally
+        # against the same WiX version (5.0.2) before the build step runs,
+        # or wix returns WIX0144 "extension could not be found".
+        run: wix extension add -g WixToolset.UI.wixext/5.0.2
+
       - name: Restore
         shell: powershell
         run: dotnet restore .\ToastRevival.sln

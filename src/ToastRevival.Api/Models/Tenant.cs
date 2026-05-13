@@ -34,6 +34,27 @@ public class Tenant
     public string? DefaultAudioSetting { get; set; }
     public ToastScenario DefaultScenario { get; set; } = ToastScenario.Default;
 
+    // Per-tenant content moderation policy (M11 ModerationSettings).
+    // When ModerationEnabled is false, ContentSafetyService short-circuits to Pass
+    // for both text and image. Thresholds use Azure Content Safety severity scale (0..6):
+    //   - ModerationReviewSeverity: scores >= this go to PendingReview (admin must approve)
+    //   - ModerationBlockSeverity:  scores >= this are rejected outright (422)
+    // ModerationRequireApprovalAll forces every notification to PendingReview regardless
+    // of moderation engine output — used by tenants that require human-in-the-loop for
+    // every outgoing notification.
+    // ModerationCustomEndpoint/Key let a tenant bring their own Azure Content Safety
+    // resource; when null the platform-default ContentSafety:Endpoint/Key from config
+    // is used. Both must be set together to take effect.
+    public bool ModerationEnabled { get; set; } = true;
+    public bool ModerationScanText { get; set; } = true;
+    public bool ModerationScanImages { get; set; } = true;
+    public int ModerationReviewSeverity { get; set; } = 2;
+    public int ModerationBlockSeverity { get; set; } = 5;
+    public bool ModerationRequireApprovalAll { get; set; }
+    public string? ModerationCustomEndpoint { get; set; }
+    public string? ModerationCustomKey { get; set; }
+    public string? ModerationBlockedMessage { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

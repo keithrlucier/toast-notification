@@ -74,4 +74,4 @@ model authored the work.
 
 This is a passion project. Pull requests welcome. Issues get triaged when they
 get triaged. If you ship something useful, send it — see
-[README.md](README.md) for the project's posture.
+[README-SELF-HOST.md](README-SELF-HOST.md) for the project's posture.

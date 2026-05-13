@@ -40,6 +40,7 @@ const DocsStore = lazy(() => import('./pages/marketing/docs/DocsStore'));
 const DocsIntune = lazy(() => import('./pages/marketing/docs/DocsIntune'));
 const DocsRmm = lazy(() => import('./pages/marketing/docs/DocsRmm'));
 const DocsApi = lazy(() => import('./pages/marketing/docs/DocsApi'));
+const DocsModeration = lazy(() => import('./pages/marketing/docs/DocsModeration'));
 const Security = lazy(() => import('./pages/marketing/Security'));
 const Llms = lazy(() => import('./pages/marketing/Llms'));
 
@@ -111,6 +112,7 @@ const router = createBrowserRouter([
           { path: DOCS_PATHS.deployIntune,  element: <Suspense fallback={<MarketingFallback />}><DocsIntune /></Suspense> },
           { path: DOCS_PATHS.deployRmm,     element: <Suspense fallback={<MarketingFallback />}><DocsRmm /></Suspense> },
           { path: DOCS_PATHS.api,           element: <Suspense fallback={<MarketingFallback />}><DocsApi /></Suspense> },
+          { path: DOCS_PATHS.moderation,    element: <Suspense fallback={<MarketingFallback />}><DocsModeration /></Suspense> },
         ],
       },
     ],

@@ -2178,6 +2178,39 @@
   transition: border-color 150ms ease;
 }
 
+/* Definition list pattern for docs Q&A and reference glossaries (DocsModeration). */
+.m-docs-dl {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) 1fr;
+  gap: 12px 24px;
+  margin: 0 0 24px;
+}
+
+.m-docs-dl dt {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.m-docs-dl dd {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+@media (max-width: 720px) {
+  .m-docs-dl {
+    grid-template-columns: 1fr;
+    gap: 4px 0;
+  }
+  .m-docs-dl dd {
+    margin: 0 0 12px;
+  }
+}
+
+
 .m-docs-content a:hover {
   border-bottom-color: var(--accent);
 }

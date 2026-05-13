@@ -201,7 +201,11 @@ builder.Services.AddSingleton<INotificationQueueService>(sp => sp.GetRequiredSer
 builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationQueueService>());
 
 // M3 security services
-builder.Services.AddSingleton<IContentModerationService, ContentSafetyService>();
+// ContentSafetyService is scoped (M11) — it reads per-tenant policy from AppDbContext
+// on each call. Client construction is amortized through a static (endpoint, key) cache
+// inside the service so the scoped registration doesn't add per-request Azure SDK overhead.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IContentModerationService, ContentSafetyService>();
 builder.Services.AddScoped<IBlocklistService, BlocklistService>();
 builder.Services.AddSingleton<MfaService>();
 

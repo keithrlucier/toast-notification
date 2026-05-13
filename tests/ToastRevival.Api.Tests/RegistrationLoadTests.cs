@@ -49,11 +49,14 @@ public sealed class RegistrationLoadTests
 
     private const string OptInEnvVar = "TOAST_TEST_RUN_REGISTRATION_LOAD";
 
+    // xUnit 2 cannot wire one collection fixture into another's constructor,
+    // so the collection exposes only LoadFixture; PostgresFixture is reached
+    // via LoadFixture.Postgres (same Docker container, same lifecycle).
     private readonly PostgresFixture _postgres;
 
-    public RegistrationLoadTests(PostgresFixture postgres)
+    public RegistrationLoadTests(LoadFixture loadFixture)
     {
-        _postgres = postgres;
+        _postgres = loadFixture.Postgres;
     }
 
     [Fact]

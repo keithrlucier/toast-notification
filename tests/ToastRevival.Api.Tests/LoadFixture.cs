@@ -34,6 +34,15 @@ public sealed class LoadFixture : IAsyncLifetime
     public ApiTestFactory Factory { get; private set; } = null!;
 
     /// <summary>
+    /// The Postgres container fixture that backs this run. Test classes that
+    /// previously took <c>PostgresFixture</c> in their constructor now take
+    /// <see cref="LoadFixture"/> and read this property — xUnit 2 cannot wire
+    /// one collection fixture into another's constructor, so the collection
+    /// owns only <c>LoadFixture</c> and <c>LoadFixture</c> owns Postgres.
+    /// </summary>
+    public PostgresFixture Postgres => _postgres;
+
+    /// <summary>
     /// Respawner is null when the connection string targets a database the
     /// snapshot couldn't initialize against (e.g. Docker-less env override
     /// pointed at a managed instance with restricted DDL). Tests that need a
@@ -45,13 +54,20 @@ public sealed class LoadFixture : IAsyncLifetime
 
     public string ConnectionString => _postgres.ConnectionString;
 
-    public LoadFixture(PostgresFixture postgres)
+    public LoadFixture()
     {
-        _postgres = postgres;
+        // xUnit 2.9 collection fixtures cannot take other collection fixtures
+        // as constructor arguments — the runtime fails with
+        // "had one or more unresolved constructor arguments". So LoadFixture
+        // owns the PostgresFixture lifecycle directly and the collection
+        // definition exposes only LoadFixture.
+        _postgres = new PostgresFixture();
     }
 
     public async Task InitializeAsync()
     {
+        await _postgres.InitializeAsync();
+
         Factory = new ApiTestFactory(_postgres.ConnectionString);
 
         // Force the host to boot (which runs the migration hook) by issuing one
@@ -99,12 +115,12 @@ public sealed class LoadFixture : IAsyncLifetime
     {
         if (Factory is not null)
             await Factory.DisposeAsync();
+        await _postgres.DisposeAsync();
     }
 }
 
 [CollectionDefinition(nameof(LoadCollection))]
 public sealed class LoadCollection
-    : ICollectionFixture<PostgresFixture>
-    , ICollectionFixture<LoadFixture>
+    : ICollectionFixture<LoadFixture>
 {
 }

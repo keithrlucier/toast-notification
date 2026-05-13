@@ -9,4 +9,5 @@ export const DOCS_PATHS = {
   deployIntune:   '/docs/deploy/intune',
   deployRmm:      '/docs/deploy/rmm',
   api:            '/docs/api',
+  moderation:     '/docs/moderation',
 } as const;

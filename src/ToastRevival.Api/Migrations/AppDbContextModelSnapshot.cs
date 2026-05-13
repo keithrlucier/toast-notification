@@ -640,6 +640,33 @@ namespace ToastRevival.Api.Migrations
                     b.Property<string>("LogoUrl")
                         .HasColumnType("text");
 
+                    b.Property<int>("ModerationBlockSeverity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ModerationBlockedMessage")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ModerationCustomEndpoint")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ModerationCustomKey")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("ModerationEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ModerationRequireApprovalAll")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ModerationReviewSeverity")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ModerationScanImages")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ModerationScanText")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -300,7 +301,7 @@ export default function TenantSettings() {
       </div>
 
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 32 }}>
         <button
           className="btn btn-primary"
           onClick={save}
@@ -308,6 +309,26 @@ export default function TenantSettings() {
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
+      </div>
+
+      {/* Content Moderation pointer — full editor lives on /moderation → Settings */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Content Moderation</h2>
+          <Link to="/moderation" style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            Open Moderation →
+          </Link>
+        </div>
+        <p style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 0, maxWidth: 720 }}>
+          Per-tenant moderation policy (scanning toggles, severity thresholds, blocked-content
+          message, bring-your-own Azure Content Safety credentials, and require-admin-approval
+          override) is configured on the{' '}
+          <Link to="/moderation" style={{ color: 'var(--text-secondary)' }}>Moderation</Link>{' '}
+          page under the <strong>Settings</strong> tab. Banned terms are managed on the{' '}
+          <strong>Blocklist</strong> tab. See the{' '}
+          <Link to="/docs/moderation" style={{ color: 'var(--text-secondary)' }}>moderation guide</Link>{' '}
+          for the full reference.
+        </p>
       </div>
     </div>
   );

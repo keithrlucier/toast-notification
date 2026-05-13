@@ -67,7 +67,7 @@ Three-component product with shared .NET 8 ecosystem:
 - RMM tools: NinjaOne, Datto RMM, ConnectWise Automate, etc.
 
 ### 4. Self-Hosted / Roll Your Own (M11 — Docker Compose)
-- Full source published at public GitHub repo (pending git history audit — M11.D4)
+- Full source published at public GitHub repo `keithrlucier/toast-notification` (pending git history audit — M11.D4)
 - Three-container Docker Compose stack: ASP.NET Core 8 API + Vite/nginx dashboard + postgres:16
 - Self-hosters run their own backend; point the agent MSI at their instance via `SERVERURL=`
 - Billing disabled by default (empty Stripe keys)
@@ -76,6 +76,10 @@ Three-component product with shared .NET 8 ecosystem:
 - No device cap, no SaaS license required
 - Three-tier business model (2026-05-12): 2-device/14-day admin-approved trial → $22/mo SaaS (0–100 devices) → Roll Your Own (free, forever)
 - Architecture reference: `Docs/rollyourown.md`
+- **Agent code signing:** The MSI must be code-signed. Two paths for self-hosters:
+  - **Path A (recommended):** Use our pre-signed MSI from GitHub Releases (signed Toast2IT, LLC). Deploy with SERVERURL + DISABLEAUTOUPDATE=1. No cert required.
+  - **Path B (compile from source):** Requires self-hoster to acquire an OV Code Signing cert (~$300-400/yr, 1-3 day validation), update Package.appxmanifest Publisher, and run build-msi.ps1 with their cert. High-friction by design — this friction is the managed SaaS competitive moat.
+- **SaaS moat summary:** Backend = easy (Docker). Agent signing = hard (cert, HSM, workflow, renewal). Operators who discover Path B cost/complexity convert to $22/mo SaaS.
 
 ## Code Signing (MSI and MSIX)
 

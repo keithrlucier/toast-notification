@@ -618,6 +618,7 @@ Built in 2020 for MSPs during the COVID-19 WFH explosion. 986,000 legitimate mes
 - Does `LicenseService.CanRegisterDeviceAsync` return true for all devices when `Stripe__SecretKey` is empty? Verify in code — don't assume.
 - What is the expiry UX after 14 days? Agent goes quiet? Dashboard locks? Tenant gets a nudge and upgrade path?
 - GitHub org: **RESOLVED** — `keithrlucier/toast-notification` (personal account). Keith provides PAT; rolls it after push.
+- Agent code signing: **RESOLVED** — self-hosters must either (A) use our pre-signed MSI from GitHub Releases [Path A, recommended] or (B) acquire their own OV cert (~$300-400/yr, 1-3 day validation) and sign the MSI themselves [Path B, high-friction]. Path B friction is intentional — it converts evaluators to SaaS. Documented in `README-SELF-HOST.md` and `Docs/rollyourown.md`.
 - `DISABLEAUTOUPDATE`: registry key name + WiX property syntax TBD at D3.
 
 ### Code Sweep

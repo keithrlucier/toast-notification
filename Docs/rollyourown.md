@@ -44,17 +44,76 @@ The current codebase is tightly integrated with Stripe (M6 Licensing). We need t
 
 ## 4. The Windows Agent Distribution Strategy
 
-The Windows Agent requires an OV Code Signing certificate to bypass SmartScreen and install silently via RMM/Intune. We will offer self-hosters two paths:
+The Windows Agent MSI **must be code-signed** with an OV Code Signing certificate
+to install silently via RMM or Intune. Unsigned MSIs trigger a SmartScreen block
+and are rejected by most endpoint management policies. This is the single highest-
+friction element of self-hosting — the backend is a standard Docker stack, but
+the Windows agent is a different class of problem.
 
-### Path A: Use Our Pre-Compiled Agent (Recommended)
-Self-hosters can download our official `.msi` from GitHub Releases. It is signed by `Toast2IT, LLC`.
-To point it at their self-hosted Linux box, they deploy it via RMM with:
-`msiexec /i ToastNotification.Agent.msi /qn CLIENTID=<guid> SERVERURL=https://toast.theircompany.com DISABLEAUTOUPDATE=1`
+We offer self-hosters two paths:
 
-*Requirement:* We must ensure the `DISABLEAUTOUPDATE` registry key prevents the agent from pinging `releases.toastnotification.com` so self-hosters aren't pulling our Velopack updates and overwriting their configurations.
+### Path A: Use Our Pre-Compiled Agent (Strongly Recommended)
 
-### Path B: Compile from Source
-Self-hosters fork the repo, change the Publisher in `Package.appxmanifest`, buy their own $300+ Sectigo/DigiCert OV certificate, and run `build-msi.ps1`. 
+Self-hosters download our official `.msi` from GitHub Releases. It is signed by
+**Toast2IT, LLC** under our OV certificate (Sectigo, hardware token). Self-hosters
+deploy it via RMM with `SERVERURL` pointing at their own backend:
+
+```
+msiexec /i ToastNotification.Agent.msi /qn ^
+  CLIENTID=<guid> ^
+  SERVERURL=https://toast.theircompany.com ^
+  DISABLEAUTOUPDATE=1
+```
+
+`DISABLEAUTOUPDATE=1` writes a registry key preventing the agent from polling
+`releases.toastnotification.com`. Self-hosters never receive our managed updates.
+
+**The trust ask:** the self-hoster trusts that we haven't put anything malicious
+in a binary they're deploying to their fleet. The source is open for review.
+For most MSP operators evaluating this tool, that's an acceptable trade-off —
+they already accept this trust model for dozens of RMM-deployed agents.
+
+*Implementation requirement (M11.D3):* The `DISABLEAUTOUPDATE` WiX property and
+registry key are not yet implemented. This must ship before the public repo goes
+live. See `FIX-LIST.md` INFO-M11-002.
+
+### Path B: Compile from Source and Sign Yourself
+
+Self-hosters who need the agent binary to carry their own organization's name in
+its Authenticode signature must build and sign it themselves. This is a real
+operational investment:
+
+**Requirements:**
+
+| Requirement | Detail | Cost |
+|---|---|---|
+| OV Code Signing certificate | Sectigo, DigiCert, or GlobalSign. OV is sufficient — EV is no longer required for SmartScreen trust. | ~$300–400/yr |
+| Certificate validation | CA verifies your organization exists. Not instant. | 1–3 business days |
+| Signing infrastructure | Software PFX (simplest, exportable key) or HSM token (Thales SafeNet — non-exportable, required for customer-facing deployments) | $0–$250 for token hardware |
+| Windows SDK | `signtool.exe` for signing, `Get-AuthenticodeSignature` for verification | Free with Visual Studio Build Tools |
+
+**Implementation steps:**
+1. Fork the repo.
+2. Update `Package.appxmanifest` — set `Publisher` to your cert Subject exactly.
+3. Update `installer/ToastRevival.Agent.Setup.wxs` with your publisher info.
+4. Run `.\scripts\build-msi.ps1 -Version "x.y.z.w"` — signs using whatever cert
+   Windows CryptoAPI can access. Plug in your hardware token first if applicable.
+5. Verify: `Get-AuthenticodeSignature .\ToastNotification.Agent.msi`
+
+**The honest trade-off:** Path B puts your name on the binary. It also means you
+own the cert purchase, the 1–3 day validation wait, the annual renewal, the
+signing hardware, and the build workflow. Most self-hosters should take Path A.
+
+### Why This Is Our Competitive Moat
+
+This is intentional product design, not an oversight. The backend is containerized
+and trivially self-hostable. The agent signing workflow is deliberately high-
+friction. Operators who evaluate Path B and discover what it actually takes tend
+to look at the $22/month SaaS price differently.
+
+**The managed SaaS value proposition in one line:** We handle the OV certificate,
+the hardware token, the signing pipeline, the annual renewal, and keeping the
+agent on the Windows trusted publishers list. You deploy. We sign.
 
 ---
 

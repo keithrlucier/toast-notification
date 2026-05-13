@@ -72,13 +72,20 @@ SuperAdmin. Subsequent registrations require admin approval.
 
 ## Agent Distribution
 
-The Windows agent requires a code-signed MSI to install silently via RMM or
-Intune without SmartScreen prompts. You have two options:
+The Windows agent is a `.msi` installer. It **must be code-signed** to install
+silently via RMM or Intune — unsigned MSIs trigger a SmartScreen warning that
+blocks silent deployment, and many managed endpoint policies block unsigned
+executables outright.
 
-### Option A — Use the pre-compiled agent (recommended)
+You have two paths:
 
-Download the signed MSI from [GitHub Releases](https://github.com/Toast2IT/toast-notification/releases).
-Deploy it via your RMM with the `SERVERURL` property pointing at your instance:
+### Option A — Use the pre-compiled agent (strongly recommended)
+
+Download the signed MSI from [GitHub Releases](https://github.com/keithrlucier/toast-notification/releases).
+It is signed with an OV certificate under **Toast2IT, LLC** and will install
+cleanly on managed endpoints without SmartScreen intervention.
+
+Deploy it via your RMM with `SERVERURL` pointing at your self-hosted instance:
 
 ```
 msiexec /i ToastNotification.Agent.msi /qn ^
@@ -87,17 +94,53 @@ msiexec /i ToastNotification.Agent.msi /qn ^
   DISABLEAUTOUPDATE=1
 ```
 
-`DISABLEAUTOUPDATE=1` prevents the agent from checking `releases.toastnotification.com`
-so it never pulls updates from us.
+`DISABLEAUTOUPDATE=1` writes a registry key that prevents the agent from polling
+`releases.toastnotification.com` — it will never pull our updates or overwrite
+your configuration.
 
-### Option B — Compile from source
+**This is the right path for most self-hosters.** The backend is yours; the
+agent binary is ours. The only thing you're trusting is that we haven't put
+anything malicious in a signed binary — the source is open if you want to verify.
 
-Fork the repo, update `Package.appxmanifest` with your Publisher identity, acquire
-an OV code-signing certificate (Sectigo, DigiCert — expect $300+/year), and run:
+### Option B — Compile from source and sign yourself
 
-```powershell
-.\build-msi.ps1
-```
+If you need the agent binary to carry your own organization's name in its
+Authenticode signature, you must build and sign it yourself. This is a
+non-trivial operational commitment:
+
+**What you need:**
+
+1. **An OV Code Signing certificate** (~$300–400/yr) from a trusted CA
+   (Sectigo, DigiCert, GlobalSign). EV certificates are no longer required for
+   Windows SmartScreen trust — OV is sufficient.
+   - Validation takes 1–3 business days. This is not an instant purchase.
+   - The certificate Subject CN becomes your agent's publisher identity.
+
+2. **A way to store and use the certificate.** Options:
+   - **Software PFX** — simplest, but the private key is exportable. Acceptable
+     for internal/non-MSP use.
+   - **Hardware Security Module (HSM)** — a USB token (Thales SafeNet, etc.)
+     that stores the key non-exportable. Required if you're deploying to
+     customer endpoints under your brand.
+
+3. **Windows SDK signtool.exe** — included with Visual Studio Build Tools.
+
+**Steps:**
+
+1. Fork the repo.
+2. Update `Package.appxmanifest` — set `Publisher` to match your cert Subject
+   exactly (copy it from the cert's Details tab, or run
+   `(Get-AuthenticodeSignature <file>).SignerCertificate.Subject`).
+3. Update `installer/ToastRevival.Agent.Setup.wxs` with your publisher info.
+4. Run `.\scripts\build-msi.ps1 -Version "1.0.0.0"` — this builds and signs
+   the MSI using whatever signing cert Windows CryptoAPI can find. If you're
+   using a hardware token, plug it in and unlock it first.
+5. Verify the signature: `Get-AuthenticodeSignature .\ToastNotification.Agent.msi`
+
+**The honest trade-off:** Path A gives you a working, signed binary in minutes.
+Path B gives you your name on the binary but requires a cert purchase, a
+validation wait, ongoing annual renewal, and a signing workflow you own and
+maintain. Most self-hosters should take Path A.
 
 ---
 

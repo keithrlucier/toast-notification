@@ -40,7 +40,14 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
             // Layer test settings on top so JWT key, dummy Stripe values, and
             // logging tweaks are applied. Then override the connection string
             // last so the test fixture's container wins regardless of source.
-            config.AddJsonFile("appsettings.Test.json", optional: false);
+            //
+            // WebApplicationFactory<Program> roots the ContentRoot at the API
+            // project directory (src/ToastRevival.Api/) at runtime, but our
+            // appsettings.Test.json is copied to the TEST assembly's output
+            // dir by the csproj. Use the absolute path off the test assembly
+            // so the resolver doesn't go looking in src/ToastRevival.Api/.
+            var testAssemblyDir = System.IO.Path.GetDirectoryName(typeof(ApiTestFactory).Assembly.Location)!;
+            config.AddJsonFile(System.IO.Path.Combine(testAssemblyDir, "appsettings.Test.json"), optional: false);
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = _connectionString,

@@ -119,8 +119,14 @@
       On uninstall the key is removed automatically (KeyPath="yes" on the RegistryValue).
     -->
     <ComponentGroup Id="DisableAutoUpdateReg" Directory="INSTALLFOLDER">
-      <Component Id="DisableAutoUpdateRegistry" Guid="C3E7F2A1-D48B-4F6E-B290-5A1C8D9E0F23">
-        <Condition>DISABLEAUTOUPDATE = "1"</Condition>
+      <!--
+        WiX 5 moved the install-time predicate from the <Condition> child
+        element (WiX 3) onto a Condition attribute on the Component itself.
+        The legacy <Condition> child fails with WIX0005 at build time.
+      -->
+      <Component Id="DisableAutoUpdateRegistry"
+                 Guid="C3E7F2A1-D48B-4F6E-B290-5A1C8D9E0F23"
+                 Condition="DISABLEAUTOUPDATE = &quot;1&quot;">
         <RegistryValue Root="HKLM"
                        Key="SOFTWARE\Toast2IT\Toast Notification"
                        Name="DisableAutoUpdate"

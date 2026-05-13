@@ -37,7 +37,7 @@ The backend is a standard ASP.NET Core 8 / PostgreSQL stack.
 **1. Clone and configure**
 
 ```bash
-git clone https://github.com/Toast2IT/toast-notification.git
+git clone https://github.com/keithrlucier/toast-notification.git
 cd toast-notification
 cp .env.example .env
 ```

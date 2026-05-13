@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ActionButton } from '../api/notifications';
 import { api } from '../api/client';
+import { tenantLogoUrlForBrowser } from '../lib/tenantBranding';
 
 interface ToastPreviewProps {
   title: string;
@@ -38,7 +39,7 @@ function getTenantIdentity(): Promise<TenantPreviewIdentity> {
     _tenantIdentityCache = api.get<TenantSettingsLite>('/api/tenant/settings')
       .then(res => ({
         name: res.tenantName?.trim() || null,
-        logoUrl: res.logoUrl?.trim() || null,
+        logoUrl: tenantLogoUrlForBrowser(res.logoUrl) || null,
       }))
       .catch(() => ({ name: null, logoUrl: null }));
   }

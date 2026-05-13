@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import { authApi, type AuthResponse } from '../api/auth';
 import { api, AUTH_MESSAGE_STORAGE_KEY, AUTH_UNAUTHORIZED_EVENT, SESSION_EXPIRED_MESSAGE } from '../api/client';
+import { TENANT_BRANDING_UPDATED_EVENT, tenantLogoUrlForBrowser } from '../lib/tenantBranding';
 
 let _faviconFetched = false;
 
@@ -11,7 +12,7 @@ function maybeUpdateFavicon(isPlatformAdmin: boolean): void {
     .then(res => {
       if (res.logoUrl) {
         const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
-        if (link) link.href = res.logoUrl;
+        if (link) link.href = tenantLogoUrlForBrowser(res.logoUrl);
       }
     })
     .catch(() => {});
@@ -166,6 +167,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
     return () => window.clearTimeout(timeout);
   }, [clearSession, user?.token]);
+
+  useEffect(() => {
+    if (!user || user.isPlatformAdmin) return;
+
+    const handleBrandingUpdated = () => {
+      _faviconFetched = false;
+      maybeUpdateFavicon(false);
+    };
+
+    window.addEventListener(TENANT_BRANDING_UPDATED_EVENT, handleBrandingUpdated);
+    return () => window.removeEventListener(TENANT_BRANDING_UPDATED_EVENT, handleBrandingUpdated);
+  }, [user]);
 
   const login = async (email: string, password: string) => {
     const res = await authApi.login({ email, password });

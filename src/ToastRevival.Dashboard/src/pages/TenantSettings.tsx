@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError } from '../api/client';
+import { api, ApiError, apiErrorFromResponse, authHeaders } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { notifyTenantBrandingUpdated, tenantLogoUrlForBrowser } from '../lib/tenantBranding';
 
 interface TenantSettingsData {
   tenantName: string;
@@ -31,6 +32,8 @@ const SCENARIO_OPTIONS = [
   { value: 'IncomingCall', label: 'Incoming Call' },
 ];
 
+type LogoPreviewState = 'idle' | 'loading' | 'loaded' | 'error';
+
 export default function TenantSettings() {
   useAuth();
   const [data, setData]       = useState<TenantSettingsData | null>(null);
@@ -42,9 +45,12 @@ export default function TenantSettings() {
   const [tenantName, setTenantName]         = useState('');
   const [logoUrl, setLogoUrl]               = useState('');
   const [uploading, setUploading]           = useState(false);
+  const [logoPreviewState, setLogoPreviewState] = useState<LogoPreviewState>('idle');
+  const [logoDimensions, setLogoDimensions] = useState('');
   const [primaryColor, setPrimaryColor]     = useState('#1F6FBD');
   const [defaultAudio, setDefaultAudio]     = useState('');
   const [defaultScenario, setDefaultScenario] = useState('Default');
+  const logoPreviewUrl = tenantLogoUrlForBrowser(logoUrl);
 
   useEffect(() => {
     api.get<TenantSettingsData>('/api/tenant/settings')
@@ -63,6 +69,11 @@ export default function TenantSettings() {
       });
   }, []);
 
+  useEffect(() => {
+    setLogoPreviewState(logoPreviewUrl ? 'loading' : 'idle');
+    setLogoDimensions('');
+  }, [logoPreviewUrl]);
+
   const save = async () => {
     setSaving(true);
     setError('');
@@ -75,6 +86,10 @@ export default function TenantSettings() {
         defaultAudioSetting: defaultAudio || null,
         defaultScenario,
       });
+      setData(current => current
+        ? { ...current, tenantName: tenantName.trim() || current.tenantName, logoUrl: logoUrl.trim() || null }
+        : current);
+      notifyTenantBrandingUpdated();
       setSuccess('Settings saved.');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
@@ -138,13 +153,40 @@ export default function TenantSettings() {
             <div className="field">
               <label>Logo</label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                {logoUrl && (
+                {logoPreviewUrl && logoPreviewState !== 'error' && (
                   <img
-                    src={logoUrl}
-                    alt="Logo"
-                    style={{ height: 36, maxWidth: 100, objectFit: 'contain', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, padding: 4, background: 'var(--bg-tertiary)' }}
-                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                    src={logoPreviewUrl}
+                    alt="Tenant logo preview"
+                    style={{ width: 72, height: 72, objectFit: 'contain', border: '1px solid rgba(15,23,42,0.14)', borderRadius: 4, padding: 8, background: 'var(--bg-tertiary)' }}
+                    onLoad={e => {
+                      const img = e.currentTarget;
+                      setLogoDimensions(`${img.naturalWidth} x ${img.naturalHeight} px`);
+                      setLogoPreviewState('loaded');
+                    }}
+                    onError={() => {
+                      setLogoDimensions('');
+                      setLogoPreviewState('error');
+                    }}
                   />
+                )}
+                {logoPreviewUrl && logoPreviewState === 'error' && (
+                  <span style={{
+                    width: 72,
+                    height: 72,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    fontSize: 10,
+                    lineHeight: 1.25,
+                    color: 'var(--status-error)',
+                    border: '1px solid rgba(15,23,42,0.14)',
+                    borderRadius: 4,
+                    padding: 8,
+                    background: 'var(--bg-tertiary)',
+                  }}>
+                    Preview unavailable
+                  </span>
                 )}
                 <label
                   style={{
@@ -167,12 +209,16 @@ export default function TenantSettings() {
                         form.append('file', file);
                         const res = await fetch('/api/tenant/logo', {
                           method: 'POST',
-                          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+                          headers: authHeaders(),
                           body: form,
                         });
-                        if (!res.ok) { const b = await res.json(); throw new Error(b.message ?? 'Upload failed'); }
-                        const { url } = await res.json();
+                        if (!res.ok) throw await apiErrorFromResponse(res, '/api/tenant/logo', 'Upload failed');
+                        const { url } = await res.json() as { url?: string };
+                        if (!url) throw new Error('Upload failed.');
+                        setLogoPreviewState('loading');
+                        setLogoDimensions('');
                         setLogoUrl(url);
+                        notifyTenantBrandingUpdated();
                       } catch (err) {
                         setError(err instanceof Error ? err.message : 'Upload failed.');
                       } finally {
@@ -182,7 +228,7 @@ export default function TenantSettings() {
                     }}
                   />
                   <span className="btn btn-secondary" style={{ fontSize: 12, padding: '6px 14px', minHeight: 0, pointerEvents: 'none' }}>
-                    {uploading ? 'Uploading…' : logoUrl ? 'Replace' : '↑ Upload logo'}
+                    {uploading ? 'Uploading...' : logoUrl ? 'Replace' : 'Upload logo'}
                   </span>
                 </label>
                 {logoUrl && (
@@ -195,9 +241,21 @@ export default function TenantSettings() {
                   </button>
                 )}
               </div>
-              <span style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4, display: 'block' }}>
-                PNG, JPG or WebP · max 2 MB · appears in notification toasts
+              <span style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6, display: 'block' }}>
+                Recommended dimensions: square 48 x 48 px or 64 x 64 px.
               </span>
+              <span style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2, display: 'block' }}>
+                PNG, JPG, GIF, or WebP. Max 2 MB. Used in the sidebar and toast attribution.
+              </span>
+              {logoPreviewUrl && (
+                <span style={{ fontSize: 11, color: logoPreviewState === 'error' ? 'var(--status-error)' : 'var(--text-dim)', marginTop: 2, display: 'block' }}>
+                  {logoPreviewState === 'error'
+                    ? 'The stored logo URL could not be loaded in the browser.'
+                    : logoDimensions
+                      ? `Current image: ${logoDimensions}`
+                      : 'Checking image dimensions...'}
+                </span>
+              )}
             </div>
 
             <div className="field">

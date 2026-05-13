@@ -98,6 +98,12 @@ internal static class RegistrationService
             var dto = await resp.Content.ReadFromJsonAsync<TenantAttributionDto>(cancellationToken: ct);
             var name    = string.IsNullOrWhiteSpace(dto?.TenantName) ? null : dto!.TenantName;
             var logoUrl = string.IsNullOrWhiteSpace(dto?.LogoUrl)    ? null : dto!.LogoUrl;
+            if (logoUrl is not null
+                && Uri.TryCreate(config.ServerUrl, UriKind.Absolute, out var serverUri)
+                && Uri.TryCreate(serverUri, logoUrl, out var resolvedLogoUri))
+            {
+                logoUrl = resolvedLogoUri.ToString();
+            }
             return new TenantRefreshResult(name, logoUrl);
         }
         catch (Exception ex)

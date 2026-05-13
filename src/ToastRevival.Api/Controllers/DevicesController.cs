@@ -209,7 +209,7 @@ public class DevicesController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == tenantId);
         if (tenant is null) return NotFound();
 
-        return Ok(new TenantAttributionResponse(tenant.Name, tenant.LogoUrl));
+        return Ok(new TenantAttributionResponse(tenant.Name, ToPublicUrl(tenant.LogoUrl)));
     }
 
     // Called by agent to confirm it's still alive (heartbeat)
@@ -238,6 +238,22 @@ public class DevicesController : ControllerBase
                 .Select(m => m.DeviceGroupId)
                 .Distinct()
                 .ToList());
+
+    private string? ToPublicUrl(string? value)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _)) return trimmed;
+        if (!trimmed.StartsWith('/')) return trimmed;
+
+        var scheme = Request.Headers["X-Forwarded-Proto"].FirstOrDefault()?.Split(',')[0].Trim();
+        if (string.IsNullOrWhiteSpace(scheme)) scheme = Request.Scheme;
+
+        var host = Request.Headers["X-Forwarded-Host"].FirstOrDefault()?.Split(',')[0].Trim();
+        if (string.IsNullOrWhiteSpace(host)) host = Request.Host.Value;
+
+        return $"{scheme}://{host}{trimmed}";
+    }
 
     private static string HashToken(string token)
     {

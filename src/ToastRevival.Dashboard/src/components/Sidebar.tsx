@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { TENANT_BRANDING_UPDATED_EVENT, tenantLogoUrlForBrowser } from '../lib/tenantBranding';
 
 interface TenantBranding {
   name: string;
@@ -12,8 +13,11 @@ let _tenantBrandingCache: Promise<TenantBranding | null> | null = null;
 
 function getTenantBranding(): Promise<TenantBranding | null> {
   if (!_tenantBrandingCache) {
-    _tenantBrandingCache = api.get<{ name: string; logoUrl?: string }>('/api/tenant/settings')
-      .then(res => ({ name: res.name, logoUrl: res.logoUrl }))
+    _tenantBrandingCache = api.get<{ tenantName: string; logoUrl?: string | null }>('/api/tenant/settings')
+      .then(res => ({
+        name: res.tenantName,
+        logoUrl: tenantLogoUrlForBrowser(res.logoUrl) || undefined,
+      }))
       .catch(() => null);
   }
   return _tenantBrandingCache;
@@ -26,13 +30,44 @@ function useTenantBranding(skip: boolean): { branding: TenantBranding | null; lo
   useEffect(() => {
     if (skip) return;
     let cancelled = false;
-    getTenantBranding().then(b => {
-      if (!cancelled) { setBranding(b); setLoading(false); }
-    });
-    return () => { cancelled = true; };
+
+    const load = (force = false) => {
+      if (force) _tenantBrandingCache = null;
+      setLoading(true);
+      getTenantBranding().then(b => {
+        if (!cancelled) { setBranding(b); setLoading(false); }
+      });
+    };
+
+    load();
+    const onBrandingUpdated = () => load(true);
+    window.addEventListener(TENANT_BRANDING_UPDATED_EVENT, onBrandingUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(TENANT_BRANDING_UPDATED_EVENT, onBrandingUpdated);
+    };
   }, [skip]);
 
   return { branding, loading };
+}
+
+function SidebarLogo({ src }: { src?: string }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => setFailed(false), [src]);
+
+  if (!src || failed) return <ToastIcon />;
+
+  return (
+    <img
+      src={src}
+      alt=""
+      width={32}
+      height={32}
+      style={{ objectFit: 'contain', display: 'block' }}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 const NAV_ITEMS = [
@@ -86,10 +121,8 @@ export default function Sidebar() {
               <ToastIcon />
             ) : brandingLoading ? (
               <div style={{ width: 32, height: 32, background: 'rgba(255,255,255,0.1)', borderRadius: 4, flexShrink: 0 }} />
-            ) : branding?.logoUrl ? (
-              <img src={branding.logoUrl} alt="" width={32} height={32} style={{ objectFit: 'contain', display: 'block' }} />
             ) : (
-              <ToastIcon />
+              <SidebarLogo src={branding?.logoUrl} />
             )}
           </div>
           <div>

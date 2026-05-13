@@ -1,5 +1,35 @@
 # ToastRevival - Test Log
 
+## 2026-05-12 (INFO-M11-SW-001 — TOCTOU fix on trial device registration)
+
+### Build Checks
+
+- `dotnet build src\ToastRevival.Api\ToastRevival.Api.csproj -c Release`: **0 warnings, 0 errors**.
+- `dotnet build tests\ToastRevival.Api.Tests\ToastRevival.Api.Tests.csproj`: **blocked locally** — Defender real-time protection holding an Access-Denied on `C:\Users\keith\.nuget\packages\microsoft.aspnetcore.mvc.testing\8.0.15\tasks\netstandard2.0\Microsoft.AspNetCore.Mvc.Testing.Tasks.dll` (file ACL grants FullControl to keith but `[System.IO.File]::ReadAllBytes` still throws Access Denied; no Zone.Identifier stream, not EFS-encrypted, no other process holds the handle that we can see — looks like AV interception). `dotnet build-server shutdown` + `--disable-build-servers` did not clear it. CI is canonical for the regression test (`.github/workflows/api-tests.yml` runs on push to main against a PostgreSQL 16 service container).
+- `npm --prefix src/ToastRevival.Dashboard run build`: **passed** — Vite + `prerender-seo.mjs` complete, 10 SEO routes + sitemap regenerated. Existing >500 kB chunk warning unchanged (no dashboard code touched).
+
+### Scope Verified (Abish code sweep)
+
+- `src/ToastRevival.Api/Services/ILicenseService.cs`: new `TryRegisterDeviceAtomicAsync(Tenant, Device, ct)` method on the interface.
+- `src/ToastRevival.Api/Services/LicenseService.cs`: implementation opens a transaction, runs `SELECT pg_advisory_xact_lock({0})` with `(long)tenant.Id.GetHashCode()`, calls `_db.Entry(tenant).ReloadAsync(ct)` to refresh `ConsumedCount`, re-checks the cap via extracted `IsWithinCap(tenant)` helper, then inserts the device + increments the counter + commits. `IsWithinCap` preserves the original `<=` semantic against `FreeTierDeviceLimit` (no scope creep into the free-tier off-by-one).
+- `src/ToastRevival.Api/Controllers/DevicesController.cs`: new-device branch replaces the `CanRegisterDeviceAsync` → `Add` → `IncrementConsumedAsync` sequence with a single `TryRegisterDeviceAtomicAsync` call. Re-registration branch (existing device match on TenantId+DeviceName+Username) is untouched — no license gate on reinstalls, no behavior change.
+- `tests/ToastRevival.Api.Tests/ApiTestFactory.cs`: added optional `extraConfig` constructor param so the regression test can flip `TOAST_REQUIRE_BILLING=true` without leaking that into `appsettings.Test.json` (which other tests depend on).
+- `tests/ToastRevival.Api.Tests/TrialDeviceCapConcurrencyTests.cs`: new test class in `LoadCollection`. Seeds a fresh trial tenant, registers one device sequentially (cap-minus-one), fires two concurrent registers via `Task.WhenAll`, asserts exactly one 200 + one 403 + final `Tenant.ConsumedCount`=2 + device-row count=2.
+
+### Blast Radius
+
+- `CanRegisterDeviceAsync` and `IncrementConsumedAsync` call sites: confirmed both are only called from `DevicesController` (`Register` for `CanRegister`/`Increment`, `Decommission` for `Decrement`). No background jobs, webhooks, or reconciliation services touch these — the controller surface is the only one to update.
+- `pg_advisory_xact_lock`: zero prior usage in the codebase. Lock key namespace is database-global but unused, so no collision risk with other code.
+- Advisory lock auto-release: PostgreSQL releases `xact`-scoped advisory locks on commit AND rollback — exception mid-transaction is safe.
+- `Guid.GetHashCode()` collisions: two tenants hashing to the same `bigint` lock key would serialize unnecessarily, no correctness risk (each transaction still re-reads its own tenant row).
+
+### Boundaries
+
+- Regression test not executed locally — see Build Checks. CI will run on push and exercise the actual race against a real PostgreSQL service container (the only environment where `pg_advisory_xact_lock` does what we want).
+- No production deploy in this session — fix ships next API redeploy.
+
+---
+
 ## 2026-05-12 (M11.D1 — Docker Compose infrastructure)
 
 ### Build Checks

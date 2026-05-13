@@ -79,7 +79,7 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 
 - [ ] **Marketing site pricing page rewrite** (M11.D7) — Three-tier honest copy. Diana leads. New DocPro session.
 
-- [ ] **TOCTOU concurrent trial registration** (INFO-M11-SW-001) — Concurrent register calls can exceed 2-device cap. `pg_try_advisory_xact_lock` fix needed before SaaS scale. Not blocking self-host launch.
+- [x] **TOCTOU concurrent trial registration** (INFO-M11-SW-001) — RESOLVED 2026-05-12. New `LicenseService.TryRegisterDeviceAtomicAsync` wraps cap check + device INSERT + ConsumedCount bump in a single transaction gated by `pg_advisory_xact_lock` keyed on `tenantId.GetHashCode()`. Reloads tenant inside the lock so the cap check sees authoritative state. Regression test (`TrialDeviceCapConcurrencyTests`) fires two concurrent registers at cap-minus-one and asserts exactly one wins. See `git log --grep "INFO-M11-SW-001"`.
 
 - [ ] **Platform admin nav gap** — Platform admins have only "Trial Requests" in PLATFORM_ITEMS. No cross-tenant Moderation, Users, Audit Log equivalents yet. Future session.
 

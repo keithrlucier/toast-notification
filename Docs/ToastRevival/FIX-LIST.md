@@ -4,7 +4,31 @@
 
 ## M11 Open Items (opened 2026-05-12)
 
-### INFO-M11-SW-001 — TOCTOU on concurrent trial device registration — **OPEN**
+### INFO-M11-D7-001 — Home.tsx terminal-comparison block uses Unicode ✓ glyphs — **OPEN (deferred)**
+
+**Filed:** 2026-05-13 (M11 D7 Code Sweep #41).
+**Surface:** `src/ToastRevival.Dashboard/src/pages/marketing/Home.tsx:120-123` — `<div className="m-terminal-body">` simulating console output.
+**Issue:** Decorative `[✓]` Unicode glyphs inside the styled terminal-comparison panel. Diana's standing rule bans emojis in UI; these are arguably chrome simulating console output rather than UI affordance. Pre-existing — not introduced by D7.
+**Fix:** Diana decision — ASCII `[x]` / `[OK]` replacement, or keep as-is if simulated-terminal aesthetic justifies the glyphs.
+**Priority:** Not blocking. Cosmetic. Defer for Diana review when convenient.
+**Owner:** Diana.
+
+---
+
+### INFO-M11-D7-002 — AggregateOffer lowPrice = $0.00 on /pricing JSON-LD — **OPEN (informational)**
+
+**Filed:** 2026-05-13 (M11 D7 Code Sweep #41).
+**Surface:** `src/ToastRevival.Dashboard/src/lib/seo.ts` — `pricingProductLd()`; `src/ToastRevival.Dashboard/scripts/prerender-seo.mjs` — `productLd()`.
+**Issue:** AggregateOffer now declares three Offers — Free Trial ($0), Managed SaaS ($22), Roll Your Own ($0). Schema.org permits `lowPrice: "0.00"`, but some SERP price-range renderers prefer non-zero lowPrice and may suppress the price chip. Reality is what it is.
+**Fix:** None required. If SERP price chip suppression becomes a marketing problem, narrow the AggregateOffer to the paid tier only.
+**Priority:** Informational.
+**Owner:** Diana / Carl (marketing observability review).
+
+---
+
+### INFO-M11-SW-001 — TOCTOU on concurrent trial device registration — **RESOLVED 2026-05-12**
+
+**Resolution:** New `ILicenseService.TryRegisterDeviceAtomicAsync(tenant, device, ct)` owns a transaction that (a) acquires `pg_advisory_xact_lock` keyed on `tenantId.GetHashCode()`, (b) reloads the tenant inside the lock so the cap check sees authoritative `ConsumedCount`, then (c) inserts the device row and bumps `ConsumedCount` in a single commit. Concurrent registrations for the same tenant serialize at the lock; different tenants run in parallel. Stripe sync stays outside the transaction (network I/O, safely retriable after the seat is committed). `DevicesController.Register` calls the new method instead of the previous `CanRegisterDeviceAsync` → `Add` → `IncrementConsumedAsync` sequence. Regression test `TrialDeviceCapConcurrencyTests.Register_ConcurrentTrialBurst_NeverExceedsTrialCap` fires two concurrent registers at cap-minus-one and asserts exactly one wins. See `git log --grep "INFO-M11-SW-001"` for the resolving commit.
 
 **Filed:** 2026-05-12 (M11 D6 Code Sweep).
 **Surface:** `src/ToastRevival.Api/Services/LicenseService.cs` — `CanRegisterDeviceAsync` trial branch.

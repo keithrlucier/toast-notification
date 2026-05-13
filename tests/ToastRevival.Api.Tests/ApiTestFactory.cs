@@ -15,10 +15,12 @@ namespace ToastRevival.Api.Tests;
 public sealed class ApiTestFactory : WebApplicationFactory<Program>
 {
     private readonly string _connectionString;
+    private readonly IReadOnlyDictionary<string, string?>? _extraConfig;
 
-    public ApiTestFactory(string connectionString)
+    public ApiTestFactory(string connectionString, IReadOnlyDictionary<string, string?>? extraConfig = null)
     {
         _connectionString = connectionString;
+        _extraConfig = extraConfig;
     }
 
     protected override IHost CreateHost(IHostBuilder builder)
@@ -43,6 +45,13 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
             {
                 ["ConnectionStrings:DefaultConnection"] = _connectionString,
             });
+
+            // Per-test config overrides (e.g. TOAST_REQUIRE_BILLING=true for the
+            // trial cap concurrency regression). Layered last so they win.
+            if (_extraConfig is not null)
+            {
+                config.AddInMemoryCollection(_extraConfig);
+            }
         });
     }
 }

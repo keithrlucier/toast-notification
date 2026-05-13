@@ -100,11 +100,10 @@ public class DevicesController : ControllerBase
         {
             // M6 D3: license enforcement applies only to NEW seats. A reinstall on an
             // existing seat (handled above) must not be blocked by license depletion.
-            if (!await _license.CanRegisterDeviceAsync(req.TenantId))
-            {
-                return StatusCode(403, "Subscription canceled. Please renew to register devices.");
-            }
-
+            // INFO-M11-SW-001: the cap check + device INSERT + ConsumedCount bump run
+            // atomically inside the service under a per-tenant advisory lock so two
+            // concurrent registrations for the same trial tenant can't both pass the
+            // 2-device gate before either commits.
             device = new Device
             {
                 TenantId = req.TenantId,
@@ -115,12 +114,15 @@ public class DevicesController : ControllerBase
                 RegistrationToken = tokenHash,
             };
 
-            _db.Devices.Add(device);
-            await _db.SaveChangesAsync();
+            if (!await _license.TryRegisterDeviceAtomicAsync(tenant, device))
+            {
+                return StatusCode(403, "Subscription canceled. Please renew to register devices.");
+            }
+
             auditAction = "device.register";
 
-            // M6 D4: maintain ConsumedCount only when adding a new device row.
-            await _license.IncrementConsumedAsync(tenant);
+            // Stripe sync stays outside the transaction — it's network I/O and
+            // safe to retry; the seat is already committed.
             await _billingSync.SyncSubscriptionQuantityAsync(tenant);
         }
 

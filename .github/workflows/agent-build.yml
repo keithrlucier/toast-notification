@@ -1,0 +1,46 @@
+name: Agent MSI Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-msi:
+    name: Build unsigned MSI
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install WiX
+        shell: powershell
+        # Pin to 5.0.2 — local dev and every shipped MSI use this version.
+        # WiX 7 (latest) introduced the OSMF EULA and fails install on CI with WIX7015.
+        run: dotnet tool install -g wix --version 5.0.2
+
+      - name: Restore
+        shell: powershell
+        run: dotnet restore .\ToastRevival.sln
+
+      - name: Build
+        shell: powershell
+        run: dotnet build .\ToastRevival.sln --configuration Release --no-restore
+
+      - name: Build unsigned MSI
+        shell: powershell
+        run: .\scripts\build-msi.ps1 -Version "0.2.${{ github.run_number }}.0"
+
+      - name: Upload unsigned MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-msi
+          path: artifacts/installer/*.msi
+          retention-days: 30

@@ -3,58 +3,49 @@ import { Link } from 'react-router-dom';
 import { ChevronDown } from '../../components/marketing/FeatureIcons';
 import { useSeo, breadcrumbLd } from '../../lib/seo';
 
-const PLANS = [
+const TIERS = [
   {
-    name: 'Free',
-    range: '1 – 25 devices',
+    name: 'Free Trial',
+    tagline: 'Hands-on evaluation for two endpoints.',
     price: '$0',
-    unit: 'trial',
-    tagline: 'Reviewed access for product evaluation and small fleet testing.',
-    cta: 'Request access',
-    ctaHref: '/register',
-    ctaStyle: 'primary' as const,
-    highlight: false,
+    priceSub: '2 devices · 14 days · reviewed',
+    bullets: [
+      'Full product, every feature unlocked',
+      'Two enrolled devices for the trial window',
+      'Trial requests reviewed before activation',
+      'Pre-signed MSI download after approval',
+    ],
+    cta: { label: 'Request trial access', href: '/register', style: 'primary' as const },
+    foot: 'Convert to Managed SaaS or self-host before the 14-day window ends.',
   },
   {
-    name: 'Standard',
-    range: '26 – 100 devices',
+    name: 'Managed SaaS',
+    tagline: 'We run it. You send notifications.',
     price: '$22',
-    unit: '/ month',
-    tagline: 'One flat rate. Up to 100 devices. No per-device math.',
-    cta: 'Request access',
-    ctaHref: '/register',
-    ctaStyle: 'accent' as const,
-    highlight: true,
+    priceSub: '/ month · up to 100 devices',
+    bullets: [
+      'Hosted on our infrastructure, US region',
+      'Updates, backups, and TLS handled by us',
+      'Microsoft Store MSIX listing available',
+      'Cancel from the billing portal anytime',
+    ],
+    cta: { label: 'Request trial access', href: '/register', style: 'primary' as const },
+    foot: 'Trial first, then activate billing. No annual contract.',
   },
   {
-    name: 'Growth',
-    range: '101 – 200 devices',
-    price: '$44',
-    unit: '/ month',
-    tagline: 'One flat rate. Up to 200 devices.',
-    cta: 'Request access',
-    ctaHref: '/register',
-    ctaStyle: 'primary' as const,
-    highlight: false,
+    name: 'Roll Your Own',
+    tagline: 'Docker Compose source. Your servers. Your rules.',
+    price: '$0',
+    priceSub: 'self-hosted · no device cap',
+    bullets: [
+      'Full Docker Compose source on GitHub',
+      'No device cap, no billing service required',
+      'Run on your own hardware or cloud',
+      'You handle hosting, updates, and backups',
+    ],
+    cta: { label: 'View on GitHub', href: 'https://github.com/keithrlucier/toast-notification', style: 'ghost' as const, external: true },
+    foot: 'Bring your own OV cert to sign the agent, or run the pre-signed MSI from our GitHub release.',
   },
-  {
-    name: 'Enterprise',
-    range: '200+ devices',
-    price: 'Contact us',
-    unit: '',
-    tagline: 'Volume pricing for large deployments.',
-    cta: 'Get in touch',
-    ctaHref: 'mailto:support@toastnotification.com?subject=Enterprise%20Pricing',
-    ctaStyle: 'ghost' as const,
-    highlight: false,
-  },
-];
-
-const BLOCKS = [
-  { block: 'Free',       devices: '1 – 25',    monthly: '$0',          note: 'Trial requests are reviewed before activation.' },
-  { block: 'Standard',  devices: '26 – 100',   monthly: '$22 / mo',    note: 'Flat rate. All features.' },
-  { block: 'Growth',    devices: '101 – 200',  monthly: '$44 / mo',    note: 'Flat rate. All features.' },
-  { block: 'Enterprise',devices: '200+',       monthly: 'Contact us',  note: 'Volume pricing.' },
 ];
 
 const INCLUSIONS = [
@@ -64,7 +55,7 @@ const INCLUSIONS = [
       'Six pre-built templates — Announcement, Alert, Action Required, Reminder, Celebration, Maintenance',
       'Title, body, hero image, logo, action buttons, audio',
       'Scenario routing — Default, Reminder, Alarm, IncomingCall, Urgent',
-      'Tenant-uploadable asset library with image moderation',
+      'Tenant asset library with image moderation',
       'Notification scheduling and recurring sends',
     ],
   },
@@ -80,7 +71,7 @@ const INCLUSIONS = [
   {
     heading: 'Deployment',
     items: [
-      'MSI with embedded scheduled task',
+      'Signed MSI with embedded scheduled task',
       'MSIX through the Microsoft Store',
       'Intune LOB compatible',
       'RMM silent install with CLIENTID, SERVERURL, and ENROLLMENTKEY properties',
@@ -103,57 +94,57 @@ const INCLUSIONS = [
       'JWT auth — 60-min user tokens, 365-day device tokens',
       'Per-tenant HMAC-SHA256 payload signing, verified by the Windows agent',
       'Device enrollment keys for restricted registration',
-      'Encrypted agent config via DPAPI. Tenant-scoped query isolation.',
+      'Encrypted agent config via DPAPI, tenant-scoped query isolation',
     ],
   },
   {
     heading: 'Administration',
     items: [
       'Multi-user admin portal with role-based access',
-      'Self-service Stripe billing portal',
       'Device inventory with last-seen and version tracking',
       'Template gallery with live preview',
       'Moderation queue and content-safety scanning',
+      'Self-service Stripe billing portal (Managed SaaS only)',
     ],
   },
 ];
 
 const FAQ = [
   {
-    q: 'How does block pricing work?',
-    a: 'You pay a flat monthly rate based on which block your active device count falls into, not per device. Trial access is reviewed before activation. 26-100 devices is $22/month regardless of whether you have 30 or 100 devices. 101-200 is $44/month. Blocks give you a cost ceiling, not a per-seat invoice.',
+    q: 'Why three tiers?',
+    a: 'Different operators want different things. Some want to evaluate the product on two endpoints before they commit. Some want us to host and run it so they never see a server. Some have an MSP background and would rather run their own Docker stack on infrastructure they already manage. The price is a side effect of that choice, not a feature gate. Every tier ships every feature.',
   },
   {
-    q: 'How is a "device" counted?',
-    a: 'The app is licensed per signed-in user session. A single machine with two active users consumes two device slots. Decommissioning a device frees the slot immediately. Devices that have not pinged in 30 days are not counted as active.',
+    q: 'What happens after the 14-day trial?',
+    a: 'Two devices and fourteen days are enforced in the backend. To keep using the product, either activate Managed SaaS billing through the admin dashboard or pull the Docker Compose source and run it yourself. There is no automatic conversion to a paid plan.',
+  },
+  {
+    q: 'How is a "device" counted on Managed SaaS?',
+    a: 'The agent is licensed per signed-in user session. A single machine with two active users consumes two device slots. Decommissioning a device frees the slot immediately. Devices that have not pinged in 30 days are not counted as active.',
   },
   {
     q: 'How does device counting work on Terminal Server / RDS?',
-    a: 'Each logged-on user session counts as one device. Ten users active on a single Terminal Server is ten device slots. Each session receives notifications independently, so each session consumes one slot. There is no special TS mode or per-server licensing.',
+    a: 'Each logged-on user session counts as one device. Ten users active on a single Terminal Server is ten device slots. Each session receives notifications independently, so each session consumes one slot. There is no special TS mode.',
   },
   {
-    q: 'What happens if my device count crosses a block boundary mid-month?',
-    a: 'Billing moves to the next block at the start of the following billing cycle. You are never charged retroactively for crossing a threshold mid-month. Stripe billing is managed through your self-service portal.',
+    q: 'What does "Roll Your Own" actually include?',
+    a: 'The full Docker Compose stack — ASP.NET Core 8 API, React dashboard, PostgreSQL 16, nginx — plus a self-host README with the three-step deploy and an environment file documenting every config key. Billing is disabled by default. Turnstile and content safety degrade gracefully if you do not supply keys. Named volumes for the database and uploaded assets.',
   },
   {
-    q: 'Is there a contract or annual commitment?',
-    a: 'No contract. Billing is monthly. Cancel from the Stripe billing portal at any time — service continues through the end of the current billing period.',
+    q: 'Can I sign the agent myself for self-host?',
+    a: 'Yes, two paths. Path A — use our pre-signed MSI from the GitHub release. That is the path most self-hosters take. Path B — buy your own OV code-signing certificate (roughly $300-400 a year, one-to-three day validation) and sign the MSI yourself. Path B is documented but high friction; most operators evaluating between SaaS and self-host pick Path A or convert to Managed SaaS.',
   },
   {
-    q: 'What payment methods do you accept?',
-    a: 'Credit card and ACH via Stripe. Self-serve billing portal included with every paid subscription.',
+    q: 'Is there a contract on Managed SaaS?',
+    a: 'No. Billing is monthly through Stripe. Cancel from the billing portal at any time — service continues through the end of the current billing period.',
   },
   {
-    q: 'Do you offer volume pricing above 200 devices?',
-    a: 'Yes. Email support@toastnotification.com with your estimated device count and we will put together a quote.',
+    q: 'Where is the Managed SaaS data stored?',
+    a: 'Production data is stored in the United States, single region. Notification payloads are HMAC-SHA256 signed per tenant. Eligible inputs are scored by content safety before delivery.',
   },
   {
-    q: 'Where is data stored?',
-    a: 'Production data is stored in the United States. Notification payloads are HMAC-SHA256 signed per tenant. Content-safety checks score eligible inputs before delivery.',
-  },
-  {
-    q: 'Do you support SSO or SAML?',
-    a: 'SAML / OIDC single sign-on is on the roadmap. Not available yet. Email support@toastnotification.com if this is a hard requirement.',
+    q: 'Why is this priced this way?',
+    a: 'Toast Notification was built in 2020 for MSPs during the work-from-home explosion and delivered 986,000 legitimate notifications across 17 production tenants in its first life. Teams and Slack absorbed the generic use case, so it is now a passion project for the shops where OS-level fleet notification without a third-party dependency still matters. The Managed SaaS rate covers infrastructure. The self-hosted path is free, full stop, no strings.',
   },
 ];
 
@@ -163,7 +154,7 @@ export default function Pricing() {
   useSeo({
     title: 'Pricing',
     description:
-      'Toast Notification pricing uses reviewed trial access and simple fleet blocks: $22/month up to 100 devices and $44/month up to 200 devices. Every feature included.',
+      'Toast Notification pricing — Free Trial (2 devices, 14 days, reviewed), Managed SaaS ($22/month for up to 100 devices), or Roll Your Own (Docker Compose self-host, free, no device cap).',
     path: '/pricing',
     jsonLd: [
       breadcrumbLd([
@@ -175,107 +166,99 @@ export default function Pricing() {
 
   return (
     <>
-      {/* Header */}
+      {/* Origin lead */}
       <section className="m-section" aria-labelledby="pricing-heading">
         <div className="m-container">
           <h1 id="pricing-heading" className="m-section-heading is-centered">
             Pricing.
           </h1>
-          <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 560, marginInline: 'auto' }}>
-            Block pricing. Pay a flat monthly rate for your device range — not per seat.
-            Every feature included on every plan. No upsells.
+          <p
+            className="m-section-subhead is-centered"
+            style={{ marginTop: 24, maxWidth: 720, marginInline: 'auto' }}
+          >
+            Toast Notification was built in 2020 for MSPs during the work-from-home explosion
+            and delivered 986,000 legitimate notifications across 17 production tenants in its
+            first life. Teams and Slack absorbed the generic use case. This is now a passion
+            project for the shops where OS-level fleet notification without a third-party
+            dependency still matters.
+          </p>
+          <p
+            className="m-section-subhead is-centered"
+            style={{ marginTop: 16, maxWidth: 720, marginInline: 'auto' }}
+          >
+            Three ways to run it. Every feature ships on every tier. The self-hosted path is
+            genuinely free, no strings.
           </p>
         </div>
       </section>
 
-      {/* Pricing cards */}
-      <section className="m-section" style={{ paddingTop: 0 }} aria-labelledby="pricing-cards-heading">
+      {/* Tier cards */}
+      <section className="m-section" style={{ paddingTop: 0 }} aria-labelledby="tiers-heading">
         <div className="m-container">
-          <h2 id="pricing-cards-heading" className="sr-only">Plans</h2>
-          <div className="m-pricing-grid">
-            {PLANS.map((plan) => (
-              <div
-                key={plan.name}
-                className={`m-pricing-card${plan.highlight ? ' is-featured' : ''}`}
-              >
-                <div className="m-pricing-card-header">
-                  <span className="m-pricing-card-name">{plan.name}</span>
-                  <span className="m-pricing-card-range">{plan.range}</span>
-                </div>
-                <div className="m-pricing-card-price">
-                  <span className={`m-pricing-price${plan.highlight ? ' is-accent' : ''}`}>
-                    {plan.price}
-                  </span>
-                  {plan.unit && (
-                    <span className="m-pricing-unit">{plan.unit}</span>
-                  )}
-                </div>
-                <p className="m-pricing-tagline">{plan.tagline}</p>
-                {plan.ctaHref.startsWith('mailto') ? (
+          <h2 id="tiers-heading" className="sr-only">Plans</h2>
+          <div className="m-tier-grid">
+            {TIERS.map((tier) => (
+              <div key={tier.name} className="m-tier-card">
+                <div className="m-tier-name">{tier.name}</div>
+                <p className="m-tier-tagline">{tier.tagline}</p>
+                <div className="m-tier-price">{tier.price}</div>
+                <div className="m-tier-price-sub">{tier.priceSub}</div>
+                <ul className="m-tier-bullets">
+                  {tier.bullets.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+                {tier.cta.external ? (
                   <a
-                    href={plan.ctaHref}
-                    className="m-btn m-btn-ghost"
-                    style={{ marginTop: 'auto', width: '100%', textAlign: 'center' }}
+                    href={tier.cta.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`m-btn ${tier.cta.style === 'ghost' ? 'm-btn-ghost' : 'm-btn-primary'} m-tier-cta`}
+                    style={{ width: '100%', textAlign: 'center' }}
                   >
-                    {plan.cta}
+                    {tier.cta.label}
                   </a>
                 ) : (
                   <Link
-                    to={plan.ctaHref}
-                    className={`m-btn ${plan.ctaStyle === 'ghost' ? 'm-btn-ghost' : 'm-btn-primary'}`}
-                    style={{ marginTop: 'auto', width: '100%', textAlign: 'center' }}
+                    to={tier.cta.href}
+                    className={`m-btn ${tier.cta.style === 'ghost' ? 'm-btn-ghost' : 'm-btn-primary'} m-tier-cta`}
+                    style={{ width: '100%', textAlign: 'center' }}
                   >
-                    {plan.cta}
+                    {tier.cta.label}
                   </Link>
                 )}
+                <p
+                  className="m-tier-footnote"
+                  style={{ marginTop: 16, textAlign: 'left' }}
+                >
+                  {tier.foot}
+                </p>
               </div>
             ))}
           </div>
 
-          <p className="m-plan-fineprint" style={{ textAlign: 'center', marginTop: 24 }}>
-            All plans include every feature. No feature is gated behind a higher tier.
-            Cancel anytime from the billing portal.
+          <p className="m-tier-footnote">
+            Every tier ships every feature. No Pro gate, no Enterprise SKU, no add-on.
           </p>
         </div>
       </section>
 
-      {/* Block reference table */}
-      <section className="m-section" style={{ background: 'var(--bg-secondary)', paddingTop: 48, paddingBottom: 48 }} aria-labelledby="blocks-heading">
-        <div className="m-container">
-          <h2 id="blocks-heading" className="m-section-heading is-centered">
-            At a glance.
-          </h2>
-          <table className="m-cost-table" aria-label="Pricing blocks by device count" style={{ marginTop: 32 }}>
-            <thead>
-              <tr>
-                <th scope="col">Plan</th>
-                <th scope="col">Devices covered</th>
-                <th scope="col">Monthly</th>
-                <th scope="col" className="m-th-note">Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {BLOCKS.map((row) => (
-                <tr key={row.block}>
-                  <td><strong>{row.block}</strong></td>
-                  <td><span className="m-mono">{row.devices}</span></td>
-                  <td><span className="m-mono">{row.monthly}</span></td>
-                  <td className="m-cost-note">{row.note}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       {/* What's included */}
-      <section className="m-section" aria-labelledby="included-heading">
+      <section
+        className="m-section"
+        style={{ background: 'var(--bg-secondary)' }}
+        aria-labelledby="included-heading"
+      >
         <div className="m-container">
           <h2 id="included-heading" className="m-section-heading is-centered">
-            What&rsquo;s included.
+            What ships on every tier.
           </h2>
-          <p className="m-section-subhead is-centered" style={{ marginTop: 16, maxWidth: 580, marginInline: 'auto' }}>
-            Every feature ships on every plan. No Pro gate. No Enterprise tier. No add-on SKU.
+          <p
+            className="m-section-subhead is-centered"
+            style={{ marginTop: 16, maxWidth: 620, marginInline: 'auto' }}
+          >
+            The product is the product. The tier is the operational model — who runs the
+            infrastructure, who pays for hosting, who holds the database.
           </p>
           <div className="m-inclusion-grid" style={{ marginTop: 48 }}>
             {INCLUSIONS.map((group) => (
@@ -293,9 +276,13 @@ export default function Pricing() {
       </section>
 
       {/* FAQ */}
-      <section className="m-section" style={{ background: 'var(--bg-secondary)' }} aria-labelledby="faq-heading">
+      <section className="m-section" aria-labelledby="faq-heading">
         <div className="m-container">
-          <h2 id="faq-heading" className="m-section-heading is-centered" style={{ marginBottom: 48 }}>
+          <h2
+            id="faq-heading"
+            className="m-section-heading is-centered"
+            style={{ marginBottom: 48 }}
+          >
             Frequently asked.
           </h2>
           <div className="m-faq">
@@ -326,20 +313,29 @@ export default function Pricing() {
       </section>
 
       {/* Final CTA */}
-      <section className="m-section" aria-labelledby="pricing-cta-heading">
+      <section
+        className="m-section"
+        style={{ background: 'var(--bg-secondary)' }}
+        aria-labelledby="pricing-cta-heading"
+      >
         <div className="m-final-cta">
-          <h2 id="pricing-cta-heading">Request access. Grow when you are ready.</h2>
+          <h2 id="pricing-cta-heading">Pick the path that fits the shop.</h2>
           <p>
-            Request access, deploy the signed MSI after approval, and send your first notification in under ten minutes.
-            Trial access is reviewed before activation to protect the platform from abuse.
-            Questions? <a href="mailto:support@toastnotification.com">support@toastnotification.com</a>.
+            Request a reviewed trial to evaluate against two endpoints, or pull the Docker
+            Compose source and run it on your own infrastructure today. Questions —{' '}
+            <a href="mailto:support@toastnotification.com">support@toastnotification.com</a>.
           </p>
           <div className="m-final-cta-buttons">
             <Link to="/register" className="m-btn m-btn-primary">
               Request trial access
             </Link>
-            <a href="mailto:support@toastnotification.com?subject=Toast%20Notification%20Pricing" className="m-btn m-btn-ghost">
-              Contact us
+            <a
+              href="https://github.com/keithrlucier/toast-notification"
+              target="_blank"
+              rel="noreferrer"
+              className="m-btn m-btn-ghost"
+            >
+              Self-host on GitHub
             </a>
           </div>
         </div>

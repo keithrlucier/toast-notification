@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const SITE_URL = 'https://toastnotification.com';
 const SITE_NAME = 'Toast Notification';
-const UPDATED = '2026-05-12';
+const UPDATED = '2026-05-13';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -27,7 +27,7 @@ const softwareApplicationLd = () => ({
   url: SITE_URL,
   offers: {
     '@type': 'Offer',
-    name: 'Standard',
+    name: 'Managed SaaS',
     price: '22.00',
     priceCurrency: 'USD',
     priceSpecification: {
@@ -37,7 +37,8 @@ const softwareApplicationLd = () => ({
     },
     eligibleQuantity: {
       '@type': 'QuantitativeValue',
-      minValue: 100,
+      minValue: 0,
+      maxValue: 100,
       unitText: 'device',
     },
     availability: 'https://schema.org/InStock',
@@ -52,26 +53,41 @@ const softwareApplicationLd = () => ({
 const productLd = () => ({
   '@context': 'https://schema.org',
   '@type': 'Product',
-  name: `${SITE_NAME} Standard plan`,
+  name: `${SITE_NAME} Managed SaaS plan`,
   description:
-    'Managed Windows notification platform with reviewed trial access, fleet block pricing, signed delivery, and audit reporting.',
+    'Managed Windows notification platform with reviewed trial access, a $22/month Managed SaaS tier up to 100 devices, and a free self-hosted Docker Compose path.',
   brand: { '@type': 'Brand', name: SITE_NAME },
   offers: {
     '@type': 'AggregateOffer',
     priceCurrency: 'USD',
-    lowPrice: '22.00',
-    offerCount: 1,
+    lowPrice: '0.00',
+    highPrice: '22.00',
+    offerCount: 3,
     offers: [
       {
         '@type': 'Offer',
-          name: 'Standard',
+        name: 'Free Trial',
+        price: '0.00',
+        priceCurrency: 'USD',
+        availability: 'https://schema.org/InStock',
+      },
+      {
+        '@type': 'Offer',
+        name: 'Managed SaaS',
+        price: '22.00',
+        priceCurrency: 'USD',
+        priceSpecification: {
+          '@type': 'PriceSpecification',
           price: '22.00',
           priceCurrency: 'USD',
-          priceSpecification: {
-            '@type': 'PriceSpecification',
-            price: '22.00',
-            priceCurrency: 'USD',
-          },
+        },
+        availability: 'https://schema.org/InStock',
+      },
+      {
+        '@type': 'Offer',
+        name: 'Roll Your Own (self-hosted)',
+        price: '0.00',
+        priceCurrency: 'USD',
         availability: 'https://schema.org/InStock',
       },
     ],
@@ -129,14 +145,14 @@ const routes = [
         <li>Export tenant audit evidence to CSV or PDF.</li>
         <li>Deploy through MSI, Intune, Microsoft Store, or RMM silent install.</li>
       </ul>
-      <p>Trial access is reviewed before activation. Paid fleet blocks start at $22 per month for 26-100 devices.</p>
+      <p>Three ways to run it: a reviewed Free Trial (2 devices, 14 days), a $22/month Managed SaaS tier up to 100 devices, or a free self-hosted Docker Compose path with no device cap.</p>
     `,
   },
   {
     path: '/pricing',
     title: 'Pricing',
     description:
-      'Toast Notification pricing: reviewed trial access, then $22/month for 26-100 devices and $44/month for 101-200 devices.',
+      'Toast Notification pricing: Free Trial (2 devices, 14 days, reviewed), Managed SaaS ($22/month up to 100 devices), or Roll Your Own (Docker Compose self-host, free, no device cap).',
     priority: '0.9',
     changefreq: 'weekly',
     jsonLd: [
@@ -148,15 +164,13 @@ const routes = [
     ],
     body: `
       <h1>Toast Notification pricing</h1>
-      <p>Toast Notification has reviewed trial access before tenant activation. Paid fleet blocks are predictable: $22/month for 26-100 devices and $44/month for 101-200 devices.</p>
+      <p>Toast Notification was built in 2020 for MSPs during the work-from-home explosion and delivered 986,000 legitimate notifications across 17 production tenants in its first life. It is offered today in three tiers — every tier ships every feature.</p>
       <ul>
-        <li>Trial access: reviewed before activation.</li>
-        <li>26-100 devices: $22 per month.</li>
-        <li>300 devices: $66 per month.</li>
-        <li>1,000 devices: $220 per month.</li>
-        <li>5,000 devices: $1,100 per month.</li>
+        <li>Free Trial: $0 — 2 devices, 14 days, reviewed before activation.</li>
+        <li>Managed SaaS: $22/month flat for up to 100 devices, hosted on Toast2IT infrastructure in a single US region. Cancel anytime.</li>
+        <li>Roll Your Own: $0 — self-host the Docker Compose source from GitHub, no device cap, operator runs hosting and updates.</li>
       </ul>
-      <p>All current features are included: signed delivery, audit reporting, deployment guides, templates, targeting, and delivery tracking.</p>
+      <p>The product is identical across tiers. The tier controls who runs the infrastructure, not which features are available.</p>
     `,
   },
   {
@@ -318,7 +332,7 @@ const routes = [
       <h2>Canonical facts</h2>
       <ul>
         <li>Primary audience: MSPs and IT departments.</li>
-        <li>Pricing: reviewed trial access, then $22/month for 26-100 devices and $44/month for 101-200 devices.</li>
+        <li>Pricing: three tiers — Free Trial (2 devices / 14 days / reviewed), Managed SaaS ($22/month up to 100 devices), Roll Your Own (Docker Compose self-host, free, no device cap).</li>
         <li>Deployment: MSI, Intune, Microsoft Store, or RMM silent install.</li>
         <li>Security: HMAC payload signing, tenant isolation, MFA-gated broadcast sends, and audit records.</li>
         <li>Plain-text crawler file: <a href="/llms.txt">/llms.txt</a>.</li>

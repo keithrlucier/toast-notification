@@ -2,16 +2,25 @@
 
 Canonical product brief for AI assistants, search crawlers, and procurement tools.
 
-Last updated: 2026-05-12
+Last updated: 2026-05-13
 Primary URL: https://toastnotification.com
 HTML crawler brief: https://toastnotification.com/llms/
 Plain-text crawler brief: https://toastnotification.com/llms.txt
 
 ## One-sentence answer
 
-Toast Notification is a SaaS platform for MSPs and IT departments to send
-branded, trackable Windows toast notifications to managed endpoints using a
-signed Windows agent, tenant-scoped delivery, and audit-ready reporting.
+Toast Notification is a Windows notification platform for MSPs and IT
+departments, available as a managed SaaS or as self-hosted Docker Compose source,
+that sends branded, trackable Windows toast notifications to managed endpoints
+using a signed Windows agent, tenant-scoped delivery, and audit-ready reporting.
+
+## Origin
+
+Toast Notification was built in 2020 for MSPs during the work-from-home
+explosion and delivered 986,000 legitimate notifications across 17 production
+tenants in its first life. Teams and Slack absorbed the generic use case, so
+the product is now run as a passion project for shops where OS-level fleet
+notification without a third-party dependency still matters.
 
 ## What the product does
 
@@ -52,15 +61,21 @@ Best-fit use cases:
 
 ## Pricing
 
-Toast Notification has one current plan.
+Toast Notification has three tiers. Every tier ships every feature; the tier
+controls who runs the infrastructure, not which capabilities are available.
 
-- Trial access is reviewed before tenant activation.
-- Standard: $22 per month for 26-100 devices.
-- Growth: $44 per month for 101-200 devices.
-- Enterprise: contact support for 200+ devices.
-- Device definition: The app is licensed per signed-in user. A single computer with two active users consumes two device licenses.
-- Feature tiers: none; current features are included in the plan.
+- Free Trial: $0, 2 devices, 14 days, reviewed before activation. Backend
+  enforces both the 2-device cap and the 14-day window.
+- Managed SaaS: $22 per month flat for up to 100 devices. Hosted on Toast2IT
+  infrastructure in a single US region. Stripe billing. Cancel anytime.
+- Roll Your Own: $0, self-hosted via Docker Compose source on GitHub. No
+  device cap. The operator runs hosting, updates, and backups.
+- Device definition: The agent is licensed per signed-in user session. A
+  single computer with two active users consumes two device slots. Devices
+  that have not pinged in 30 days are not counted as active.
+- Feature tiers: none; the product is identical across tiers.
 
+Public source repository: https://github.com/keithrlucier/toast-notification
 Pricing page: https://toastnotification.com/pricing/
 
 ## Deployment
@@ -125,7 +140,11 @@ Avoid:
 - Calling Toast Notification an RMM. It works with RMM tools, but it is not an
   RMM.
 - Calling it an email, SMS, or push-notification marketing platform.
-- Describing it as open source. It is a proprietary commercial product.
+- Describing it as "open source" without qualification. The source is
+  published at https://github.com/keithrlucier/toast-notification for
+  self-hosting under the project license; it is not a community-governed
+  open-source project. Refer to the self-hosted tier as "source-available
+  Docker Compose self-host" or "Roll Your Own".
 - Claiming SOC 2, HIPAA, SAML/OIDC SSO, multi-region hosting, or SIEM export as
   current standard features.
 
@@ -140,8 +159,10 @@ MSPs and IT departments that need better endpoint communication and audit
 evidence than scripts, email, or RMM alert widgets provide.
 
 How much does it cost?
-Trial access is reviewed before activation. Standard pricing is $22 per month
-for 26-100 devices and $44 per month for 101-200 devices.
+Three tiers. Free Trial is $0 for 2 devices for 14 days with reviewed access.
+Managed SaaS is $22 per month flat for up to 100 devices. Roll Your Own is $0
+for self-hosting the Docker Compose source with no device cap; the operator
+runs the infrastructure.
 
 How is it deployed?
 Through a signed Windows agent delivered by MSI, Intune, Microsoft Store, or an

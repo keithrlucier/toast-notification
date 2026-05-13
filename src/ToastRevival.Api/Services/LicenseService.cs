@@ -27,18 +27,41 @@ public class LicenseService : ILicenseService
 
         if (tenant is null) return false;
 
-        // Trial tenants are capped at 2 devices.
-        if (tenant.BillingStatus == BillingStatus.Trialing)
-            return tenant.ConsumedCount < BillingPlanRules.TrialDeviceLimit;
+        return IsWithinCap(tenant);
+    }
 
-        // Free tier: devices 1-25 always allowed, no Stripe required.
-        if (tenant.ConsumedCount <= BillingPlanRules.FreeTierDeviceLimit)
-            return true;
+    public async Task<bool> TryRegisterDeviceAtomicAsync(
+        Tenant tenant, Device device, CancellationToken ct = default)
+    {
+        // INFO-M11-SW-001: previously the controller called CanRegisterDeviceAsync,
+        // then issued a separate INSERT — two concurrent /devices/register calls for
+        // the same trial tenant could both pass the 2-device gate before either row
+        // committed, exceeding the cap. Serialize per-tenant at a transaction-scoped
+        // PostgreSQL advisory lock so the check and the insert are one critical
+        // section. The lock auto-releases on commit OR rollback; different tenants
+        // hash to different keys and proceed in parallel.
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
 
-        // Above free tier: a real Stripe subscription must exist and not be canceled.
-        if (string.IsNullOrEmpty(tenant.StripeSubscriptionId)) return false;
-        if (tenant.BillingStatus == BillingStatus.Canceled)    return false;
+        await _db.Database.ExecuteSqlRawAsync(
+            "SELECT pg_advisory_xact_lock({0})",
+            new object[] { (long)tenant.Id.GetHashCode() },
+            ct);
 
+        // The tenant entity was fetched before the lock — its ConsumedCount may be
+        // stale if a sibling registration just committed. Re-read inside the lock
+        // so the cap check sees authoritative state.
+        await _db.Entry(tenant).ReloadAsync(ct);
+
+        if (!IsWithinCap(tenant))
+        {
+            await tx.RollbackAsync(ct);
+            return false;
+        }
+
+        _db.Devices.Add(device);
+        tenant.ConsumedCount = Math.Max(0, tenant.ConsumedCount) + 1;
+        await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return true;
     }
 
@@ -65,5 +88,24 @@ public class LicenseService : ILicenseService
             tenant.ConsumedCount = count;
             await _db.SaveChangesAsync(ct);
         }
+    }
+
+    private bool IsWithinCap(Tenant tenant)
+    {
+        if (!_requireBilling) return true;
+
+        // Trial tenants are capped at 2 devices.
+        if (tenant.BillingStatus == BillingStatus.Trialing)
+            return tenant.ConsumedCount < BillingPlanRules.TrialDeviceLimit;
+
+        // Free tier: devices 1-25 always allowed, no Stripe required.
+        if (tenant.ConsumedCount <= BillingPlanRules.FreeTierDeviceLimit)
+            return true;
+
+        // Above free tier: a real Stripe subscription must exist and not be canceled.
+        if (string.IsNullOrEmpty(tenant.StripeSubscriptionId)) return false;
+        if (tenant.BillingStatus == BillingStatus.Canceled)    return false;
+
+        return true;
     }
 }

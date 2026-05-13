@@ -171,43 +171,40 @@ function BillingStep({
   return (
     <div>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-        Billing & Subscription
+        How pricing works
       </h2>
       <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.55 }}>
-        Your first 25 devices are always free — no credit card required. Billing activates automatically
-        when you exceed 25 active devices.
+        Your trial gives you 2 devices for 14 days — no credit card required. When you're ready to
+        expand, choose managed hosting or run the full stack yourself.
       </p>
 
-      <div style={{
-        border: '1px solid rgba(15,23,42,0.12)',
-        borderRadius: 8,
-        background: 'var(--bg-secondary)',
-        padding: 24,
-        marginBottom: 16,
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap', marginBottom: 18 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-              Standard
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-              Enterprise endpoint notification management
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>$0.22</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>per active device / month</div>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-          <PlanFact label="Free tier" value="1–25 devices" />
-          <PlanFact label="Standard rate" value="$0.22 / device" />
-          <PlanFact label="Billing starts" value="At device 26+" />
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+        <TierCard
+          label="Free Trial"
+          badge="Current"
+          badgeColor="var(--accent)"
+          description="2 devices · 14 days · admin-approved"
+          price="$0"
+        />
+        <TierCard
+          label="Managed SaaS"
+          badge="Upgrade"
+          badgeColor="rgba(15,23,42,0.35)"
+          description="0–100 devices · we handle hosting, updates, and backups"
+          price="$22/mo"
+        />
+        <TierCard
+          label="Roll Your Own"
+          badge="Self-host"
+          badgeColor="rgba(15,23,42,0.35)"
+          description="Full Docker Compose source · no device cap · your infrastructure"
+          price="$0"
+          footer="github.com/keithrlucier/toast-notification"
+        />
       </div>
 
       <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 20, lineHeight: 1.5 }}>
-        Stripe billing is only required when you exceed 25 devices. You can configure it now or any time
+        Stripe billing is only needed for the Managed SaaS tier. You can set it up now or any time
         from the Billing page.
       </p>
 
@@ -225,19 +222,51 @@ function BillingStep({
   );
 }
 
-function PlanFact({ label, value }: { label: string; value: string }) {
+function TierCard({
+  label, badge, badgeColor, description, price, footer,
+}: {
+  label: string;
+  badge: string;
+  badgeColor: string;
+  description: string;
+  price: string;
+  footer?: string;
+}) {
   return (
     <div style={{
-      border: '1px solid rgba(15,23,42,0.08)',
+      border: '1px solid rgba(15,23,42,0.12)',
       borderRadius: 8,
-      padding: '12px 14px',
-      background: '#FFFFFF',
+      background: 'var(--bg-secondary)',
+      padding: '16px 20px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 16,
+      flexWrap: 'wrap',
     }}>
-      <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
-        {label}
+      <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{label}</span>
+          <span style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: '#fff',
+            background: badgeColor,
+            borderRadius: 4,
+            padding: '2px 6px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+          }}>{badge}</span>
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{description}</div>
+        {footer && (
+          <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+            {footer}
+          </div>
+        )}
       </div>
-      <div style={{ fontSize: 16, color: 'var(--text-primary)', fontWeight: 700, marginTop: 4 }}>
-        {value}
+      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+        {price}
       </div>
     </div>
   );

@@ -35,7 +35,7 @@ export default function Llms() {
           <div className="m-security-meta">
             <span>Product: Managed Windows notifications</span>
             <span>Audience: MSPs and IT departments</span>
-            <span>Access: Reviewed trials plus paid fleet blocks</span>
+            <span>Access: Free Trial, $22/mo Managed SaaS, or self-hosted Docker</span>
           </div>
         </header>
 
@@ -67,10 +67,10 @@ export default function Llms() {
         <section className="m-security-section" aria-labelledby="llms-pricing">
           <h2 id="llms-pricing">Pricing facts</h2>
           <ul>
-            <li>Trial access is reviewed before tenant activation.</li>
-            <li>Standard block pricing is $22/month for 26-100 devices.</li>
-            <li>Growth block pricing is $44/month for 101-200 devices.</li>
-            <li>All current features are included across paid blocks.</li>
+            <li>Free Trial: $0, 2 devices, 14 days, reviewed before activation. Backend enforces both the 2-device cap and the 14-day window.</li>
+            <li>Managed SaaS: $22/month flat for up to 100 devices. Hosted on Toast2IT infrastructure in a single US region. Cancel anytime.</li>
+            <li>Roll Your Own: $0, self-hosted from the Docker Compose source on GitHub. No device cap. Operator runs hosting, updates, and backups.</li>
+            <li>Every tier ships every feature. The tier controls who runs the infrastructure, not which capabilities are available.</li>
           </ul>
         </section>
 

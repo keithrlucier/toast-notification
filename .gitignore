@@ -1,31 +1,57 @@
-# User secrets & local config
+# Secrets
 .env
+.env.*
+!.env.example
+.github-pat
+Docs/ToastRevival/.env
+
+# SSH private keys (Lightsail, etc.) — never commit
 *.pem
 *.key
-*.pfx
-.github-pat
+!**/letsencrypt/**/*.pem
+!**/letsencrypt/**/*.key
 
-# Build outputs
+# .NET
 bin/
 obj/
-dist/
-node_modules/
-*.nupkg
-*.snupkg
-
-# Publish directories
+artifacts/
 publish/
-
-# IDE
-.vs/
-.vscode/
+TestResults/
 *.user
+*.suo
+.vs/
+src/ToastRevival.Api/appsettings.Local.json
+
+# Windows packaging and signing outputs
+*.pfx
+*.p12
+*.pvk
+*.spc
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.appinstaller
+*.msi
+*.nupkg
+
+# JavaScript / frontend
+node_modules/
+dist/
+dist.tar.gz
+build/
+.vite/
+coverage/
+
+# Local editor and OS files
 .idea/
+.vscode/
+*.code-workspace
+*.swp
+Thumbs.db
+.DS_Store
+.docpro/
+.claude/
 
-# MSI build outputs
-installer/*.msi
-installer/*.wixpdb
-
-# Docker volumes
-data/
-artifacts
+# Playwright MCP browser cache
+.playwright-mcp/

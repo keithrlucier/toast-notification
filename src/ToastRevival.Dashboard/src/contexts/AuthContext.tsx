@@ -1,6 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import { authApi, type AuthResponse } from '../api/auth';
-import { AUTH_MESSAGE_STORAGE_KEY, AUTH_UNAUTHORIZED_EVENT, SESSION_EXPIRED_MESSAGE } from '../api/client';
+import { api, AUTH_MESSAGE_STORAGE_KEY, AUTH_UNAUTHORIZED_EVENT, SESSION_EXPIRED_MESSAGE } from '../api/client';
+
+let _faviconFetched = false;
+
+function maybeUpdateFavicon(isPlatformAdmin: boolean): void {
+  if (isPlatformAdmin || _faviconFetched) return;
+  _faviconFetched = true;
+  api.get<{ logoUrl?: string }>('/api/tenant/settings')
+    .then(res => {
+      if (res.logoUrl) {
+        const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+        if (link) link.href = res.logoUrl;
+      }
+    })
+    .catch(() => {});
+}
 
 interface AuthUser {
   userId: string;
@@ -195,6 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('token', res.token);
     localStorage.setItem('user', JSON.stringify(u));
     setUser(u);
+    maybeUpdateFavicon(u.isPlatformAdmin);
   };
 
   return (

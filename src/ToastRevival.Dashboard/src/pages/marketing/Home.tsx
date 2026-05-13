@@ -176,34 +176,65 @@ WS-014: payload unsigned`}
         </div>
       </section>
 
-      {/* Transparent Pricing */}
+      {/* Three ways to run it */}
       <section className="m-section" aria-labelledby="pricing-heading">
         <div className="m-container" style={{ textAlign: 'center' }}>
-          <h2 id="pricing-heading" className="m-section-heading">Transparent, predictable pricing.</h2>
-          <p className="m-section-subhead" style={{ maxWidth: '600px', margin: '16px auto 48px' }}>
-            No feature gating. Every tenant gets full API access, all templates, and full audit logging.
+          <h2 id="pricing-heading" className="m-section-heading">Three ways to run it.</h2>
+          <p className="m-section-subhead" style={{ maxWidth: '640px', margin: '16px auto 48px' }}>
+            Reviewed trial, managed SaaS, or roll your own with the Docker Compose source.
+            Every tier ships every feature.
           </p>
 
-          <div style={{ display: 'flex', gap: '24px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <div style={{ padding: '32px', background: 'var(--bg-secondary)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', minWidth: '300px', flex: '1', maxWidth: '400px' }}>
-              <div style={{ fontSize: '24px', fontWeight: 600, color: '#f8fafc', marginBottom: '8px' }}>Reviewed Trial</div>
-              <div style={{ fontSize: '36px', fontWeight: 700, color: 'var(--accent)', marginBottom: '16px' }}>$0 <span style={{ fontSize: '16px', fontWeight: 400, color: '#94a3b8' }}>/mo</span></div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, textAlign: 'left', color: '#cbd5e1', fontSize: '15px' }}>
-                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>Full product evaluation</li>
-                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>Tenant reviewed before activation</li>
-                <li style={{ padding: '12px 0' }}>MSI download after approval</li>
+          <div className="m-tier-grid" style={{ marginTop: 0 }}>
+            <div className="m-tier-card">
+              <div className="m-tier-name">Free Trial</div>
+              <p className="m-tier-tagline">Hands-on evaluation for two endpoints.</p>
+              <div className="m-tier-price">$0</div>
+              <div className="m-tier-price-sub">2 devices · 14 days · reviewed</div>
+              <ul className="m-tier-bullets">
+                <li>Full product, every feature unlocked</li>
+                <li>Trial requests reviewed before activation</li>
+                <li>Pre-signed MSI download after approval</li>
               </ul>
+              <Link to="/register" className="m-btn m-btn-primary m-tier-cta" style={{ width: '100%', textAlign: 'center' }}>
+                Request trial access
+              </Link>
             </div>
-            
-            <div style={{ padding: '32px', background: 'var(--bg-secondary)', borderRadius: '16px', border: '1px solid rgba(56, 189, 248, 0.3)', minWidth: '300px', flex: '1', maxWidth: '400px', position: 'relative' }}>
-              <div style={{ position: 'absolute', top: '-14px', left: '50%', transform: 'translateX(-50%)', background: '#38bdf8', color: '#0f172a', padding: '6px 16px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>Production Fleet</div>
-              <div style={{ fontSize: '24px', fontWeight: 600, color: '#f8fafc', marginBottom: '8px' }}>$22</div>
-              <div style={{ fontSize: '16px', fontWeight: 400, color: '#94a3b8', marginBottom: '16px' }}>flat / month — up to 100 devices</div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, textAlign: 'left', color: '#cbd5e1', fontSize: '15px' }}>
-                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>✓ 26–100 devices, one flat rate</li>
-                <li style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>✓ All features included</li>
-                <li style={{ padding: '12px 0' }}>✓ Cancel anytime</li>
+
+            <div className="m-tier-card">
+              <div className="m-tier-name">Managed SaaS</div>
+              <p className="m-tier-tagline">We run it. You send notifications.</p>
+              <div className="m-tier-price">$22</div>
+              <div className="m-tier-price-sub">/ month · up to 100 devices</div>
+              <ul className="m-tier-bullets">
+                <li>Hosted on our infrastructure, US region</li>
+                <li>Updates, backups, and TLS handled by us</li>
+                <li>Cancel from the billing portal anytime</li>
               </ul>
+              <Link to="/pricing" className="m-btn m-btn-primary m-tier-cta" style={{ width: '100%', textAlign: 'center' }}>
+                See pricing detail
+              </Link>
+            </div>
+
+            <div className="m-tier-card">
+              <div className="m-tier-name">Roll Your Own</div>
+              <p className="m-tier-tagline">Docker Compose source. Your servers. Your rules.</p>
+              <div className="m-tier-price">$0</div>
+              <div className="m-tier-price-sub">self-hosted · no device cap</div>
+              <ul className="m-tier-bullets">
+                <li>Full Docker Compose source on GitHub</li>
+                <li>No device cap, no billing service required</li>
+                <li>You handle hosting, updates, and backups</li>
+              </ul>
+              <a
+                href="https://github.com/keithrlucier/toast-notification"
+                target="_blank"
+                rel="noreferrer"
+                className="m-btn m-btn-ghost m-tier-cta"
+                style={{ width: '100%', textAlign: 'center' }}
+              >
+                View on GitHub
+              </a>
             </div>
           </div>
         </div>

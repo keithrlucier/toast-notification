@@ -129,19 +129,6 @@ public class NotificationsController : ControllerBase
             ? NotificationStatus.PendingReview
             : NotificationStatus.Queued;
 
-        // Default per-notification LogoUrl to the tenant's configured logo when
-        // the sender didn't supply one. TenantSettings.UploadLogo persists the
-        // tenant logo with the documented intent that it be "used as the
-        // notification icon" — without this fallback the field was wired to the
-        // database but never reached the wire, so Windows fell back to the
-        // agent's static Assets\\toast-logo.png.
-        var resolvedLogoUrl = !string.IsNullOrWhiteSpace(req.LogoUrl)
-            ? req.LogoUrl
-            : await _db.Tenants
-                .Where(t => t.Id == tenantId)
-                .Select(t => t.LogoUrl)
-                .FirstOrDefaultAsync();
-
         var notification = new Notification
         {
             TenantId = tenantId,
@@ -151,7 +138,7 @@ public class NotificationsController : ControllerBase
             BodyLine1 = req.BodyLine1,
             BodyLine2 = req.BodyLine2,
             HeroImageUrl = req.HeroImageUrl,
-            LogoUrl = resolvedLogoUrl,
+            LogoUrl = req.LogoUrl,
             ActionButtonsJson = actionButtonsJson,
             AudioSetting = req.AudioSetting,
             Scenario = req.Scenario,

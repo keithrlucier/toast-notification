@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { moderationApi, type PendingNotification, type BlocklistEntry } from '../api/moderation';
 import { ApiError } from '../api/client';
+import ModerationSettingsForm from '../components/ModerationSettingsForm';
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-US', {
@@ -12,7 +13,7 @@ function formatDateTime(iso: string): string {
 export default function Moderation() {
   const [pending, setPending]     = useState<PendingNotification[]>([]);
   const [blocklist, setBlocklist] = useState<BlocklistEntry[]>([]);
-  const [tab, setTab]             = useState<'pending' | 'blocklist'>('pending');
+  const [tab, setTab]             = useState<'pending' | 'blocklist' | 'settings'>('pending');
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
   const [acting, setActing]       = useState<string | null>(null);
@@ -92,7 +93,7 @@ export default function Moderation() {
       <div className="page-header">
         <div>
           <h1>Moderation</h1>
-          <p className="subtitle">Review flagged notifications and manage content blocklist</p>
+          <p className="subtitle">Review flagged notifications, manage the content blocklist, and configure tenant moderation policy</p>
         </div>
         <button className="btn btn-ghost" onClick={() => void load()} disabled={loading}>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -107,7 +108,7 @@ export default function Moderation() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 1, background: 'var(--bg-secondary)', borderRadius: 4, border: '1px solid rgba(15,23,42,0.12)', overflow: 'hidden', width: 'fit-content', marginBottom: 20 }}>
-        {(['pending', 'blocklist'] as const).map(t => (
+        {(['pending', 'blocklist', 'settings'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -126,7 +127,7 @@ export default function Moderation() {
               textTransform: 'capitalize',
             }}
           >
-            {t === 'pending' ? 'Pending Review' : 'Blocklist'}
+            {t === 'pending' ? 'Pending Review' : t === 'blocklist' ? 'Blocklist' : 'Settings'}
             {t === 'pending' && pending.length > 0 && (
               <span style={{ background: 'var(--status-error)', color: '#FFFFFF', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {pending.length}
@@ -141,7 +142,7 @@ export default function Moderation() {
         ))}
       </div>
 
-      {loading ? (
+      {loading && tab !== 'settings' ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
           <span className="spinner" style={{ width: 24, height: 24, borderWidth: 3 }} />
         </div>
@@ -152,7 +153,7 @@ export default function Moderation() {
           onApprove={handleApprove}
           onReject={handleReject}
         />
-      ) : (
+      ) : tab === 'blocklist' ? (
         <BlocklistTab
           items={blocklist}
           newTerm={newTerm}
@@ -161,6 +162,8 @@ export default function Moderation() {
           onRemove={handleRemoveTerm}
           adding={addingTerm}
         />
+      ) : (
+        <ModerationSettingsForm />
       )}
     </div>
   );

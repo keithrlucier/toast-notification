@@ -1,0 +1,77 @@
+services:
+
+  toast-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       toastnotification
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  toast-api:
+    build:
+      context: .
+      dockerfile: src/ToastRevival.Api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      toast-db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+
+      # Database
+      ConnectionStrings__DefaultConnection: >-
+        Host=toast-db;Database=toastnotification;Username=postgres;Password=${POSTGRES_PASSWORD}
+
+      # JWT — must be 32+ characters. Generate: openssl rand -base64 32
+      Jwt__Key:                      ${JWT_KEY}
+      Jwt__Issuer:                   ToastNotification
+      Jwt__Audience:                 ToastNotification
+      Jwt__ExpiresInMinutes:         480
+      Jwt__MfaElevationExpiresInMinutes: 480
+      Jwt__DeviceTokenExpiresInDays: 365
+
+      # CORS — the public URL of your dashboard (no trailing slash)
+      AllowedOrigins__0: ${PUBLIC_URL}
+
+      # Registration
+      Registration__ReviewEmail:             ${REVIEW_EMAIL}
+      Registration__TrialDays:               ${TRIAL_DAYS:-14}
+      Registration__AllowLegacyDirectRegister: "false"
+
+      # Cloudflare Turnstile — set TURNSTILE_REQUIRED=false to disable
+      Turnstile__Required:   ${TURNSTILE_REQUIRED:-false}
+      Turnstile__SiteKey:    ${TURNSTILE_SITE_KEY:-}
+      Turnstile__SecretKey:  ${TURNSTILE_SECRET_KEY:-}
+
+      # Azure Content Safety — omit keys to disable (all content passes)
+      ContentSafety__Endpoint: ${CONTENT_SAFETY_ENDPOINT:-}
+      ContentSafety__Key:      ${CONTENT_SAFETY_KEY:-}
+
+      # Billing — disabled for self-hosted deployments.
+      # Stripe keys intentionally left empty; LicenseService allows unlimited devices.
+      Stripe__SecretKey:      ""
+      Stripe__WebhookSecret:  ""
+    volumes:
+      - assets:/app/wwwroot/assets
+
+  toast-dashboard:
+    build:
+      context: src/ToastRevival.Dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - toast-api
+    ports:
+      - "80:80"
+
+volumes:
+  db-data:
+  assets:

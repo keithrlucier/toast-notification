@@ -69,17 +69,19 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 
 - [x] **Docker Compose infrastructure** — SHIPPED 2026-05-12 (commit `eff6c6c`). API + Dashboard + Postgres containers. Billing disabled (empty Stripe keys). Turnstile/ContentSafety gracefully degrade. Named volumes for DB data and uploaded assets. `.env.example` documents all config keys. `README-SELF-HOST.md` is the self-hoster entry point.
 
-- [ ] **LicenseService billing bypass audit** (INFO-M11-001) — Verify `CanRegisterDeviceAsync` behavior when `Stripe__SecretKey` is empty. Self-hosters must not hit a device cap. If the method currently blocks on `BillingStatus.Active` when no Stripe subscription exists, add `TOAST_REQUIRE_BILLING` env flag to short-circuit. Anthony owns the code audit; Carl approves the approach before any code changes.
+- [x] **LicenseService billing bypass** (INFO-M11-001) — RESOLVED 2026-05-12. `TOAST_REQUIRE_BILLING=false` short-circuits device cap. Commit `76ae2ef`.
+- [x] **2-device trial cap** (INFO-M11-003) — RESOLVED 2026-05-12. `BillingPlanRules.TrialDeviceLimit = 2`. Commit `76ae2ef`.
+- [x] **`DISABLEAUTOUPDATE` MSI property** (INFO-M11-002) — RESOLVED 2026-05-12. WiX + registry key. Commit `76ae2ef`.
+- [x] **Git history sanitization** (INFO-M11-004) — RESOLVED 2026-05-12. CLEAN.
+- [x] **Public GitHub repo** — LIVE 2026-05-12. https://github.com/keithrlucier/toast-notification
+- [x] **Tenant sidebar branding + dynamic favicon** — SHIPPED 2026-05-12. Commit `a5b9a8a`.
+- [x] **Logo auto-inject removed** — SHIPPED 2026-05-12. Blank Logo URL respected as no-logo. Commit `eb388b0`.
 
-- [ ] **2-device trial cap alignment** — Current free tier: devices 1–25 always free, 26+ requires Stripe. New model: trial tenants get 2 devices for 14 days. `LicenseService` + `appsettings.json` + `Onboarding.tsx` copy need to align. Pricing model changes in M11.D6.
+- [ ] **Marketing site pricing page rewrite** (M11.D7) — Three-tier honest copy. Diana leads. New DocPro session.
 
-- [ ] **`DISABLEAUTOUPDATE` MSI property** — WiX property that writes a registry key preventing the agent from polling `releases.toastnotification.com`. Required for self-hosters with `SERVERURL` pointing at their own backend. Anthony scopes the WiX change; ships in the next signed MSI bundle.
+- [ ] **TOCTOU concurrent trial registration** (INFO-M11-SW-001) — Concurrent register calls can exceed 2-device cap. `pg_try_advisory_xact_lock` fix needed before SaaS scale. Not blocking self-host launch.
 
-- [ ] **Git history sanitization audit** — Full scan of commit history for server IPs, `.pem` files, passwords, or internal paths before the public repo goes live. Anthony runs the audit; Carl reviews findings before any rewrite/filter.
-
-- [ ] **Public GitHub repo creation** — `Toast2IT/toast-notification` (or personal account — TBD with Keith). First commit: clean sanitized source. `README-SELF-HOST.md` becomes the repo README.
-
-- [ ] **Marketing site pricing page rewrite** — Three-tier honest copy. Diana leads. No comparison tables, no urgency CTAs, no "free trial!" badges. Origin story in the lead. Connects to the honest tone in `README-SELF-HOST.md`.
+- [ ] **Platform admin nav gap** — Platform admins have only "Trial Requests" in PLATFORM_ITEMS. No cross-tenant Moderation, Users, Audit Log equivalents yet. Future session.
 
 ---
 

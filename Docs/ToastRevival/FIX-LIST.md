@@ -4,7 +4,19 @@
 
 ## M11 Open Items (opened 2026-05-12)
 
-### INFO-M11-001 — LicenseService self-hosted bypass — **OPEN**
+### INFO-M11-SW-001 — TOCTOU on concurrent trial device registration — **OPEN**
+
+**Filed:** 2026-05-12 (M11 D6 Code Sweep).
+**Surface:** `src/ToastRevival.Api/Services/LicenseService.cs` — `CanRegisterDeviceAsync` trial branch.
+**Issue:** Concurrent `POST /register` calls from the same trial tenant can both pass the 2-device check before either write commits, exceeding the cap. Read-then-write is not atomic.
+**Fix:** `pg_try_advisory_xact_lock` pattern (or `SELECT ... FOR UPDATE` on tenant row) to make the check-and-increment atomic.
+**Priority:** Not blocking for self-host launch. Fix before SaaS scale / concurrent onboarding load.
+**Owner:** Anthony.
+
+---
+
+### INFO-M11-001 — LicenseService self-hosted bypass — **RESOLVED 2026-05-12**
+**Resolution:** `TOAST_REQUIRE_BILLING` env var added. When `false`/unset, `CanRegisterDeviceAsync` returns `true` immediately. Commit `76ae2ef`.
 
 **Filed:** 2026-05-12 (M11 dev meeting kickoff).
 **Surface:** `src/ToastRevival.Api/Services/LicenseService.cs` — `CanRegisterDeviceAsync`
@@ -13,7 +25,8 @@
 **Owner:** Anthony (code audit) + Carl (approach sign-off before any change).
 **Blocking:** M11.D2.
 
-### INFO-M11-002 — DISABLEAUTOUPDATE MSI property — **OPEN**
+### INFO-M11-002 — DISABLEAUTOUPDATE MSI property — **RESOLVED 2026-05-12**
+**Resolution:** `DISABLEAUTOUPDATE=1` WiX property wired in Setup.wxs. Writes `HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate=1`. `UpdateService.cs` already consumed that key. Commit `76ae2ef`.
 
 **Filed:** 2026-05-12 (M11 dev meeting kickoff).
 **Surface:** `installer/ToastRevival.Agent.Setup.wxs` + `src/ToastRevival.Agent/Services/UpdateService.cs`
@@ -21,7 +34,8 @@
 **Owner:** Anthony.
 **Blocking:** M11.D3.
 
-### INFO-M11-003 — 2-device trial cap not yet enforced — **OPEN**
+### INFO-M11-003 — 2-device trial cap not yet enforced — **RESOLVED 2026-05-12**
+**Resolution:** `BillingPlanRules.TrialDeviceLimit = 2`. `CanRegisterDeviceAsync` gates Trialing tenants at 2 devices. Commit `76ae2ef`.
 
 **Filed:** 2026-05-12 (M11 dev meeting kickoff).
 **Surface:** `src/ToastRevival.Api/Services/LicenseService.cs` — free tier threshold (currently 25 devices). `src/ToastRevival.Dashboard/src/pages/Onboarding.tsx` — copy references old tier model.
@@ -30,7 +44,8 @@
 **Owner:** Anthony (code) + Carl (arch) + Diana (Onboarding copy).
 **Blocking:** M11.D6.
 
-### INFO-M11-004 — Git history sanitization required before public repo — **OPEN**
+### INFO-M11-004 — Git history sanitization required before public repo — **RESOLVED 2026-05-12**
+**Resolution:** Full scan clean. Public repo live at https://github.com/keithrlucier/toast-notification — 218 files, fresh history, no private commits included.
 
 **Filed:** 2026-05-12 (M11 dev meeting kickoff).
 **Surface:** Full git history.

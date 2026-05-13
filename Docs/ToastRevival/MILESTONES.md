@@ -607,12 +607,17 @@ Built in 2020 for MSPs during the COVID-19 WFH explosion. 986,000 legitimate mes
 
 ### Deliverables
 - **D1** [x **COMPLETE 2026-05-12**]: Docker Compose infrastructure — `src/ToastRevival.Api/Dockerfile` (multi-stage ASP.NET Core 8), `src/ToastRevival.Dashboard/Dockerfile` (Vite → nginx alpine), `src/ToastRevival.Dashboard/nginx.conf` (SPA routing + API/SignalR proxy), `docker-compose.yml` (3-service stack: toast-api, toast-dashboard, toast-db), `.env.example` (all config keys documented), `README-SELF-HOST.md` (origin story + 3-step deploy). Billing disabled by default (empty Stripe keys). Turnstile and Content Safety gracefully degrade. Named volumes for DB data and uploaded assets. Commit `eff6c6c`.
-- **D2** [ ]: `LicenseService` billing bypass audit — verify `CanRegisterDeviceAsync` behavior with empty `Stripe__SecretKey`. Self-hosters must not hit a device-cap wall. Add `TOAST_REQUIRE_BILLING` env flag or confirm empty-key path already passes freely.
-- **D3** [ ]: `DISABLEAUTOUPDATE` MSI property — WiX property + registry key that prevents the agent from polling `releases.toastnotification.com`. Required for self-hosters pointing the agent at their own backend.
-- **D4** [ ]: Git history sanitization audit — scan full history for committed server IPs, passwords, SSH keys, or `.pem` files before the public repo goes live. BFG or `git filter-repo` if needed.
-- **D5** [ ]: Create public GitHub repo — `keithrlucier/toast-notification`. First commit is the sanitized source. README-SELF-HOST.md becomes the repo README. Keith provides a PAT (rolls it after push).
-- **D6** [ ]: Pricing model alignment — update `LicenseService` free-trial tier: 2-device cap for trial tenants specifically (currently cap is 25). Update `appsettings.json` + `Onboarding.tsx` copy to reflect new three-tier model.
+- **D2** [x **COMPLETE 2026-05-12**]: `TOAST_REQUIRE_BILLING` env var added. When `false`/unset, `CanRegisterDeviceAsync` returns `true` immediately — no device cap, no Stripe required. SaaS sets `true`. Commit `76ae2ef`.
+- **D3** [x **COMPLETE 2026-05-12**]: `DISABLEAUTOUPDATE=1` wired in `installer/ToastRevival.Agent.Setup.wxs`. Writes `HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate=1`. `UpdateService.cs` already consumed that key — no C# changes. Commit `76ae2ef`.
+- **D4** [x **COMPLETE 2026-05-12**]: Full git history scan — CLEAN. Server IPs exist only in `Docs/ToastRevival/` and commit messages, neither of which shipped to the public repo. No PEM content, no live Stripe keys, no passwords. Debug MSIX artifact caught and scrubbed before public push.
+- **D5** [x **COMPLETE 2026-05-12**]: Public repo live — https://github.com/keithrlucier/toast-notification — 218 files, single clean commit, fresh history. PAT rolled by Keith post-push.
+- **D6** [x **COMPLETE 2026-05-12**]: `BillingPlanRules.TrialDeviceLimit = 2`. `CanRegisterDeviceAsync` gates Trialing tenants at 2 devices. `Onboarding.tsx` BillingStep replaced with three-tier `TierCard` layout. INFO-M11-SW-001 deferred (TOCTOU on concurrent trial registration — not blocking). Commit `76ae2ef`.
 - **D7** [ ]: Marketing site pricing page rewrite — honest three-tier copy. Diana leads. No comparison tables, no urgency CTAs. Origin story in the lead.
+
+### Bonus deliverables shipped 2026-05-12 (outside original M11 scope)
+- **Tenant sidebar branding** [x]: Sidebar shows tenant name + logo. Platform admins see platform branding. `isAdmin` fixed — platform admins excluded from tenant-scoped ADMIN_ITEMS. Loading skeleton. Commit `a5b9a8a`.
+- **Dynamic favicon** [x]: `maybeUpdateFavicon()` on `setSession` updates browser tab icon to tenant logo. Platform admins skip. Commit `a5b9a8a`.
+- **Logo auto-inject removed** [x]: `NotificationsController.Send` no longer falls back to tenant logo when Logo URL field is blank. Operator intent (blank = no logo) respected. Commit `eb388b0`.
 
 ### Open Research
 - Does `LicenseService.CanRegisterDeviceAsync` return true for all devices when `Stripe__SecretKey` is empty? Verify in code — don't assume.

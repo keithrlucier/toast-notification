@@ -24,7 +24,7 @@ export default function Layout() {
       <section className="app-workspace">
         <header className="app-topbar">
           <div>
-            <div className="app-kicker">Toast Notification Console</div>
+            <div className="app-kicker">{user?.isPlatformAdmin ? 'Platform Console' : 'Enterprise Console'}</div>
             <div className="app-title">Operations</div>
           </div>
           <div className="identity-chip">

@@ -1,5 +1,39 @@
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+
+interface TenantBranding {
+  name: string;
+  logoUrl?: string;
+}
+
+let _tenantBrandingCache: Promise<TenantBranding | null> | null = null;
+
+function getTenantBranding(): Promise<TenantBranding | null> {
+  if (!_tenantBrandingCache) {
+    _tenantBrandingCache = api.get<{ name: string; logoUrl?: string }>('/api/tenant/settings')
+      .then(res => ({ name: res.name, logoUrl: res.logoUrl }))
+      .catch(() => null);
+  }
+  return _tenantBrandingCache;
+}
+
+function useTenantBranding(skip: boolean): { branding: TenantBranding | null; loading: boolean } {
+  const [branding, setBranding] = useState<TenantBranding | null>(null);
+  const [loading, setLoading] = useState(!skip);
+
+  useEffect(() => {
+    if (skip) return;
+    let cancelled = false;
+    getTenantBranding().then(b => {
+      if (!cancelled) { setBranding(b); setLoading(false); }
+    });
+    return () => { cancelled = true; };
+  }, [skip]);
+
+  return { branding, loading };
+}
 
 const NAV_ITEMS = [
   { to: '/',            label: 'Dashboard', icon: HomeIcon },
@@ -35,18 +69,30 @@ function roleLabel(role?: string, isPlatformAdmin?: boolean): string {
 
 export default function Sidebar() {
   const { user, logout } = useAuth();
-  const isAdmin = Boolean(user?.isPlatformAdmin || user?.role === 'Admin' || user?.role === 'SuperAdmin');
+  const isPlatformAdmin = Boolean(user?.isPlatformAdmin);
+  const isAdmin = Boolean(!isPlatformAdmin && (user?.role === 'Admin' || user?.role === 'SuperAdmin'));
+  const { branding, loading: brandingLoading } = useTenantBranding(isPlatformAdmin);
 
   return (
     <aside className="app-sidebar">
       <div className="sidebar-brand">
         <div className="sidebar-brand-row">
           <div className="sidebar-brand-mark">
-            <ToastIcon />
+            {isPlatformAdmin ? (
+              <ToastIcon />
+            ) : brandingLoading ? (
+              <div style={{ width: 32, height: 32, background: 'rgba(255,255,255,0.1)', borderRadius: 4, flexShrink: 0 }} />
+            ) : branding?.logoUrl ? (
+              <img src={branding.logoUrl} alt="" width={32} height={32} style={{ objectFit: 'contain', display: 'block' }} />
+            ) : (
+              <ToastIcon />
+            )}
           </div>
           <div>
-            <div className="sidebar-product">Toast Notification</div>
-            <div className="sidebar-console">Enterprise Console</div>
+            <div className="sidebar-product">
+              {isPlatformAdmin ? 'Toast Notification' : (branding?.name ?? (brandingLoading ? '' : 'Toast Notification'))}
+            </div>
+            <div className="sidebar-console">{isPlatformAdmin ? 'Platform Console' : 'Enterprise Console'}</div>
           </div>
         </div>
         <div className="sidebar-role">{roleLabel(user?.role, user?.isPlatformAdmin)}</div>

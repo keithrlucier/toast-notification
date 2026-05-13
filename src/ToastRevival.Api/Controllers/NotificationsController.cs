@@ -197,7 +197,7 @@ public class NotificationsController : ControllerBase
         return Accepted(new NotificationResponse(
             notification.Id, notification.Title, notification.BodyLine1,
             notification.BodyLine2, notification.Status.ToString(),
-            notification.TargetType, notification.TargetDeviceCount,
+            notification.TargetType.ToString(), notification.TargetDeviceCount,
             notification.ScheduledAt, notification.SentAt, notification.CreatedAt));
     }
 
@@ -239,7 +239,7 @@ public class NotificationsController : ControllerBase
 
         return Ok(new NotificationResponse(
             n.Id, n.Title, n.BodyLine1, n.BodyLine2,
-            n.Status.ToString(), n.TargetType, n.TargetDeviceCount,
+            n.Status.ToString(), n.TargetType.ToString(), n.TargetDeviceCount,
             n.ScheduledAt, n.SentAt, n.CreatedAt));
     }
 

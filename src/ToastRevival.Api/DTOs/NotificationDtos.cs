@@ -23,7 +23,7 @@ public record NotificationResponse(
     string? BodyLine1,
     string? BodyLine2,
     string Status,
-    TargetType TargetType,
+    string TargetType,
     int TargetDeviceCount,
     DateTime? ScheduledAt,
     DateTime? SentAt,

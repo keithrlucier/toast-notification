@@ -330,8 +330,6 @@ public class AuthController : ControllerBase
             Name = req.TenantName,
             Subdomain = subdomain,
             SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
-            // INFO-M1-003 (M9.C): see Initiate() — same auto-gen on legacy register path.
-            EnrollmentKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)),
         };
         _db.Tenants.Add(tenant);
         await _db.SaveChangesAsync();

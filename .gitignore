@@ -1,0 +1,30 @@
+# User secrets & local config
+.env
+*.pem
+*.key
+*.pfx
+.github-pat
+
+# Build outputs
+bin/
+obj/
+dist/
+node_modules/
+*.nupkg
+*.snupkg
+
+# Publish directories
+publish/
+
+# IDE
+.vs/
+.vscode/
+*.user
+.idea/
+
+# MSI build outputs
+installer/*.msi
+installer/*.wixpdb
+
+# Docker volumes
+data/

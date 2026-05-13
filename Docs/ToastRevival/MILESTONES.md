@@ -610,14 +610,14 @@ Built in 2020 for MSPs during the COVID-19 WFH explosion. 986,000 legitimate mes
 - **D2** [ ]: `LicenseService` billing bypass audit — verify `CanRegisterDeviceAsync` behavior with empty `Stripe__SecretKey`. Self-hosters must not hit a device-cap wall. Add `TOAST_REQUIRE_BILLING` env flag or confirm empty-key path already passes freely.
 - **D3** [ ]: `DISABLEAUTOUPDATE` MSI property — WiX property + registry key that prevents the agent from polling `releases.toastnotification.com`. Required for self-hosters pointing the agent at their own backend.
 - **D4** [ ]: Git history sanitization audit — scan full history for committed server IPs, passwords, SSH keys, or `.pem` files before the public repo goes live. BFG or `git filter-repo` if needed.
-- **D5** [ ]: Create public GitHub repo — `Toast2IT/toast-notification` (or under Keith's personal account). First commit is the sanitized source. README-SELF-HOST.md becomes the repo README.
+- **D5** [ ]: Create public GitHub repo — `keithrlucier/toast-notification`. First commit is the sanitized source. README-SELF-HOST.md becomes the repo README. Keith provides a PAT (rolls it after push).
 - **D6** [ ]: Pricing model alignment — update `LicenseService` free-trial tier: 2-device cap for trial tenants specifically (currently cap is 25). Update `appsettings.json` + `Onboarding.tsx` copy to reflect new three-tier model.
 - **D7** [ ]: Marketing site pricing page rewrite — honest three-tier copy. Diana leads. No comparison tables, no urgency CTAs. Origin story in the lead.
 
 ### Open Research
 - Does `LicenseService.CanRegisterDeviceAsync` return true for all devices when `Stripe__SecretKey` is empty? Verify in code — don't assume.
 - What is the expiry UX after 14 days? Agent goes quiet? Dashboard locks? Tenant gets a nudge and upgrade path?
-- GitHub org: `Toast2IT` already exists on Partner Center — use it? Or Keith's personal account for the repo?
+- GitHub org: **RESOLVED** — `keithrlucier/toast-notification` (personal account). Keith provides PAT; rolls it after push.
 - `DISABLEAUTOUPDATE`: registry key name + WiX property syntax TBD at D3.
 
 ### Code Sweep

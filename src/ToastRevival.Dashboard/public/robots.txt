@@ -1,0 +1,45 @@
+# https://toastnotification.com/robots.txt
+# Marketing surfaces are public and crawlable. The authenticated dashboard,
+# the API, and the SignalR hub are private and must not be indexed.
+
+User-agent: *
+Allow: /
+Allow: /pricing
+Allow: /security
+Allow: /docs
+Allow: /llms
+Allow: /llms.txt
+Allow: /sitemap.xml
+Allow: /og-card.png
+Allow: /favicon.svg
+
+# Auth surfaces — login forms render no content of value to a search index.
+Disallow: /login
+Disallow: /register
+
+# Authenticated dashboard surfaces (returns the SPA shell to anonymous
+# crawlers but the routes themselves require a JWT). Excluded for clarity.
+Disallow: /dashboard
+Disallow: /onboarding
+Disallow: /billing
+Disallow: /analytics
+Disallow: /devices
+Disallow: /templates
+Disallow: /compose
+Disallow: /assets
+Disallow: /history
+Disallow: /moderation
+Disallow: /users
+Disallow: /audit
+Disallow: /settings/
+
+# Backend surfaces. Always 401/404 to anon, but excluded for crawler hygiene.
+Disallow: /api/
+Disallow: /hubs/
+
+# Content Signals Policy for automated clients.
+# Public marketing and documentation content may be used for search and AI
+# answers with attribution. Public content may not be used for AI training.
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+
+Sitemap: https://toastnotification.com/sitemap.xml

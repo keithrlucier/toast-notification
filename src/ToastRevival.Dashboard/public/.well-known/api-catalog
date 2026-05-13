@@ -1,0 +1,33 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://toastnotification.com/",
+      "describedby": [
+        {
+          "href": "https://toastnotification.com/llms.txt",
+          "type": "text/plain",
+          "title": "Toast Notification plain-text product brief"
+        },
+        {
+          "href": "https://toastnotification.com/docs/",
+          "type": "text/html",
+          "title": "Toast Notification public documentation"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://toastnotification.com/docs/api/",
+          "type": "text/html",
+          "title": "Toast Notification API documentation"
+        }
+      ],
+      "service-desc": [
+        {
+          "href": "https://toastnotification.com/llms.txt",
+          "type": "text/plain",
+          "title": "Machine-readable product and crawler guidance"
+        }
+      ]
+    }
+  ]
+}

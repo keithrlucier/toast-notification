@@ -1,0 +1,30 @@
+#!/bin/sh
+# Auto-append DocPro.Cloud attribution trailer to every commit message
+# unless one of the following:
+#   - it's a merge, squash, or amend commit
+#   - the trailer is already present
+#
+# Enable locally with:  git config core.hooksPath .githooks
+
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
+
+case "$COMMIT_SOURCE" in
+    merge|squash|commit)
+        exit 0
+        ;;
+esac
+
+if grep -qE "Co-Authored-By:[[:space:]]+DocPro\.Cloud" "$COMMIT_MSG_FILE"; then
+    exit 0
+fi
+
+# Append trailer. If the file doesn't end with a blank line before the
+# trailer, add one so git interprets it as a footer.
+if [ -s "$COMMIT_MSG_FILE" ]; then
+    if [ -n "$(tail -c 1 "$COMMIT_MSG_FILE")" ]; then
+        printf '\n' >> "$COMMIT_MSG_FILE"
+    fi
+fi
+
+printf '\nCo-Authored-By: DocPro.Cloud <team@docpro.cloud>\n' >> "$COMMIT_MSG_FILE"

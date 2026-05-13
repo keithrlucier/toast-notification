@@ -35,9 +35,14 @@ Docs/Assets/
 
 # === Production infrastructure ===
 # nginx configs, systemd units, certbot configs — all reference production
-# hosts (TOASTWEB1 / TOASTDATA1 / 54.82.103.160 / 172.26.*). Self-hosters do
-# not need these and they leak prod topology.
+# hosts and private network details. Self-hosters do not need these and they
+# leak prod topology.
 infrastructure/
+
+# === Internal manifest ===
+# This file itself: it documents the team's public-mirror sanitization
+# strategy and references internal patterns. Operators do not need it.
+.publicignore
 
 # Build artifacts that should never reach a public repo.
 publish/

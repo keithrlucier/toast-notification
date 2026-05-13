@@ -70,7 +70,11 @@ function roleLabel(role?: string, isPlatformAdmin?: boolean): string {
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const isPlatformAdmin = Boolean(user?.isPlatformAdmin);
-  const isAdmin = Boolean(!isPlatformAdmin && (user?.role === 'Admin' || user?.role === 'SuperAdmin'));
+  // A user who is BOTH platform admin AND a tenant admin sees both sections —
+  // the platform-admin flag adds the Platform section; it does not strip the
+  // tenant Administration items they need to manage their own tenant
+  // (Settings, Moderation, Users, etc.).
+  const isAdmin = user?.role === 'Admin' || user?.role === 'SuperAdmin';
   const { branding, loading: brandingLoading } = useTenantBranding(isPlatformAdmin);
 
   return (

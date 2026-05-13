@@ -199,25 +199,28 @@ public sealed class SecurityTests
 
         var t = await SecurityHarness.SeedTenantAsync(factory, deviceCount: 1, tenantNamePrefix: "Pagination");
 
-        // Seed one Notification and 510 Pending deliveries against the tenant's
-        // single device. 510 lets all four assertions read the same Pending set
-        // without reseeding: default (100), explicit-in-range (200), upper-clamp
-        // (limit=999 → 500), lower-clamp (limit=0 → 1).
+        // Seed 510 Notifications, each with one Pending delivery for the
+        // tenant's single device. 510 lets all four assertions read the same
+        // Pending set without reseeding: default (100), explicit-in-range (200),
+        // upper-clamp (limit=999 → 500), lower-clamp (limit=0 → 1).
+        // NOTE: NotificationDeliveries has a unique index on (NotificationId,
+        // DeviceId), so we cannot create 510 deliveries for one notification —
+        // one notification per delivery is required.
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var notif = new Notification
-            {
-                TenantId          = t.TenantId,
-                SenderId          = t.AdminUser.Id,
-                Title             = "pagination probe",
-                TargetType        = TargetType.Device,
-                TargetDeviceCount = 1,
-                Status            = NotificationStatus.Sending,
-            };
-            db.Notifications.Add(notif);
             for (int i = 0; i < 510; i++)
             {
+                var notif = new Notification
+                {
+                    TenantId          = t.TenantId,
+                    SenderId          = t.AdminUser.Id,
+                    Title             = $"pagination probe {i:D3}",
+                    TargetType        = TargetType.Device,
+                    TargetDeviceCount = 1,
+                    Status            = NotificationStatus.Sending,
+                };
+                db.Notifications.Add(notif);
                 db.NotificationDeliveries.Add(new NotificationDelivery
                 {
                     NotificationId = notif.Id,

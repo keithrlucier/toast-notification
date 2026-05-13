@@ -63,6 +63,11 @@ public sealed class WebSocketTransportTests
         // Authorization header. The only auth channel is access_token in
         // the query string — exactly the path JwtBearerEvents.OnMessageReceived
         // is responsible for picking up.
+        //
+        // When a custom WebSocketFactory is provided, the SignalR client does
+        // NOT automatically append ?access_token= to ctx.Uri (that only happens
+        // in DefaultWebSocketFactory which adds it as an Authorization header
+        // instead). We must append it manually so OnMessageReceived sees it.
         var connection = new HubConnectionBuilder()
             .WithUrl(hubUrl, opts =>
             {
@@ -70,7 +75,13 @@ public sealed class WebSocketTransportTests
                 opts.SkipNegotiation   = true;
                 opts.AccessTokenProvider = () => Task.FromResult<string?>(device.Token);
                 opts.WebSocketFactory  = async (ctx, ct) =>
-                    await wsClient.ConnectAsync(ctx.Uri, ct);
+                {
+                    var token = await opts.AccessTokenProvider!();
+                    var uriStr = ctx.Uri.AbsoluteUri;
+                    var sep = uriStr.Contains('?') ? "&" : "?";
+                    var connectUri = new Uri($"{uriStr}{sep}access_token={Uri.EscapeDataString(token ?? "")}");
+                    return await wsClient.ConnectAsync(connectUri, ct);
+                };
             })
             .Build();
 

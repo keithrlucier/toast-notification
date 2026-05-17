@@ -43,6 +43,8 @@ const DocsApi = lazy(() => import('./pages/marketing/docs/DocsApi'));
 const DocsModeration = lazy(() => import('./pages/marketing/docs/DocsModeration'));
 const Security = lazy(() => import('./pages/marketing/Security'));
 const Llms = lazy(() => import('./pages/marketing/Llms'));
+const Privacy = lazy(() => import('./pages/marketing/legal/Privacy'));
+const Terms = lazy(() => import('./pages/marketing/legal/Terms'));
 
 function MarketingFallback() {
   return (
@@ -97,8 +99,10 @@ const router = createBrowserRouter([
     children: [
       { path: '/',          element: <RootIndex /> },
       { path: '/pricing',   element: <Suspense fallback={<MarketingFallback />}><Pricing /></Suspense> },
-      { path: '/security',  element: <Suspense fallback={<MarketingFallback />}><Security /></Suspense> },
-      { path: '/llms',      element: <Suspense fallback={<MarketingFallback />}><Llms /></Suspense> },
+      { path: '/security',       element: <Suspense fallback={<MarketingFallback />}><Security /></Suspense> },
+      { path: '/llms',           element: <Suspense fallback={<MarketingFallback />}><Llms /></Suspense> },
+      { path: '/legal/privacy',  element: <Suspense fallback={<MarketingFallback />}><Privacy /></Suspense> },
+      { path: '/legal/terms',    element: <Suspense fallback={<MarketingFallback />}><Terms /></Suspense> },
       {
         element: (
           <Suspense fallback={<MarketingFallback />}>

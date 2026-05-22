@@ -25,18 +25,27 @@ public class AssetsController : ControllerBase
     private readonly IContentModerationService _moderation;
     private readonly IAuditService _audit;
     private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration _config;
 
     public AssetsController(
         AppDbContext db,
         IContentModerationService moderation,
         IAuditService audit,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        IConfiguration config)
     {
         _db = db;
         _moderation = moderation;
         _audit = audit;
         _env = env;
+        _config = config;
     }
+
+    // Persistent asset storage root — kept OUTSIDE the deploy directory in prod
+    // (Assets:RootPath in .env) so redeploys don't orphan uploads. Must match
+    // the PhysicalFileProvider mount in Program.cs.
+    private string AssetsRoot =>
+        _config["Assets:RootPath"] ?? Path.Combine(_env.WebRootPath, "assets");
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<AssetResponse>>> List()
@@ -97,8 +106,7 @@ public class AssetsController : ControllerBase
         // Persist file to wwwroot/assets/{tenantId}/{assetId}{ext}
         // Path traversal is not possible — assetId is a Guid, ext is validated above
         var assetId    = Guid.NewGuid();
-        var webRoot    = _env.WebRootPath;
-        var uploadDir  = Path.Combine(webRoot, "assets", tenantId.ToString());
+        var uploadDir  = Path.Combine(AssetsRoot, tenantId.ToString());
         Directory.CreateDirectory(uploadDir);
 
         var fileName = $"{assetId}{ext}";
@@ -179,14 +187,13 @@ public class AssetsController : ControllerBase
 
         // Delete file from disk — reconstruct path from tenantId + assetId (not from raw URL)
         // to prevent path traversal from a corrupted DB value
-        var webRoot   = _env.WebRootPath;
         var uri       = new Uri(asset.Url);
         var segments  = uri.AbsolutePath.Split('/');
         var fileName  = segments.LastOrDefault();
         if (!string.IsNullOrEmpty(fileName))
         {
-            var resolved = Path.GetFullPath(Path.Combine(webRoot, "assets", tenantId.ToString(), fileName));
-            var allowed  = Path.GetFullPath(Path.Combine(webRoot, "assets", tenantId.ToString()));
+            var resolved = Path.GetFullPath(Path.Combine(AssetsRoot, tenantId.ToString(), fileName));
+            var allowed  = Path.GetFullPath(Path.Combine(AssetsRoot, tenantId.ToString()));
             if (resolved.StartsWith(allowed, StringComparison.OrdinalIgnoreCase)
                 && System.IO.File.Exists(resolved))
             {

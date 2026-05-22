@@ -3,9 +3,11 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using QuestPDF.Infrastructure;
 using ToastRevival.Api.Data;
@@ -244,11 +246,21 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Ensure wwwroot/assets directory exists for uploaded files
 var webRoot = app.Environment.WebRootPath
     ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
-Directory.CreateDirectory(Path.Combine(webRoot, "assets"));
 app.Environment.WebRootPath = webRoot;
+
+// Uploaded asset-library files (hero/logo/icon images). Stored OUTSIDE the
+// deploy directory so a redeploy that replaces the application directory never
+// orphans previously-uploaded files. Path is configurable via Assets:RootPath
+// (point it at a persistent location in production); defaults to
+// <wwwroot>/assets for local dev. This directory is served explicitly below via
+// PhysicalFileProvider, NOT the default web-root provider — reassigning
+// app.Environment.WebRootPath after Build() does not rewire WebRootFileProvider,
+// so a plain UseStaticFiles() would serve nothing.
+var assetsRoot = app.Configuration["Assets:RootPath"]
+    ?? Path.Combine(webRoot, "assets");
+Directory.CreateDirectory(assetsRoot);
 
 // Run migrations on every startup — safe because Migrate() is idempotent
 using (var scope = app.Services.CreateScope())
@@ -265,6 +277,16 @@ using (var scope = app.Services.CreateScope())
 // and Development typically runs over plain http://localhost. HSTS skips
 // localhost by default, so it's safe to register but only useful behind a
 // real TLS terminator.
+// nginx terminates TLS and proxies to Kestrel over loopback. Honor its
+// X-Forwarded-Proto/For so Request.Scheme is https (loopback proxies are
+// trusted by default) — otherwise absolute URLs built from Request (e.g. the
+// asset URL handed to the Windows agent) are stamped http:// and get blocked
+// as mixed content on the https dashboard.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+});
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
@@ -299,7 +321,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseRateLimiter();
 app.UseCors();
-app.UseStaticFiles();
+// Serve uploaded assets from the persistent assetsRoot, mapped at /assets.
+// Explicit PhysicalFileProvider (not the default web-root provider, which is
+// unreliable here — see assetsRoot note above).
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(assetsRoot),
+    RequestPath = "/assets",
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

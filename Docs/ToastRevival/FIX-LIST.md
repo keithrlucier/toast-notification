@@ -2,6 +2,32 @@
 
 ---
 
+## Assets page — preview + rename (2026-05-22)
+
+### FIX-ASSETS-001 — Asset library previews never load (gray boxes) — **RESOLVED 2026-05-22**
+
+**Filed:** 2026-05-22 (troubleshooting session — Carl/Anthony/Diana/Abish).
+**Surface:** `src/ToastRevival.Dashboard/nginx.conf`, `vite.config.ts`, `src/pages/Assets.tsx`.
+**Symptom:** Asset cards render gray placeholder boxes instead of the uploaded image.
+**Root cause:** nginx proxied `/api/` and `/hubs/` to the API container but had **no `location /assets/`** block. Browser requests for `/assets/{tenantId}/{file}` fell through to the SPA fallback (`try_files $uri $uri/ /index.html`) and received `index.html` (HTML) instead of the image — the `<img onError>` then hid the element, leaving the `bg-tertiary` box. Static files live in the API container's `wwwroot/assets` volume, which nginx never proxied. Compounding: no `UseForwardedHeaders`, so `Request.Scheme` baked the stored URL as `http://`, which an https dashboard blocks as mixed content. The Vite dev proxy likewise omitted `/assets`, so previews were dead in dev too.
+**Fix:**
+- `nginx.conf`: added `location /assets/` proxying to `http://toast-api:8080/assets/` (placed before the SPA fallback; more-specific prefix, no collision with the SPA bundle which lives under `/static/` via `assetsDir:'static'`).
+- `vite.config.ts`: added `/assets` dev proxy to `http://localhost:5216`.
+- `Assets.tsx`: `previewSrc(url)` reduces the stored URL to its same-origin pathname (`new URL(url, origin).pathname`) so the `<img>` loads relative to the page's own origin/protocol — immune to the baked host/scheme. "Use as Hero/Logo" still passes the absolute `asset.url` (compose/agent need it absolute).
+**Advisory (separate surface, not fixed here):** the API lacks `UseForwardedHeaders`, so the absolute `asset.url` handed to the Windows agent bakes `http://`. Recommend `UseForwardedHeaders` + a URL backfill in a future session.
+**Blocking:** No. Builds clean (tsc, vite, dotnet). Live UI verification pending a running stack.
+
+### FIX-ASSETS-002 — No way to rename an asset — **RESOLVED 2026-05-22**
+
+**Filed:** 2026-05-22 (same session).
+**Surface:** `src/ToastRevival.Api/Controllers/AssetsController.cs`, `src/ToastRevival.Dashboard/src/api/client.ts`, `src/api/assets.ts`, `src/pages/Assets.tsx`.
+**Issue:** Asset name was set only at upload; no edit endpoint or UI existed.
+**Fix:** Added `PATCH /api/assets/{id}` (tenant-scoped lookup by `Id && TenantId`, trim + non-empty + ≤200 char validation, `asset.rename` audit log with old/new name, returns `AssetResponse`). Added `RenameAssetRequest` DTO, `api.patch()` verb, `assetsApi.rename()`, and an inline rename UI in `AssetCard` (Rename button → input with Save/Cancel, Enter/Escape, disabled-during-save, empty/no-op guards). No migration needed — `Name` column already exists.
+**QA:** Abish — SHIP WITH NOTES. Note: no automated asset tests exist; recommend a Rename integration test (tenant isolation + validation) in a future test pass.
+**Blocking:** No.
+
+---
+
 ## M11 Open Items (opened 2026-05-12)
 
 ### INFO-M11-D7-001 — Home.tsx terminal-comparison block uses Unicode ✓ glyphs — **OPEN (deferred)**

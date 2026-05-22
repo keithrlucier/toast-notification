@@ -26,6 +26,8 @@ import { api, apiErrorFromResponse, authHeaders } from './client';
 export const assetsApi = {
   list: () => api.get<AssetRecord[]>('/api/assets'),
   delete: (id: string) => api.delete<void>(`/api/assets/${id}`),
+  rename: (id: string, name: string) =>
+    api.patch<AssetRecord>(`/api/assets/${id}`, { name }),
 
   upload: async (file: File, name?: string, assetType?: 'HeroImage' | 'Logo' | 'Icon'): Promise<AssetRecord> => {
     const form = new FormData();

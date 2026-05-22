@@ -15,6 +15,12 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
       },
+      // Uploaded asset library files are served by the API's static-file
+      // middleware. Proxy them in dev so previews load from the same origin.
+      '/assets': {
+        target: 'http://localhost:5216',
+        changeOrigin: true,
+      },
     },
   },
   build: {

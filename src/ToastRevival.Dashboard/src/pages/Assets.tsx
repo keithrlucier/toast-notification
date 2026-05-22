@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, DragEvent, ChangeEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, DragEvent, ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { assetsApi, getModerationStatus, type AssetRecord, type ModerationStatus } from '../api/assets';
 import { ApiError } from '../api/client';
@@ -31,6 +31,21 @@ function formatDate(iso: string): string {
     return iso;
   }
 }
+
+// The stored asset URL is absolute and baked at upload time (host + scheme),
+// which can be wrong behind a reverse proxy (e.g. http:// stamped while the
+// dashboard is served over https, triggering a mixed-content block). The
+// dashboard is same-origin with the API, so load the preview from the URL's
+// path only — it resolves against the page's own origin and protocol.
+function previewSrc(url: string): string {
+  try {
+    return new URL(url, window.location.origin).pathname;
+  } catch {
+    return url;
+  }
+}
+
+const MAX_ASSET_NAME_LENGTH = 200;
 
 export default function Assets() {
   const navigate = useNavigate();
@@ -227,6 +242,7 @@ export default function Assets() {
               key={asset.id}
               asset={asset}
               onDeleted={() => setAssets(prev => prev.filter(a => a.id !== asset.id))}
+              onRenamed={updated => setAssets(prev => prev.map(a => (a.id === updated.id ? updated : a)))}
               navigate={navigate}
             />
           ))}
@@ -241,14 +257,61 @@ export default function Assets() {
 interface AssetCardProps {
   asset: AssetRecord;
   onDeleted: () => void;
+  onRenamed: (updated: AssetRecord) => void;
   navigate: ReturnType<typeof useNavigate>;
 }
 
-function AssetCard({ asset, onDeleted, navigate }: AssetCardProps) {
+function AssetCard({ asset, onDeleted, onRenamed, navigate }: AssetCardProps) {
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [deleting, setDeleting]       = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const modStatus = getModerationStatus(asset.moderationResultJson);
+
+  const [editing, setEditing]     = useState(false);
+  const [nameDraft, setNameDraft] = useState(asset.name);
+  const [saving, setSaving]       = useState(false);
+  const [renameError, setRenameError] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const startRename = () => {
+    setNameDraft(asset.name);
+    setRenameError('');
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+
+  const cancelRename = () => {
+    setEditing(false);
+    setRenameError('');
+  };
+
+  const saveRename = async () => {
+    const trimmed = nameDraft.trim();
+    if (trimmed.length === 0) {
+      setRenameError('Name cannot be empty.');
+      return;
+    }
+    if (trimmed === asset.name) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    setRenameError('');
+    try {
+      const updated = await assetsApi.rename(asset.id, trimmed);
+      onRenamed(updated);
+      setEditing(false);
+    } catch (err) {
+      setRenameError(err instanceof ApiError ? err.message : 'Rename failed.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onNameKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); void saveRename(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+  };
 
   const armDelete = () => {
     setDeleteArmed(true);
@@ -274,7 +337,7 @@ function AssetCard({ asset, onDeleted, navigate }: AssetCardProps) {
       {/* Image preview */}
       <div style={{ background: 'var(--bg-tertiary)', width: '100%', height: 120, overflow: 'hidden', flexShrink: 0 }}>
         <img
-          src={asset.url}
+          src={previewSrc(asset.url)}
           alt={asset.name}
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -284,21 +347,69 @@ function AssetCard({ asset, onDeleted, navigate }: AssetCardProps) {
       {/* Card body */}
       <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
         {/* Name + badges row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-          <span style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: 'var(--text-primary)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            flex: 1,
-            minWidth: 0,
-          }}>
-            {asset.name}
-          </span>
-          <TypeBadge type={asset.type} />
-        </div>
+        {editing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <input
+              ref={inputRef}
+              value={nameDraft}
+              maxLength={MAX_ASSET_NAME_LENGTH}
+              disabled={saving}
+              onChange={e => setNameDraft(e.target.value)}
+              onKeyDown={onNameKeyDown}
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                padding: '6px 8px',
+                border: '1px solid var(--accent)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--bg-secondary)',
+                width: '100%',
+                boxSizing: 'border-box',
+              }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 12, padding: '5px 10px', color: 'var(--accent)' }}
+                onClick={() => void saveRename()}
+                disabled={saving}
+              >
+                {saving ? <span className="spinner" /> : 'Save'}
+              </button>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 12, padding: '5px 10px' }}
+                onClick={cancelRename}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+            </div>
+            {renameError && (
+              <span style={{ fontSize: 11, color: 'var(--status-error)' }}>{renameError}</span>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+            <span
+              title={asset.name}
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flex: 1,
+                minWidth: 0,
+              }}
+            >
+              {asset.name}
+            </span>
+            <TypeBadge type={asset.type} />
+          </div>
+        )}
 
         {/* Moderation status + date row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -317,6 +428,7 @@ function AssetCard({ asset, onDeleted, navigate }: AssetCardProps) {
         </div>
 
         {/* Action buttons */}
+        {!editing && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
           <button
             className="btn btn-ghost"
@@ -331,6 +443,13 @@ function AssetCard({ asset, onDeleted, navigate }: AssetCardProps) {
             onClick={() => navigate('/compose', { state: { logoUrl: asset.url } })}
           >
             Use as Logo
+          </button>
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize: 12, padding: '5px 10px' }}
+            onClick={startRename}
+          >
+            Rename
           </button>
           <div style={{ marginLeft: 'auto' }}>
             {deleteArmed ? (
@@ -355,6 +474,7 @@ function AssetCard({ asset, onDeleted, navigate }: AssetCardProps) {
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,31 @@
 # ToastRevival - Test Log
 
+## 2026-05-22 (FIX-ASSETS-001/002 — asset previews + rename)
+
+### Build Checks
+
+- `tsc -b` (dashboard): **0 errors**.
+- `vite build` (dashboard): **passed** — bundle compiled; pre-existing >500 kB chunk warning unchanged.
+- `dotnet build src/ToastRevival.Api -c Release`: **0 warnings, 0 errors**.
+
+### Logic Verification
+
+- `previewSrc()` checked via node against {baked-http cross-origin, same-origin https, already-relative, internal docker host, malformed, empty}. All valid asset URLs reduce to `/assets/...` (same-origin); malformed/empty degrade to a harmless path that 404s and is hidden by the existing `<img onError>` — never throws.
+
+### Scope Verified (Abish QA gate — SHIP WITH NOTES)
+
+- `nginx.conf`: `location /assets/` added before SPA fallback; more-specific prefix than `/`, no collision with SPA bundle (`assetsDir:'static'` → `/static/*`).
+- `vite.config.ts`: `/assets` dev proxy added.
+- `Assets.tsx`: preview `<img src>` switched to `previewSrc(asset.url)`; inline rename UI (input + Save/Cancel, Enter/Escape, disabled-during-save, empty/no-op/maxLength-200 guards); "Use as Hero/Logo" still pass absolute `asset.url`.
+- `client.ts`: `patch()` verb added (mirrors `put()`).
+- `assets.ts`: `rename(id, name)` → `PATCH /api/assets/{id}`.
+- `AssetsController.cs`: `[HttpPatch("{id:guid}")] Rename` — tenant-scoped (`Id && TenantId` + global query filter), trim/non-empty/≤200 validation, `asset.rename` audit log, returns `AssetResponse`; `RenameAssetRequest` DTO.
+
+### Not Verified
+
+- **Live UI not screenshotted** — preview render + rename round-trip need a running API + PostgreSQL + authenticated tenant + an uploaded image. Code-level + build verification only this session.
+- No automated asset tests exist; Rename integration test (tenant isolation + validation) recommended as follow-up.
+
 ## 2026-05-12 (INFO-M11-SW-001 — TOCTOU fix on trial device registration)
 
 ### Build Checks

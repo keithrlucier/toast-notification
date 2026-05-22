@@ -140,6 +140,34 @@ public class AssetsController : ControllerBase
             asset.Url, asset.ModerationResultJson, asset.UploadedAt));
     }
 
+    [HttpPatch("{id:guid}")]
+    public async Task<ActionResult<AssetResponse>> Rename(Guid id, [FromBody] RenameAssetRequest body)
+    {
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var userId   = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        var name = body?.Name?.Trim();
+        if (string.IsNullOrEmpty(name))
+            return BadRequest(new { message = "Name is required." });
+        if (name.Length > 200)
+            return BadRequest(new { message = "Name must be 200 characters or fewer." });
+
+        var asset = await _db.AssetLibrary.FirstOrDefaultAsync(a => a.Id == id && a.TenantId == tenantId);
+        if (asset is null) return NotFound();
+
+        var oldName = asset.Name;
+        asset.Name = name;
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(tenantId, userId, "asset.rename", "AssetLibrary",
+            id.ToString(), new { oldName, newName = name },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new AssetResponse(
+            asset.Id, asset.Name, asset.Type.ToString(),
+            asset.Url, asset.ModerationResultJson, asset.UploadedAt));
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
@@ -184,3 +212,5 @@ public record AssetResponse(
     string Url,
     string? ModerationResultJson,
     DateTime UploadedAt);
+
+public record RenameAssetRequest(string? Name);

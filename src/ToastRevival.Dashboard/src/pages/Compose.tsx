@@ -92,7 +92,7 @@ function validateButtons(buttons: ActionButton[]) {
 export default function Compose() {
   const location = useLocation();
   const navigate = useNavigate();
-  const prefill  = location.state as (Partial<SendNotificationRequest> & { templateId?: string }) | null;
+  const prefill  = location.state as (Partial<SendNotificationRequest> & { templateId?: string; editTemplateId?: string; editTemplateName?: string }) | null;
 
   // Content fields
   const [title,    setTitle]    = useState(prefill?.title ?? '');
@@ -127,8 +127,9 @@ export default function Compose() {
 
   const [pickerTarget, setPickerTarget] = useState<'hero' | 'logo' | null>(null);
 
-  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
-  const [templateName,     setTemplateName]     = useState('');
+  const editTemplateId   = prefill?.editTemplateId ?? null;
+  const [showSaveTemplate, setShowSaveTemplate] = useState(() => Boolean(prefill?.editTemplateId));
+  const [templateName,     setTemplateName]     = useState(prefill?.editTemplateName ?? '');
   const [saveState,        setSaveState]        = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); }, []);
@@ -210,13 +211,19 @@ export default function Compose() {
         title: title || undefined,
         bodyLine1: body1 || undefined,
         bodyLine2: body2 || undefined,
+        heroImageUrl: heroUrl || undefined,
+        logoImageUrl: logoUrl || undefined,
         actionButtonsJson: buttons.length > 0 ? JSON.stringify(normalizeButtons(buttons)) : undefined,
         audioSetting: audio,
         scenario: scenario || undefined,
       };
-      await notificationsApi.saveTemplate(req);
+      if (editTemplateId) {
+        await notificationsApi.updateTemplate(editTemplateId, req);
+      } else {
+        await notificationsApi.saveTemplate(req);
+      }
       setSaveState('saved');
-      setTemplateName('');
+      if (!editTemplateId) setTemplateName('');
       saveTimerRef.current = setTimeout(() => { setShowSaveTemplate(false); setSaveState('idle'); }, 1500);
     } catch {
       setSaveState('error');
@@ -308,7 +315,7 @@ export default function Compose() {
                 style={{ fontSize: 12, padding: '4px 10px' }}
                 onClick={() => { setShowSaveTemplate(s => !s); setSaveState('idle'); }}
               >
-                Save as Template
+                {editTemplateId ? 'Update Template' : 'Save as Template'}
               </button>
             </div>
 
@@ -344,11 +351,11 @@ export default function Compose() {
                   onClick={() => void doSaveTemplate()}
                   disabled={saveState === 'saving' || !templateName.trim()}
                 >
-                  {saveState === 'saving' ? <span className="spinner" /> : 'Save'}
+                  {saveState === 'saving' ? <span className="spinner" /> : (editTemplateId ? 'Update' : 'Save')}
                 </button>
                 {(saveState === 'saved' || saveState === 'error') && (
                   <span style={{ fontSize: 12, color: saveState === 'error' ? 'var(--status-error)' : 'var(--accent)' }}>
-                    {saveState === 'saved' ? 'Template saved.' : 'Failed to save template.'}
+                    {saveState === 'saved' ? (editTemplateId ? 'Template updated.' : 'Template saved.') : 'Failed to save template.'}
                   </span>
                 )}
               </div>

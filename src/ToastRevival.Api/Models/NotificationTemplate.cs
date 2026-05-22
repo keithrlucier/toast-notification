@@ -11,6 +11,8 @@ public class NotificationTemplate
     public string? BodyLine2Template { get; set; }
     public Guid? HeroImageId { get; set; }
     public Guid? LogoImageId { get; set; }
+    public string? HeroImageUrl { get; set; }
+    public string? LogoImageUrl { get; set; }
     public string? ActionButtonsJson { get; set; }
     public string? AudioSetting { get; set; }
     public ToastScenario Scenario { get; set; } = ToastScenario.Default;

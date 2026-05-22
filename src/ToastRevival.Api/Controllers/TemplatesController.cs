@@ -37,6 +37,8 @@ public class TemplatesController : ControllerBase
                 t.TitleTemplate,
                 t.BodyLine1Template,
                 t.BodyLine2Template,
+                t.HeroImageUrl,
+                t.LogoImageUrl,
                 t.ActionButtonsJson,
                 t.AudioSetting,
                 t.Scenario.ToString().ToLowerInvariant(),
@@ -57,18 +59,20 @@ public class TemplatesController : ControllerBase
 
         var template = new NotificationTemplate
         {
-            TenantId       = tenantId,
-            Name           = req.Name.Trim(),
-            Category       = TemplateCategory.Custom,
-            TitleTemplate  = req.Title?.Trim(),
+            TenantId          = tenantId,
+            Name              = req.Name.Trim(),
+            Category          = TemplateCategory.Custom,
+            TitleTemplate     = req.Title?.Trim(),
             BodyLine1Template = req.BodyLine1?.Trim(),
             BodyLine2Template = req.BodyLine2?.Trim(),
+            HeroImageUrl      = req.HeroImageUrl?.Trim(),
+            LogoImageUrl      = req.LogoImageUrl?.Trim(),
             ActionButtonsJson = req.ActionButtonsJson,
-            AudioSetting   = req.AudioSetting,
-            Scenario       = ParseScenario(req.Scenario),
-            IsDefault      = false,
-            CreatedAt      = DateTime.UtcNow,
-            UpdatedAt      = DateTime.UtcNow,
+            AudioSetting      = req.AudioSetting,
+            Scenario          = ParseScenario(req.Scenario),
+            IsDefault         = false,
+            CreatedAt         = DateTime.UtcNow,
+            UpdatedAt         = DateTime.UtcNow,
         };
 
         _db.NotificationTemplates.Add(template);
@@ -82,6 +86,52 @@ public class TemplatesController : ControllerBase
             template.TitleTemplate,
             template.BodyLine1Template,
             template.BodyLine2Template,
+            template.HeroImageUrl,
+            template.LogoImageUrl,
+            template.ActionButtonsJson,
+            template.AudioSetting,
+            template.Scenario.ToString().ToLowerInvariant(),
+            false));
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<TemplateResponse>> Update(Guid id, [FromBody] UpdateTemplateRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return BadRequest("Name is required.");
+
+        var tenantId = GetTenantId();
+        if (tenantId == Guid.Empty) return Unauthorized();
+
+        var template = await _db.NotificationTemplates
+            .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
+
+        if (template is null) return NotFound();
+        if (template.IsDefault) return BadRequest("Default templates cannot be edited.");
+
+        template.Name              = req.Name.Trim();
+        template.TitleTemplate     = req.Title?.Trim();
+        template.BodyLine1Template = req.BodyLine1?.Trim();
+        template.BodyLine2Template = req.BodyLine2?.Trim();
+        template.HeroImageUrl      = req.HeroImageUrl?.Trim();
+        template.LogoImageUrl      = req.LogoImageUrl?.Trim();
+        template.ActionButtonsJson = req.ActionButtonsJson;
+        template.AudioSetting      = req.AudioSetting;
+        template.Scenario          = ParseScenario(req.Scenario);
+        template.UpdatedAt         = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new TemplateResponse(
+            template.Id,
+            template.Name,
+            ToSlug(TemplateCategory.Custom),
+            TemplateCategory.Custom.ToString(),
+            template.TitleTemplate,
+            template.BodyLine1Template,
+            template.BodyLine2Template,
+            template.HeroImageUrl,
+            template.LogoImageUrl,
             template.ActionButtonsJson,
             template.AudioSetting,
             template.Scenario.ToString().ToLowerInvariant(),

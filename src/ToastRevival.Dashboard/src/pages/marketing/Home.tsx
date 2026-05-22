@@ -194,7 +194,7 @@ WS-014: payload unsigned`}
               <ul className="m-tier-bullets">
                 <li>Full product, every feature unlocked</li>
                 <li>Trial requests reviewed before activation</li>
-                <li>Pre-signed MSI download after approval</li>
+                <li>Managed agent delivered from your tenant portal</li>
               </ul>
               <Link to="/register" className="m-btn m-btn-primary m-tier-cta" style={{ width: '100%', textAlign: 'center' }}>
                 Request trial access

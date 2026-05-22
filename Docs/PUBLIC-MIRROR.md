@@ -53,8 +53,9 @@ everything a self-hoster actually needs.
 - `src/` — all source for `ToastRevival.Api` and `ToastRevival.Dashboard`.
 - `tests/` — all test projects.
 - `installer/` — WiX installer source (signing certs are external).
-- `scripts/build-*.ps1` — build scripts a self-hoster needs to compile their
-  own signed agent (Path B in `Docs/rollyourown.md`).
+- `scripts/build-*.ps1` — build scripts a self-hoster needs to compile and sign
+  their own agent (the self-host signing path in `Docs/rollyourown.md`). We do
+  not ship a pre-signed agent — self-hosters sign with their own certificate.
 - `docker-compose.yml` and the two `Dockerfile`s — the self-host stack.
 - `README-SELF-HOST.md` — the operator-facing README.
 - `Docs/rollyourown.md` — open-core strategy doc; public-facing already.

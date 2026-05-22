@@ -76,10 +76,11 @@ Three-component product with shared .NET 8 ecosystem:
 - No device cap, no SaaS license required
 - Three-tier business model (2026-05-12): 2-device/14-day admin-approved trial → $22/mo SaaS (0–100 devices) → Roll Your Own (free, forever)
 - Architecture reference: `Docs/rollyourown.md`
-- **Agent code signing:** The MSI must be code-signed. Two paths for self-hosters:
-  - **Path A (recommended):** Use our pre-signed MSI from GitHub Releases (signed Toast2IT, LLC). Deploy with SERVERURL + DISABLEAUTOUPDATE=1. No cert required.
-  - **Path B (compile from source):** Requires self-hoster to acquire an OV Code Signing cert (~$300-400/yr, 1-3 day validation), update Package.appxmanifest Publisher, and run build-msi.ps1 with their cert. High-friction by design — this friction is the managed SaaS competitive moat.
-- **SaaS moat summary:** Backend = easy (Docker). Agent signing = hard (cert, HSM, workflow, renewal). Operators who discover Path B cost/complexity convert to $22/mo SaaS.
+- **Agent code signing — POLICY (Keith, 2026-05-22):** The MSI must be code-signed. There is exactly ONE self-host path, and we never lend out our signature:
+  - **Self-host (Roll Your Own):** the operator acquires their own OV Code Signing cert (~$300-400/yr, 1-3 day validation), updates Package.appxmanifest Publisher, and runs build-msi.ps1 with their cert. They get NOTHING pre-signed from us. (This is the former "Path B" — now the only path.)
+  - **Managed subscribers ONLY:** the Toast2IT, LLC-signed agent is delivered by the system from the authenticated portal a paying subscriber pays for, running against OUR infrastructure. A binary signed under our cert is NEVER to be used in another (self-hosted) instance. NOT a free-trial giveaway, NOT a public GitHub-release download.
+  - **REMOVED:** the old "Path A — download our pre-signed MSI from GitHub Releases and point it at your own backend" offering. It contradicted policy and exposed our Authenticode identity on infrastructure we don't control. Public copy (Pricing/Home/README-SELF-HOST/rollyourown) scrubbed 2026-05-22.
+- **SaaS moat summary:** Backend = easy (Docker). Agent signing = hard (cert, HSM, workflow, renewal) AND we don't hand out our signature — self-hosters own signing themselves. Operators who price out the full signing workflow convert to $22/mo SaaS.
 
 ## Code Signing (MSI and MSIX)
 

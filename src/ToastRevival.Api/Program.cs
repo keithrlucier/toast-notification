@@ -251,9 +251,9 @@ var webRoot = app.Environment.WebRootPath
 app.Environment.WebRootPath = webRoot;
 
 // Uploaded asset-library files (hero/logo/icon images). Stored OUTSIDE the
-// deploy directory so a redeploy — which replaces /opt/toast/api wholesale —
-// never orphans previously-uploaded files. Path is configurable via
-// Assets:RootPath (set in prod .env to /opt/toast/shared/assets); defaults to
+// deploy directory so a redeploy that replaces the application directory never
+// orphans previously-uploaded files. Path is configurable via Assets:RootPath
+// (point it at a persistent location in production); defaults to
 // <wwwroot>/assets for local dev. This directory is served explicitly below via
 // PhysicalFileProvider, NOT the default web-root provider — reassigning
 // app.Environment.WebRootPath after Build() does not rewire WebRootFileProvider,

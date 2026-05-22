@@ -4,18 +4,26 @@
 
 ## Assets page — preview + rename (2026-05-22)
 
-### FIX-ASSETS-001 — Asset library previews never load (gray boxes) — **RESOLVED 2026-05-22**
+### FIX-ASSETS-001 — Asset library previews never load (gray boxes) — **RESOLVED 2026-05-22 (verified on prod)**
 
 **Filed:** 2026-05-22 (troubleshooting session — Carl/Anthony/Diana/Abish).
-**Surface:** `src/ToastRevival.Dashboard/nginx.conf`, `vite.config.ts`, `src/pages/Assets.tsx`.
-**Symptom:** Asset cards render gray placeholder boxes instead of the uploaded image.
-**Root cause:** nginx proxied `/api/` and `/hubs/` to the API container but had **no `location /assets/`** block. Browser requests for `/assets/{tenantId}/{file}` fell through to the SPA fallback (`try_files $uri $uri/ /index.html`) and received `index.html` (HTML) instead of the image — the `<img onError>` then hid the element, leaving the `bg-tertiary` box. Static files live in the API container's `wwwroot/assets` volume, which nginx never proxied. Compounding: no `UseForwardedHeaders`, so `Request.Scheme` baked the stored URL as `http://`, which an https dashboard blocks as mixed content. The Vite dev proxy likewise omitted `/assets`, so previews were dead in dev too.
-**Fix:**
-- `nginx.conf`: added `location /assets/` proxying to `http://toast-api:8080/assets/` (placed before the SPA fallback; more-specific prefix, no collision with the SPA bundle which lives under `/static/` via `assetsDir:'static'`).
-- `vite.config.ts`: added `/assets` dev proxy to `http://localhost:5216`.
-- `Assets.tsx`: `previewSrc(url)` reduces the stored URL to its same-origin pathname (`new URL(url, origin).pathname`) so the `<img>` loads relative to the page's own origin/protocol — immune to the baked host/scheme. "Use as Hero/Logo" still passes the absolute `asset.url` (compose/agent need it absolute).
-**Advisory (separate surface, not fixed here):** the API lacks `UseForwardedHeaders`, so the absolute `asset.url` handed to the Windows agent bakes `http://`. Recommend `UseForwardedHeaders` + a URL backfill in a future session.
-**Blocking:** No. Builds clean (tsc, vite, dotnet). Live UI verification pending a running stack.
+**Surface:** `src/ToastRevival.Api/Program.cs`, `src/ToastRevival.Api/Controllers/AssetsController.cs`, `src/ToastRevival.Dashboard/src/pages/Assets.tsx`; prod state on TOASTWEB1.
+**Symptom:** Asset cards render gray placeholder boxes instead of the uploaded image. `<img onError>` hides the element, so any failed image load looks identical to "unstyled" — but it was a dead URL, not CSS.
+
+**CORRECTION:** the first writeup of this fix blamed a missing `location /assets/` in the dashboard `nginx.conf`. That was wrong for **production** — prod is bare-metal Lightsail (not the Docker compose path), and the live server's nginx already proxied `/assets/ → localhost:5216`. SSH inspection of TOASTWEB1 found **three** compounding real causes:
+
+1. **Static serving was dead in the API (code bug).** `Program.cs` reassigned `app.Environment.WebRootPath` *after* `builder.Build()`. That does NOT rewire `WebRootFileProvider`, so `app.UseStaticFiles()` served from a stale/empty provider and **every** static request to Kestrel 404'd (verified: even `wwwroot/favicon-32.png` 404'd via `:5216`). nginx masks this for the SPA — it serves those from `/opt/toast/dashboard` directly — so `/assets/*` (proxied to Kestrel) was the visible casualty.
+2. **Uploads lived inside the deploy directory** (`/opt/toast/api/wwwroot/assets`). The redeploy procedure replaces `/opt/toast/api` wholesale, so **every redeploy orphaned all previously-uploaded assets.** Of 5 DB rows, 3 files survived only in `api.bak.pre-m10-2026-05-12`; 2 (colosolutions logo + icon, uploaded 2026-05-12) were lost from every backup.
+3. **Baked `http://` URLs.** No `UseForwardedHeaders`, so behind the TLS-terminating nginx `Request.Scheme`=http and stored `AssetLibrary.Url` carried `http://` → mixed-content blocked on the https dashboard (also wrong for the Windows agent).
+
+**Fix (shipped + verified on prod):**
+- `Program.cs`: serve `/assets` via an explicit `PhysicalFileProvider` (not the broken web-root provider) rooted at a configurable `Assets:RootPath`; added `UseForwardedHeaders` (XFwd-For/Proto; loopback proxy trusted by default) so `Request.Scheme`=https.
+- `AssetsController.cs`: write/delete uploads under the same `Assets:RootPath` root.
+- Prod `/opt/toast/.env`: `Assets__RootPath=/opt/toast/shared/assets` — **persistent, outside the deploy dir** so redeploys no longer orphan uploads. Surviving 3 files migrated there; DB `Url` backfilled `http://`→`https://`.
+- `Assets.tsx`: `previewSrc(url)` loads the `<img>` from the URL's same-origin pathname (defense-in-depth against any future baked-scheme drift). "Use as Hero/Logo" still pass absolute `asset.url`.
+- Dashboard `nginx.conf` + `vite.config.ts`: added `/assets/` proxy — **only relevant to the Docker/self-host ("Roll Your Own") path**, NOT prod. Kept because self-hosters hit the same routing gap.
+**Verified:** the 3 recoverable assets return `200 image/png` over https; SPA `/login` 200; `/api/health` 200; rename route `401` (auth-gated, exists).
+**Outstanding:** 2 colosolutions files (`f1be6341` icon, `a79a3a91` logo) are unrecoverable — require re-upload by the tenant. No automated tests on the Assets surface (follow-up).
 
 ### FIX-ASSETS-002 — No way to rename an asset — **RESOLVED 2026-05-22**
 

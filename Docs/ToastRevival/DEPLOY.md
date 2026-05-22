@@ -504,3 +504,32 @@ ssh -i $KEY ubuntu@54.82.103.160 "
   sleep 3 && sudo systemctl is-active toast-api
 "
 ```
+
+---
+
+## Uploaded Assets — Persistent Storage (READ BEFORE ANY REDEPLOY)
+
+**The redeploy procedure above replaces `/opt/toast/api` wholesale.** Uploaded
+asset-library files (hero/logo/icon images) must therefore live OUTSIDE that
+directory or every redeploy orphans them.
+
+- **Persistent location:** `/opt/toast/shared/assets/{tenantId}/{file}` (owned `toast:toast`).
+- **Wiring:** `/opt/toast/.env` sets `Assets__RootPath=/opt/toast/shared/assets`.
+  `Program.cs` reads `Assets:RootPath`, creates it, and serves it at `/assets`
+  via an explicit `PhysicalFileProvider`. `AssetsController` writes/deletes uploads there.
+- **nginx:** the live server config already has `location /assets/ { proxy_pass http://localhost:5216; }`.
+
+**History / why this exists (FIX-ASSETS-001, 2026-05-22):** assets originally lived
+at `/opt/toast/api/wwwroot/assets`, so redeploys orphaned them into `api.bak.*`.
+Two tenant files were lost permanently before the fix. Additionally, `Program.cs`
+used to reassign `app.Environment.WebRootPath` after `Build()` — which does NOT
+rewire `WebRootFileProvider`, so `UseStaticFiles()` served nothing and all
+`/assets` requests 404'd even when files were present. Both are fixed; do not
+reintroduce either pattern.
+
+**Redeploy checklist additions:**
+1. Never point `Assets__RootPath` back inside `/opt/toast/api`.
+2. After redeploy, confirm `Assets__RootPath` is still in `/opt/toast/.env` (it
+   is not part of the deploy artifact) and curl one known asset over https → expect `200 image/png`.
+3. If you ever must rebuild the box, `/opt/toast/shared/` is the only asset
+   state to preserve — back it up before teardown.

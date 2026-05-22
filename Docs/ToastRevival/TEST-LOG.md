@@ -21,9 +21,19 @@
 - `assets.ts`: `rename(id, name)` → `PATCH /api/assets/{id}`.
 - `AssetsController.cs`: `[HttpPatch("{id:guid}")] Rename` — tenant-scoped (`Id && TenantId` + global query filter), trim/non-empty/≤200 validation, `asset.rename` audit log, returns `AssetResponse`; `RenameAssetRequest` DTO.
 
+### Prod Verification (TOASTWEB1, post-deploy)
+
+Initial root-cause guess (missing nginx `/assets/`) was disproven on the live box — see FIX-ASSETS-001 correction. Real causes were (1) dead Kestrel static serving (WebRootPath reassigned post-Build), (2) uploads orphaned on redeploy, (3) `http://` baked URLs. After shipping the API fix (explicit `PhysicalFileProvider` + `UseForwardedHeaders` + persistent `Assets__RootPath=/opt/toast/shared/assets`), migrating the 3 surviving files, and backfilling DB `Url` http→https:
+
+- `https://toastnotification.com/assets/{tenant}/{file}` → **200 image/png** for all 3 recoverable assets (sizes 13675/13675/11526 b).
+- 2 colosolutions files (`f1be6341`, `a79a3a91`) → 404 — bytes lost in a prior redeploy, in no backup; require re-upload.
+- `https://toastnotification.com/login` → 200 text/html; `/` → 200; `/api/health` → 200.
+- `PATCH /api/assets/{guid}` (no auth) → 401 — rename route deployed, auth-gated.
+- `systemctl is-active toast-api` → active.
+
 ### Not Verified
 
-- **Live UI not screenshotted** — preview render + rename round-trip need a running API + PostgreSQL + authenticated tenant + an uploaded image. Code-level + build verification only this session.
+- **Assets page preview not screenshotted in-browser** — requires an authenticated tenant session; verified at the HTTP layer (200 image/png) instead.
 - No automated asset tests exist; Rename integration test (tenant isolation + validation) recommended as follow-up.
 
 ## 2026-05-12 (INFO-M11-SW-001 — TOCTOU fix on trial device registration)

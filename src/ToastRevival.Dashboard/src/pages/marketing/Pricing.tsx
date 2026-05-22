@@ -13,7 +13,7 @@ const TIERS = [
       'Full product, every feature unlocked',
       'Two enrolled devices for the trial window',
       'Trial requests reviewed before activation',
-      'Pre-signed MSI download after approval',
+      'Managed agent delivered from your tenant portal',
     ],
     cta: { label: 'Request trial access', href: '/register', style: 'primary' as const },
     foot: 'Convert to Managed SaaS or self-host before the 14-day window ends.',
@@ -44,7 +44,7 @@ const TIERS = [
       'You handle hosting, updates, and backups',
     ],
     cta: { label: 'View on GitHub', href: 'https://github.com/keithrlucier/toast-notification', style: 'ghost' as const, external: true },
-    foot: 'Bring your own OV cert to sign the agent, or run the pre-signed MSI from our GitHub release.',
+    foot: 'You build the agent from source and sign it with your own OV code-signing certificate. We do not ship a signed agent for self-host.',
   },
 ];
 
@@ -131,8 +131,8 @@ const FAQ = [
     a: 'The full Docker Compose stack — ASP.NET Core 8 API, React dashboard, PostgreSQL 16, nginx — plus a self-host README with the three-step deploy and an environment file documenting every config key. Billing is disabled by default. Turnstile and content safety degrade gracefully if you do not supply keys. Named volumes for the database and uploaded assets.',
   },
   {
-    q: 'Can I sign the agent myself for self-host?',
-    a: 'Yes, two paths. Path A — use our pre-signed MSI from the GitHub release. That is the path most self-hosters take. Path B — buy your own OV code-signing certificate (roughly $300-400 a year, one-to-three day validation) and sign the MSI yourself. Path B is documented but high friction; most operators evaluating between SaaS and self-host pick Path A or convert to Managed SaaS.',
+    q: 'How is the agent signed if I self-host?',
+    a: 'You sign it. Self-host means you build the agent from the open source and sign it with your own OV code-signing certificate (roughly $300-400 a year, one-to-three day validation), then deploy it to your own fleet. We do not hand out an agent signed under our certificate for anyone to run on their own infrastructure — our signature only goes on agents we deliver to managed subscribers from their portal. If the signing workflow is more than you want to own, that is what Managed SaaS is for.',
   },
   {
     q: 'Is there a contract on Managed SaaS?',

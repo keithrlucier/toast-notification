@@ -77,36 +77,20 @@ silently via RMM or Intune — unsigned MSIs trigger a SmartScreen warning that
 blocks silent deployment, and many managed endpoint policies block unsigned
 executables outright.
 
-You have two paths:
+When you self-host, you build and sign the agent yourself. We do **not**
+distribute a pre-signed agent for self-hosted instances — the only agents that
+carry our **Toast2IT, LLC** certificate are the ones we deliver to managed
+subscribers from their portal, running against our infrastructure. A binary
+signed under our certificate is never meant to run against a server we don't
+operate. For your own deployment, the agent is signed under *your*
+organization's certificate, which is also what puts your name (not ours) in the
+SmartScreen trust prompt your endpoints will see.
 
-### Option A — Use the pre-compiled agent (strongly recommended)
+### Compile from source and sign yourself
 
-Download the signed MSI from [GitHub Releases](https://github.com/keithrlucier/toast-notification/releases).
-It is signed with an OV certificate under **Toast2IT, LLC** and will install
-cleanly on managed endpoints without SmartScreen intervention.
-
-Deploy it via your RMM with `SERVERURL` pointing at your self-hosted instance:
-
-```
-msiexec /i ToastNotification.Agent.msi /qn ^
-  CLIENTID=<your-tenant-guid> ^
-  SERVERURL=https://toast.yourcompany.com ^
-  DISABLEAUTOUPDATE=1
-```
-
-`DISABLEAUTOUPDATE=1` writes a registry key that prevents the agent from polling
-`releases.toastnotification.com` — it will never pull our updates or overwrite
-your configuration.
-
-**This is the right path for most self-hosters.** The backend is yours; the
-agent binary is ours. The only thing you're trusting is that we haven't put
-anything malicious in a signed binary — the source is open if you want to verify.
-
-### Option B — Compile from source and sign yourself
-
-If you need the agent binary to carry your own organization's name in its
-Authenticode signature, you must build and sign it yourself. This is a
-non-trivial operational commitment:
+The agent binary must carry your own organization's name in its Authenticode
+signature. You build and sign it yourself. This is a non-trivial operational
+commitment:
 
 **What you need:**
 
@@ -137,10 +121,12 @@ non-trivial operational commitment:
    using a hardware token, plug it in and unlock it first.
 5. Verify the signature: `Get-AuthenticodeSignature .\ToastNotification.Agent.msi`
 
-**The honest trade-off:** Path A gives you a working, signed binary in minutes.
-Path B gives you your name on the binary but requires a cert purchase, a
-validation wait, ongoing annual renewal, and a signing workflow you own and
-maintain. Most self-hosters should take Path A.
+**The honest trade-off:** signing the agent yourself puts your organization's
+name on the binary and keeps full control of the trust chain in your hands — but
+it costs a cert purchase, a 1–3 day validation wait, ongoing annual renewal, and
+a signing workflow you own and maintain. If you don't want to own that, Managed
+SaaS exists precisely so you don't have to: we run the certificate, the signing
+pipeline, and the renewals, and deliver the signed agent from your portal.
 
 ---
 

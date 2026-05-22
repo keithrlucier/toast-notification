@@ -52,34 +52,24 @@ and are rejected by most endpoint management policies. This is the single highes
 friction element of self-hosting — the backend is a standard Docker stack, but
 the Windows agent is a different class of problem.
 
-We offer self-hosters two paths:
+There is exactly one self-host path: **compile from source and sign the agent
+with your own certificate.** We do not distribute a pre-signed agent for
+self-hosted instances.
 
-### Path A: Use Our Pre-Compiled Agent (Strongly Recommended)
+This is a deliberate boundary, not an omission. The only agents that carry the
+**Toast2IT, LLC** signature are the ones we deliver to managed subscribers from
+their portal, running against infrastructure we operate. A binary signed under
+our certificate is our company's identity vouching for what runs on the endpoint
+— we will not let that signature run against a server we don't control, and we
+can't revoke or stand behind it once it's pointed somewhere we can't see. When
+you self-host, the trust chain is yours end to end: your certificate, your name
+in the SmartScreen prompt, your fleet.
 
-Self-hosters download our official `.msi` from GitHub Releases. It is signed by
-**Toast2IT, LLC** under our OV certificate (Sectigo, hardware token). Self-hosters
-deploy it via RMM with `SERVERURL` pointing at their own backend:
+### Compile from Source and Sign Yourself
 
-```
-msiexec /i ToastNotification.Agent.msi /qn ^
-  CLIENTID=<guid> ^
-  SERVERURL=https://toast.theircompany.com ^
-  DISABLEAUTOUPDATE=1
-```
-
-`DISABLEAUTOUPDATE=1` writes a registry key preventing the agent from polling
-`releases.toastnotification.com`. Self-hosters never receive our managed updates.
-
-**The trust ask:** the self-hoster trusts that we haven't put anything malicious
-in a binary they're deploying to their fleet. The source is open for review.
-For most MSP operators evaluating this tool, that's an acceptable trade-off —
-they already accept this trust model for dozens of RMM-deployed agents.
-
-### Path B: Compile from Source and Sign Yourself
-
-Self-hosters who need the agent binary to carry their own organization's name in
-its Authenticode signature must build and sign it themselves. This is a real
-operational investment:
+The agent binary carries your own organization's name in its Authenticode
+signature. You build and sign it yourself. This is a real operational
+investment:
 
 **Requirements:**
 
@@ -98,20 +88,23 @@ operational investment:
    Windows CryptoAPI can access. Plug in your hardware token first if applicable.
 5. Verify: `Get-AuthenticodeSignature .\ToastNotification.Agent.msi`
 
-**The honest trade-off:** Path B puts your name on the binary. It also means you
-own the cert purchase, the 1–3 day validation wait, the annual renewal, the
-signing hardware, and the build workflow. Most self-hosters should take Path A.
+**The honest trade-off:** signing the agent yourself puts your name on the binary
+and keeps the whole trust chain in your control. It also means you own the cert
+purchase, the 1–3 day validation wait, the annual renewal, the signing hardware,
+and the build workflow.
 
 ### Why This Is Our Competitive Moat
 
 This is intentional product design, not an oversight. The backend is containerized
-and trivially self-hostable. The agent signing workflow is deliberately high-
-friction. Operators who evaluate Path B and discover what it actually takes tend
-to look at the $22/month SaaS price differently.
+and trivially self-hostable. The agent signing workflow is genuinely high-friction,
+and we don't paper over it by lending out our signature — self-hosters own it
+themselves. Operators who price out a certificate, a hardware token, and an annual
+renewal-and-signing workflow tend to look at the $22/month SaaS price differently.
 
 **The managed SaaS value proposition in one line:** We handle the OV certificate,
 the hardware token, the signing pipeline, the annual renewal, and keeping the
-agent on the Windows trusted publishers list. You deploy. We sign.
+agent on the Windows trusted publishers list — and deliver the signed agent from
+your portal. You deploy. We sign. Self-host, and that's yours to run.
 
 ---
 

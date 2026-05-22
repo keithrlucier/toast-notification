@@ -128,9 +128,27 @@ export default function Templates() {
       title: t.titleTemplate ?? '',
       bodyLine1: t.bodyLine1Template ?? '',
       bodyLine2: t.bodyLine2Template ?? '',
+      heroImageUrl: t.heroImageUrl ?? '',
+      logoUrl: t.logoImageUrl ?? '',
       actionButtons: parseButtons(t.actionButtonsJson),
       audioSetting: t.audioSetting ?? 'ms-winsoundevent:Notification.Default',
       scenario: t.scenario === 'default' ? '' : t.scenario,
+    };
+    navigate('/compose', { state });
+  };
+
+  const handleEditCustom = (t: TemplateDbRecord) => {
+    const state: Partial<SendNotificationRequest> & { editTemplateId: string; editTemplateName: string } = {
+      title: t.titleTemplate ?? '',
+      bodyLine1: t.bodyLine1Template ?? '',
+      bodyLine2: t.bodyLine2Template ?? '',
+      heroImageUrl: t.heroImageUrl ?? '',
+      logoUrl: t.logoImageUrl ?? '',
+      actionButtons: parseButtons(t.actionButtonsJson),
+      audioSetting: t.audioSetting ?? 'ms-winsoundevent:Notification.Default',
+      scenario: t.scenario === 'default' ? '' : t.scenario,
+      editTemplateId: t.id,
+      editTemplateName: t.name,
     };
     navigate('/compose', { state });
   };
@@ -166,6 +184,7 @@ export default function Templates() {
                 key={t.id}
                 template={t}
                 onSelect={handleSelectCustom}
+                onEdit={handleEditCustom}
                 onDelete={handleDelete}
               />
             ))}
@@ -266,10 +285,11 @@ function TemplateCard({ template, onSelect }: TemplateCardProps) {
 interface CustomTemplateCardProps {
   template: TemplateDbRecord;
   onSelect: (t: TemplateDbRecord) => void;
+  onEdit: (t: TemplateDbRecord) => void;
   onDelete: (id: string) => void;
 }
 
-function CustomTemplateCard({ template, onSelect, onDelete }: CustomTemplateCardProps) {
+function CustomTemplateCard({ template, onSelect, onEdit, onDelete }: CustomTemplateCardProps) {
   const [deleteArmed, setDeleteArmed] = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const buttons = parseButtons(template.actionButtonsJson);
@@ -347,6 +367,13 @@ function CustomTemplateCard({ template, onSelect, onDelete }: CustomTemplateCard
             onClick={e => { e.stopPropagation(); onSelect(template); }}
           >
             Use
+          </button>
+          <button
+            className="btn btn-secondary"
+            style={{ fontSize: 12, padding: '6px 12px' }}
+            onClick={e => { e.stopPropagation(); onEdit(template); }}
+          >
+            Edit
           </button>
           {deleteArmed ? (
             <button

@@ -63,6 +63,8 @@ export interface TemplateDbRecord {
   titleTemplate: string | null;
   bodyLine1Template: string | null;
   bodyLine2Template: string | null;
+  heroImageUrl: string | null;
+  logoImageUrl: string | null;
   actionButtonsJson: string | null;
   audioSetting: string | null;
   scenario: string;
@@ -74,6 +76,8 @@ export interface SaveTemplateRequest {
   title?: string;
   bodyLine1?: string;
   bodyLine2?: string;
+  heroImageUrl?: string;
+  logoImageUrl?: string;
   actionButtonsJson?: string;
   audioSetting?: string;
   scenario?: string;
@@ -99,6 +103,9 @@ export const notificationsApi = {
 
   saveTemplate: (req: SaveTemplateRequest) =>
     api.post<TemplateDbRecord>('/api/templates', req),
+
+  updateTemplate: (id: string, req: SaveTemplateRequest) =>
+    api.put<TemplateDbRecord>(`/api/templates/${id}`, req),
 
   deleteTemplate: (id: string) =>
     api.delete(`/api/templates/${id}`),

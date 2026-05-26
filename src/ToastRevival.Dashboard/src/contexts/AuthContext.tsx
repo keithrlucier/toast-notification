@@ -80,6 +80,7 @@ function isExpired(token: ParsedToken): boolean {
   return token.expiresAtMs !== null && token.expiresAtMs <= Date.now() + TOKEN_EXPIRY_SKEW_MS;
 }
 
+// REVIEW-2026-05-25 INFO-01 REJECTED-by-design: localStorage is the chosen session storage mechanism; no active XSS vector was found in this pass; migration to httpOnly cookies requires a coordinated /api/auth/refresh backend endpoint + frontend refactor scoped as a dedicated milestone.
 function clearStoredSession(): void {
   localStorage.removeItem('token');
   localStorage.removeItem('user');

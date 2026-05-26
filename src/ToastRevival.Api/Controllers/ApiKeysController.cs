@@ -84,8 +84,10 @@ public class ApiKeysController : ControllerBase
     {
         if (!IsAdminOrAbove()) return Forbid();
 
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var key = await _db.TenantApiKeys.FindAsync(id);
         if (key is null) return NotFound();
+        if (key.TenantId != tenantId) return NotFound();
         if (key.RevokedAt is not null) return Conflict("Key is already revoked.");
 
         key.RevokedAt = DateTime.UtcNow;

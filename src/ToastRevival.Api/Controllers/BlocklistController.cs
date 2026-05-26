@@ -71,8 +71,10 @@ public class BlocklistController : ControllerBase
     {
         if (!IsAdminOrAbove()) return Forbid();
 
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var entry = await _db.TenantBlocklistEntries.FindAsync(id);
         if (entry is null) return NotFound();
+        if (entry.TenantId != tenantId) return NotFound();
 
         _db.TenantBlocklistEntries.Remove(entry);
         await _db.SaveChangesAsync();

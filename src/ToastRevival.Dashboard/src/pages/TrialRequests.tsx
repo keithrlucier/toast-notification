@@ -157,9 +157,13 @@ export default function TrialRequests() {
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', marginBottom: 16 }}>
                 <div>
                   <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{request.companyName}</h2>
-                  <a href={request.website} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', fontSize: 13 }}>
-                    {request.website}
-                  </a>
+                  {/^https?:\/\//i.test(request.website) ? (
+                    <a href={request.website} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', fontSize: 13 }}>
+                      {request.website}
+                    </a>
+                  ) : (
+                    <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>{request.website}</span>
+                  )}
                 </div>
                 <div style={{ textAlign: 'right', color: 'var(--text-dim)', fontSize: 12 }}>
                   Submitted {formatDate(request.submittedAt)}

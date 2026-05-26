@@ -145,10 +145,14 @@ builder.Services.AddRateLimiter(opts =>
         });
     });
 
-    // Login brute-force protection: 10 attempts / 5 min per IP
+    // Login brute-force protection: 10 attempts / 5 min per IP.
+    // CF-Connecting-IP is the real client IP behind Cloudflare; fall back to
+    // RemoteIpAddress for non-Cloudflare traffic (dev/staging).
     opts.AddPolicy("login-per-ip", ctx =>
     {
-        var partitionKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        var partitionKey = ctx.Request.Headers["CF-Connecting-IP"].FirstOrDefault()
+            ?? ctx.Connection.RemoteIpAddress?.ToString()
+            ?? "anon";
         return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
@@ -158,10 +162,13 @@ builder.Services.AddRateLimiter(opts =>
         });
     });
 
-    // SMS OTP verify: 5 attempts / 15 min per IP (prevent OTP brute-force)
+    // SMS OTP verify: 5 attempts / 15 min per IP (prevent OTP brute-force).
+    // Same CF-Connecting-IP pattern as login-per-ip.
     opts.AddPolicy("login-sms-per-ip", ctx =>
     {
-        var partitionKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        var partitionKey = ctx.Request.Headers["CF-Connecting-IP"].FirstOrDefault()
+            ?? ctx.Connection.RemoteIpAddress?.ToString()
+            ?? "anon";
         return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 5,

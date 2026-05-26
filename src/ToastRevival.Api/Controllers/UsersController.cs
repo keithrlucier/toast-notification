@@ -81,6 +81,7 @@ public class UsersController : ControllerBase
 
         var user = await _db.Users.FindAsync(id);
         if (user is null) return NotFound();
+        if (user.TenantId != GetTenantId()) return NotFound();
 
         user.Role = req.Role;
         await _db.SaveChangesAsync();
@@ -98,6 +99,7 @@ public class UsersController : ControllerBase
 
         var user = await _db.Users.FindAsync(id);
         if (user is null) return NotFound();
+        if (user.TenantId != GetTenantId()) return NotFound();
 
         var result = await _userManager.DeleteAsync(user);
         if (!result.Succeeded)

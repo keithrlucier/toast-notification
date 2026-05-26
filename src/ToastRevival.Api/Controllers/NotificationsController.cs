@@ -234,7 +234,9 @@ public class NotificationsController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<NotificationResponse>> Get(Guid id)
     {
-        var n = await _db.Notifications.FindAsync(id);
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var n = await _db.Notifications
+            .FirstOrDefaultAsync(notif => notif.Id == id && notif.TenantId == tenantId);
         if (n is null) return NotFound();
 
         return Ok(new NotificationResponse(
@@ -366,7 +368,9 @@ public class NotificationsController : ControllerBase
     [HttpGet("{id:guid}/report")]
     public async Task<IActionResult> DeliveryReport(Guid id, [FromQuery] string format = "csv")
     {
-        var notification = await _db.Notifications.FindAsync(id);
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var notification = await _db.Notifications
+            .FirstOrDefaultAsync(notif => notif.Id == id && notif.TenantId == tenantId);
         if (notification is null) return NotFound();
 
         var deliveries = await _db.NotificationDeliveries
@@ -375,7 +379,6 @@ public class NotificationsController : ControllerBase
             .OrderBy(d => d.DeliveredAt ?? d.CreatedAt)
             .ToListAsync();
 
-        var tenantId   = Guid.Parse(User.FindFirstValue("tenantId")!);
         var tenantName = await _db.Tenants
             .Where(t => t.Id == tenantId)
             .Select(t => t.Name)

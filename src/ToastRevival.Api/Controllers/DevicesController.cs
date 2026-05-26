@@ -167,16 +167,17 @@ public class DevicesController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Decommission(Guid id)
     {
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var device = await _db.Devices.FindAsync(id);
         if (device is null) return NotFound();
+        if (device.TenantId != tenantId) return NotFound();
 
         device.Status = DeviceStatus.Decommissioned;
         await _db.SaveChangesAsync();
 
-        // M6 D4: maintain ConsumedCount
-        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        // M6 D4: maintain ConsumedCount — use device.TenantId (same as tenantId after guard above)
         var tenant = await _db.Tenants.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Id == tenantId);
+            .FirstOrDefaultAsync(t => t.Id == device.TenantId);
         if (tenant is not null)
         {
             await _license.DecrementConsumedAsync(tenant);

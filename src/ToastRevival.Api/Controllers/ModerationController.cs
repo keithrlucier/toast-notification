@@ -62,7 +62,9 @@ public class ModerationController : ControllerBase
     {
         if (!IsAdminOrAbove()) return Forbid();
 
-        var notification = await _db.Notifications.FindAsync(id);
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var notification = await _db.Notifications
+            .FirstOrDefaultAsync(n => n.Id == id && n.TenantId == tenantId);
         if (notification is null) return NotFound();
         if (notification.Status != NotificationStatus.PendingReview)
             return BadRequest("Notification is not pending review.");
@@ -72,7 +74,6 @@ public class ModerationController : ControllerBase
 
         _queue.Enqueue(notification.Id);
 
-        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var userId   = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         await _audit.LogAsync(tenantId, userId, "moderation.approve", "Notification", id.ToString(),
             new { reason = req?.Reason }, HttpContext.Connection.RemoteIpAddress?.ToString());
@@ -86,7 +87,9 @@ public class ModerationController : ControllerBase
     {
         if (!IsAdminOrAbove()) return Forbid();
 
-        var notification = await _db.Notifications.FindAsync(id);
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var notification = await _db.Notifications
+            .FirstOrDefaultAsync(n => n.Id == id && n.TenantId == tenantId);
         if (notification is null) return NotFound();
         if (notification.Status != NotificationStatus.PendingReview)
             return BadRequest("Notification is not pending review.");
@@ -95,7 +98,6 @@ public class ModerationController : ControllerBase
         notification.CompletedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var userId   = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         await _audit.LogAsync(tenantId, userId, "moderation.reject", "Notification", id.ToString(),
             new { reason = req?.Reason }, HttpContext.Connection.RemoteIpAddress?.ToString());

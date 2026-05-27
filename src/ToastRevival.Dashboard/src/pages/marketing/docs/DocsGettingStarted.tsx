@@ -6,7 +6,7 @@ export default function DocsGettingStarted() {
   useSeo({
     title: 'Getting started',
     description:
-      'Request trial access, install the Windows agent after approval, and send your first toast notification.',
+      'Request trial access, install the Windows agent after approval, send your first toast notification, and configure device appearance — desktop info overlay and lock screen branding.',
     path: '/docs/getting-started',
     jsonLd: [
       techArticleLd({
@@ -101,6 +101,39 @@ export default function DocsGettingStarted() {
         the agent in real time over SignalR.
       </p>
 
+      <h2 id="device-appearance">Device appearance</h2>
+      <p>
+        Beyond notifications, Toast Notification can brand the device itself — configured per tenant from{' '}
+        <Link to="/settings/tenant">Settings → Tenant</Link> under <strong>Device Appearance</strong>, with no login
+        scripts, GPO, or registry edits. There are two independent toggles, and the agent applies whatever is enabled
+        at startup.
+      </p>
+
+      <h3>Desktop overlay</h3>
+      <p>
+        A read-only information panel drawn on the desktop of the primary monitor. It is a separate layered window, so
+        it does not change the user's wallpaper. Choose any of these fields to display:
+      </p>
+      <ul>
+        <li>Hostname</li>
+        <li>Logged-in User</li>
+        <li>OS Version</li>
+        <li>IP Address</li>
+        <li>Tenant Name</li>
+        <li>Custom Text</li>
+      </ul>
+      <p>
+        Pick one of four positions — bottom-right, bottom-left, top-right, or top-left. The panel renders as white text
+        on a translucent dark box.
+      </p>
+
+      <h3>Lock screen branding</h3>
+      <p>
+        Upload an image and the agent applies it to each device's lock screen — the screen shown on Win+L, screensaver,
+        and lid close. Use a 1920×1080 (16:9) JPG or PNG up to 5 MB for best results. On Group-Policy-managed endpoints,
+        a policy-set lock screen may take precedence.
+      </p>
+
       <h2 id="next-steps">Next steps</h2>
       <ul>
         <li>
@@ -114,6 +147,10 @@ export default function DocsGettingStarted() {
         </li>
         <li>
           Customize the six pre-built templates under <strong>Templates</strong>.
+        </li>
+        <li>
+          Brand devices under <strong>Settings → Tenant → Device Appearance</strong> with a desktop info overlay and
+          lock screen image.
         </li>
         <li>
           Plan a fleet rollout with <Link to="/docs/deploy/intune">Intune</Link>{' '}

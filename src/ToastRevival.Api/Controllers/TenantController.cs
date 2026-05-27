@@ -19,6 +19,13 @@ public class TenantController : ControllerBase
 
     private const long MaxLogoSizeBytes = 2 * 1024 * 1024;
 
+    // M12 lock screen image — JPG/PNG only (the formats Windows lock screen and a
+    // dashboard <img> both render cleanly under X-Content-Type-Options: nosniff).
+    private static readonly HashSet<string> AllowedLockScreenExtensions =
+        [".jpg", ".jpeg", ".png"];
+
+    private const long MaxLockScreenImageBytes = 5 * 1024 * 1024;
+
     private readonly AppDbContext _db;
     private readonly IWebHostEnvironment _env;
 
@@ -225,6 +232,134 @@ public class TenantController : ControllerBase
         return NoContent();
     }
 
+    // ── M12 Device Appearance ───────────────────────────────────────────────
+    // Desktop overlay + lock screen branding. GETs are readable by any
+    // authenticated tenant user (same as GetSettings — the config carries no
+    // secrets and the page must render for Technicians); mutations are IsAdmin().
+
+    /// <summary>Desktop info-overlay config for the current tenant.</summary>
+    [HttpGet("overlay")]
+    public async Task<ActionResult<OverlayConfigResponse>> GetOverlay()
+    {
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var t = await _db.Tenants.FindAsync(tenantId);
+        if (t is null) return NotFound();
+        return Ok(TenantAppearance.BuildOverlay(t));
+    }
+
+    [HttpPut("overlay")]
+    public async Task<IActionResult> UpdateOverlay([FromBody] UpdateOverlayConfigRequest req)
+    {
+        if (!IsAdmin()) return Forbid();
+
+        // Position must be one of the four quadrant keys when supplied.
+        if (!string.IsNullOrWhiteSpace(req.Position)
+            && !TenantAppearance.Positions.Contains(req.Position.Trim().ToLowerInvariant()))
+            return BadRequest(new { message = "Position must be bottom-right, bottom-left, top-right, or top-left." });
+
+        var customText = string.IsNullOrWhiteSpace(req.CustomText) ? null : req.CustomText.Trim();
+        if (customText is { Length: > 80 })
+            return BadRequest(new { message = "Custom text must be 80 characters or fewer." });
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var t = await _db.Tenants.FindAsync(tenantId);
+        if (t is null) return NotFound();
+
+        t.DesktopOverlayEnabled    = req.Enabled;
+        t.DesktopOverlayFields     = TenantAppearance.JoinFields(req.Fields);
+        t.DesktopOverlayPosition   = TenantAppearance.NormalizePosition(req.Position);
+        t.DesktopOverlayCustomText = customText;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /// <summary>Lock screen branding config for the current tenant.</summary>
+    [HttpGet("lockscreen")]
+    public async Task<ActionResult<LockScreenConfigResponse>> GetLockScreen()
+    {
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var t = await _db.Tenants.FindAsync(tenantId);
+        if (t is null) return NotFound();
+        return Ok(TenantAppearance.BuildLockScreen(t));
+    }
+
+    [HttpPut("lockscreen")]
+    public async Task<IActionResult> UpdateLockScreen([FromBody] UpdateLockScreenConfigRequest req)
+    {
+        if (!IsAdmin()) return Forbid();
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var t = await _db.Tenants.FindAsync(tenantId);
+        if (t is null) return NotFound();
+
+        t.LockScreenEnabled = req.Enabled;
+        // Save also persists the image (or clears it on Remove), mirroring the
+        // logo + settings split. Constrained to our own /assets/lockscreen/ path —
+        // never an arbitrary URL the agent would then fetch.
+        t.LockScreenImageUrl = NormalizeLockScreenUrlForStorage(req.ImageUrl);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Uploads the per-tenant lock screen image and returns its public URL.
+    /// Persists to the same redeploy-surviving assets root as AssetsController
+    /// (Assets:RootPath), NOT the deploy-dir webroot the logo upload uses — the
+    /// agent must still find this image after the next deploy. Extension + byte
+    /// size validation only; Windows handles dimension fit on the device.
+    /// </summary>
+    [HttpPost("lockscreen-image")]
+    [RequestSizeLimit(5 * 1024 * 1024 + 4096)]
+    public async Task<ActionResult<object>> UploadLockScreenImage(
+        IFormFile file, [FromServices] IConfiguration config)
+    {
+        if (!IsAdmin()) return Forbid();
+        if (file is null || file.Length == 0) return BadRequest(new { message = "No file uploaded." });
+        if (file.Length > MaxLockScreenImageBytes) return BadRequest(new { message = "Image must be under 5 MB." });
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (!AllowedLockScreenExtensions.Contains(ext))
+            return BadRequest(new { message = "Unsupported file type. Use JPG or PNG." });
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+
+        // Same persistent-root resolution as AssetsController so the file lands
+        // on /opt/toast/shared/assets in prod and is served at /assets.
+        var webRoot    = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
+        var assetsRoot = config["Assets:RootPath"] ?? Path.Combine(webRoot, "assets");
+        var dir        = Path.Combine(assetsRoot, "lockscreen");
+        Directory.CreateDirectory(dir);
+
+        // Drop any prior image for this tenant (possibly a different extension) so a
+        // JPG→PNG swap doesn't orphan the old file or leave a stale URL resolving.
+        foreach (var existing in Directory.EnumerateFiles(dir)
+                     .Where(p => Path.GetFileNameWithoutExtension(p)
+                         .Equals(tenantId.ToString(), StringComparison.OrdinalIgnoreCase)))
+        {
+            try { System.IO.File.Delete(existing); } catch { /* best-effort cleanup */ }
+        }
+
+        var fileName = $"{tenantId}{ext}";
+        var filePath = Path.Combine(dir, fileName);
+        await using (var stream = System.IO.File.Create(filePath))
+            await file.CopyToAsync(stream);
+
+        // Relative path (logo-style). The device endpoint absolutizes it via
+        // ToPublicUrl for the agent, and the dashboard loads it same-origin. Storing
+        // relative also lets UpdateLockScreen constrain the value to our own assets
+        // path so an admin can't repoint fleet lock screens at an arbitrary URL.
+        var url = $"/assets/lockscreen/{fileName}";
+
+        var tenant = await _db.Tenants.FindAsync(tenantId);
+        if (tenant is not null)
+        {
+            tenant.LockScreenImageUrl = url;
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { url });
+    }
+
     private static string? MaskKey(string? key)
     {
         if (string.IsNullOrWhiteSpace(key)) return null;
@@ -244,6 +379,28 @@ public class TenantController : ControllerBase
         }
 
         return trimmed;
+    }
+
+    // Accepts only our own lock screen asset path (relative, or absolute pointing
+    // at /assets/lockscreen/ which is reduced to relative). Anything else — empty,
+    // an external URL, a different path — stores null. This is the gate that stops
+    // an admin from repointing every device's lock screen at an arbitrary URL the
+    // agent would then download.
+    private static string? NormalizeLockScreenUrlForStorage(string? imageUrl)
+    {
+        var trimmed = imageUrl?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+
+        if (trimmed.StartsWith("/assets/lockscreen/", StringComparison.OrdinalIgnoreCase))
+            return trimmed;
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+            && uri.AbsolutePath.StartsWith("/assets/lockscreen/", StringComparison.OrdinalIgnoreCase))
+        {
+            return uri.PathAndQuery;
+        }
+
+        return null;
     }
 
     private bool IsAdmin()

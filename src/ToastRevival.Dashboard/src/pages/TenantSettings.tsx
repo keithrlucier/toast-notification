@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, ApiError, apiErrorFromResponse, authHeaders } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { notifyTenantBrandingUpdated, tenantLogoUrlForBrowser } from '../lib/tenantBranding';
+import DeviceAppearanceCards from '../components/DeviceAppearanceCards';
 
 interface TenantSettingsData {
   tenantName: string;
@@ -388,6 +389,9 @@ export default function TenantSettings() {
           for the full reference.
         </p>
       </div>
+
+      {/* M12 Device Appearance — Desktop Overlay + Lock Screen Branding (two cards) */}
+      <DeviceAppearanceCards />
     </div>
   );
 }

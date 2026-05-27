@@ -107,6 +107,15 @@ const INCLUSIONS = [
       'Self-service Stripe billing portal (Managed SaaS only)',
     ],
   },
+  {
+    heading: 'Device appearance',
+    items: [
+      'Read-only desktop info overlay — hostname, logged-in user, OS version, IP address, tenant name, custom text',
+      'Four overlay positions; does not change the user wallpaper',
+      'Per-device lock screen branding from an uploaded image',
+      'Per-tenant, toggled from the admin panel, applied by the agent at startup',
+    ],
+  },
 ];
 
 const FAQ = [

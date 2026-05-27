@@ -116,6 +116,38 @@ internal static class RegistrationService
     /// <summary>Wire shape of GET /api/devices/tenant-name. LogoUrl is optional
     /// so 0.4.5 servers (which don't return it) deserialize cleanly.</summary>
     private record TenantAttributionDto(string TenantName, string? LogoUrl = null);
+
+    /// <summary>
+    /// M12 — fetches the bundled device-appearance config (desktop overlay +
+    /// lock screen) for this device's tenant. Called at startup right after the
+    /// tenant-name refresh. Device-JWT authenticated. Returns null on any error
+    /// (network, non-200, expired token, or a pre-M12 server that 404s the
+    /// route) so the caller leaves whatever appearance was last applied.
+    /// </summary>
+    public static async Task<AppearanceConfig?> TryGetAppearanceConfigAsync(DeviceConfig config, CancellationToken ct)
+    {
+        using var http = new HttpClient
+        {
+            BaseAddress = new Uri(config.ServerUrl),
+            DefaultRequestHeaders = { Authorization = new AuthenticationHeaderValue("Bearer", config.DeviceToken) },
+        };
+
+        try
+        {
+            using var resp = await http.GetAsync("/api/devices/appearance-config", ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                DiagLog.Write($"TryGetAppearanceConfigAsync: server returned {(int)resp.StatusCode}");
+                return null;
+            }
+            return await resp.Content.ReadFromJsonAsync<AppearanceConfig>(cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"TryGetAppearanceConfigAsync: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
 }
 
 /// <summary>

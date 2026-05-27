@@ -55,6 +55,21 @@ public class Tenant
     public string? ModerationCustomKey { get; set; }
     public string? ModerationBlockedMessage { get; set; }
 
+    // M12 — Device appearance. Two independent fleet-branding surfaces the agent
+    // applies at startup/reconnect: a layered click-through desktop info overlay
+    // and a per-user lock screen image. Flat columns (same shape as Moderation*)
+    // so the appearance-config query path stays a single row read, no JSON blob.
+    //   DesktopOverlayFields:   pipe-delimited field keys, e.g. "hostname|user|os".
+    //   DesktopOverlayPosition: bottom-right | bottom-left | top-right | top-left.
+    // The overlay never reads or writes the user's wallpaper (Keith's directive);
+    // it is a separate window painted above the wallpaper, below apps/icons.
+    public bool DesktopOverlayEnabled { get; set; }
+    public string? DesktopOverlayFields { get; set; }
+    public string? DesktopOverlayPosition { get; set; }
+    public string? DesktopOverlayCustomText { get; set; }
+    public bool LockScreenEnabled { get; set; }
+    public string? LockScreenImageUrl { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

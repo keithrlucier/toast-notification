@@ -2,6 +2,19 @@
 
 ---
 
+## FIX-UPLOAD-413-001 — nginx 413 Request Entity Too Large on uploads (2026-05-27, RESOLVED)
+
+**Surface:** `/etc/nginx/sites-enabled/toast` on TOASTWEB1.
+**Symptom:** First lock-screen image upload via the M12 dashboard returned an `<html>413 Request Entity Too Large</html>` page from nginx (not a JSON error from the API). The image never reached `/api/tenant/lockscreen-image`.
+
+**Root cause:** the nginx vhost had no `client_max_body_size` directive at all, so nginx fell back to the **1 MB default**. The API allows 5 MB on the lock-screen and asset uploads and 2 MB on the logo upload (per the controller `[RequestSizeLimit]` attributes), but nginx rejected anything over 1 MB before it ever reached Kestrel. The gap had been latent — every image uploaded through the dashboard since launch happened to be under 1 MB.
+
+**Fix:** added `client_max_body_size 6m;` at the toast vhost server level (5 MB content + ~1 MB form/multipart overhead), placed right after `server_name`. nginx test + reload clean; lock-screen and asset uploads now go through.
+
+**Standing rule (added to deploy checklist):** when a controller has a `[RequestSizeLimit]` attribute, the nginx vhost must carry a matching-or-larger `client_max_body_size` directive. Verify with `nginx -T | grep client_max_body_size` after any nginx config edit on this box.
+
+---
+
 ## FIX-DOWNLOADS-001 — Public MSI download 404 (2026-05-27, RESOLVED)
 
 **Surface:** `/etc/nginx/sites-enabled/toast` on TOASTWEB1.

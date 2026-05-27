@@ -2,6 +2,19 @@
 
 ---
 
+## FIX-DOWNLOADS-001 — Public MSI download 404 (2026-05-27, RESOLVED)
+
+**Surface:** `/etc/nginx/sites-enabled/toast` on TOASTWEB1.
+**Symptom:** `https://toastnotification.com/downloads/ToastNotification.msi` (the URL the dashboard's `DeployCommand.tsx` and `InstallAgent.tsx` hand to admins for the msiexec install) returned **HTTP 404 bytes=0** — meaning every RMM/manual installer pull since FIX-ASSETS-001 shipped has been broken.
+
+**Root cause:** the nginx `location /downloads/` block proxied to `localhost:5216` (the API), but the API has **no controller route** for `/downloads/*`. It used to work because the pre-FIX-ASSETS-001 `Program.cs` had a default `app.UseStaticFiles()` that served `wwwroot/downloads/ToastNotification.msi` at the URL. FIX-ASSETS-001 replaced the default middleware with an *explicit* `PhysicalFileProvider` mounted at `/assets` only. That fix orphaned `/downloads/` because the static handler that was implicitly serving it disappeared. Nobody noticed because there were no new agent builds between then and 2026-05-27.
+
+**Fix:** rewrote the nginx `location /downloads/` block to serve the file statically by `alias /opt/toast/downloads/` (where the signed MSI already lives), with `try_files $uri =404`, `Content-Disposition: attachment`, and a short `Cache-Control: public, max-age=300`. nginx reloaded clean; signed MSI download verified end-to-end (HTTP 200, byte-perfect sha256 match against the local artefact).
+
+**Standing rule (added to Code Sweep Step 4):** when removing a default static middleware in favor of an explicit one, audit every URL path that the default was implicitly serving — at minimum grep the dashboard for hardcoded download URLs and curl them against prod. The dashboard had `${serverUrl}/downloads/ToastNotification.msi` in `DeployCommand.tsx` and `InstallAgent.tsx`; a single targeted curl in the FIX-ASSETS-001 verification would have caught this in the same session.
+
+---
+
 ## Assets page — preview + rename (2026-05-22)
 
 ### FIX-ASSETS-001 — Asset library previews never load (gray boxes) — **RESOLVED 2026-05-22 (verified on prod)**

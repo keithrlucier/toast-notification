@@ -30,7 +30,7 @@ export default function Home() {
   useSeo({
     title: 'Windows notification platform for MSPs',
     description:
-      'Toast Notification sends branded, signed, trackable Windows toast notifications for MSPs and IT teams handling maintenance, security, help desk, and outage communication.',
+      'Toast Notification sends branded, signed, trackable Windows toast notifications for MSPs and IT teams, plus dashboard-managed desktop info overlays and device lock screen branding — no login scripts or GPO.',
     path: '/',
     jsonLd: softwareApplicationLd(),
   });
@@ -171,6 +171,16 @@ WS-014: payload unsigned`}
             <h3>Flexible Deployment Paths</h3>
             <p>
               Deploy the MSI with an embedded scheduled task via Intune LOB, Microsoft Store, or RMM silent install. The agent uses DPAPI to protect local endpoint configuration.
+            </p>
+          </div>
+
+          <div className="m-bento-item m-bento-small">
+            <div className="m-bento-icon">
+              <FeatureLockKey width="24" height="24" />
+            </div>
+            <h3>Device Appearance</h3>
+            <p>
+              Branded device info and lock screens, deployed from your dashboard — no login scripts, no GPO, no registry edits. Toggle a read-only desktop info overlay (hostname, user, OS, IP, tenant, custom text) and a per-device lock screen image per tenant; the agent applies both at startup without touching the user's wallpaper.
             </p>
           </div>
         </div>

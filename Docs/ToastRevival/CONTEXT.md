@@ -535,6 +535,7 @@ Use the verification update as the current source of truth until the installer s
 | imab.dk Toast Script | Active, v3.0 | Intune/ConfigMgr only, no management console |
 | RMM built-ins | Basic | Limited customization, no rich templates |
 | Recast Right Click Tools | Enterprise | Not a dedicated notification product |
+| Sysinternals BgInfo | Active, free | Desktop info only (no notifications); deployed via login scripts/GPO/registry; modifies the wallpaper bitmap; no central management or per-tenant config. M12 Device Appearance is the no-scripting, centrally-managed answer. |
 | ToastNotification.com (original) | Discontinued standalone | Our own product — reviving it |
 
 ## Reference Architecture (Original Source)
@@ -617,3 +618,34 @@ tests/ToastRevival.Api.Tests/
 - Tests run on every push to `main` and on every PR that touches API/sln/test files. CI failure blocks merge.
 - Local `dotnet test` requires either Docker Desktop (Testcontainers default) or `TOAST_TEST_CONNECTION_STRING` pointing at a developer Postgres. Dev box without either: rely on CI, or install Postgres 16 locally and set the env var.
 - Test code is subject to the same banned-terms grep as customer-facing surfaces — `persona`, `audio drama`, `jailbreak`, `DocPro`, `AI-built`, team-member names. Internal milestone codes in test-internal doc-comments are acceptable; never on customer-facing strings.
+
+## M12 — Device Appearance Architecture (scoped 2026-05-27)
+
+### The wallpaper rule (non-negotiable)
+Keith's directive: the feature must never modify the user's wallpaper. BgInfo's "composite text onto a new wallpaper bitmap + `SPI_SETDESKWALLPAPER`" approach is **rejected**. The desktop overlay is a separate layered window; the wallpaper is never read or written.
+
+### Desktop overlay — layered click-through window
+- Borderless `System.Windows.Forms.Form`, no taskbar entry, extended styles `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`.
+- `SetWindowPos(hWnd, HWND_BOTTOM, ...)` anchors at the bottom of the Z-order (above wallpaper, below apps/icons). A ~5s timer re-asserts this to recover from Z-order drift and explorer.exe restarts.
+- `UpdateLayeredWindow` paints per-pixel alpha: white drop-shadowed text over a `rgba(0,0,0,0.6)` rounded box. Segoe UI (OS surface, same rationale as the notification preview). DPI-aware sizing.
+- `WS_EX_TRANSPARENT` → fully click-through. User cannot move/resize/focus/interact. Mouse falls through to the desktop behind it.
+- Hosted on the existing `TrayIconService` STA thread — no new thread coordination with the SignalR loop.
+- Primary monitor only for M12. Multi-monitor is a documented future item.
+- IP field = first non-loopback, non-link-local IPv4 via `NetworkInterface.GetAllNetworkInterfaces()`; if none qualify, the field is omitted entirely (never render `169.254.x.x`).
+
+### Lock screen — per-user WinRT, save-before-modify
+- Per-user lock screen via `Windows.System.UserProfile.LockScreen.SetImageFileAsync()` — user context, no elevation. Covers Win+L / screensaver / lid-close.
+- Pre-login greeter screen (`HKLM\...\PersonalizationCSP`) is OUT — needs admin/SYSTEM; the agent runs at LeastPrivilege. GPO/Intune concern.
+- Snapshot current image via `LockScreen.GetImageStream()` → `lockscreen_original.jpg` on first apply; restore on disable.
+- Image download is hash-checked (skip if unchanged) → `lockscreen.jpg`, same caching pattern as `TenantLogoStore`.
+- No server-side dimension validation in M12 (API is Linux; `System.Drawing.Common` deprecated cross-platform, `ImageSharp` not worth the pull for a nice-to-have). UI documents 1920×1080 / JPG-PNG / 5MB; server validates extension + byte size only (mirrors `TenantController.UploadLogo`). Filed as an INFO item.
+
+### Schema + endpoints
+- Migration `M12DeviceAppearance` — six nullable `Tenant` columns: `DesktopOverlayEnabled`, `DesktopOverlayFields` (pipe-delimited keys), `DesktopOverlayPosition` (`bottom-right`|`bottom-left`|`top-right`|`top-left`), `DesktopOverlayCustomText`, `LockScreenEnabled`, `LockScreenImageUrl`. Flat columns, matches the `Moderation*` pattern — no JSON blob in the query path.
+- Tenant API (admin-gated, `tenant-per-minute`): `GET/PUT /api/tenant/overlay`, `GET/PUT /api/tenant/lockscreen`, `POST /api/tenant/lockscreen-image` (multipart → `/opt/toast/shared/assets/lockscreen/{tenantId}.jpg`, the persistent assets path that survives redeploy — see FIX-ASSETS-001).
+- Agent-facing: `GET /api/devices/appearance-config` (device-JWT, `device-per-hour`) returns both features in one bundled DTO `{ overlay{...}, lockScreen{...} }`. `NotificationHub.cs` unchanged for M12.
+- Agent services `DesktopOverlayService.cs` + `LockScreenService.cs` are invoked from the `PrimaryMode.RunAsync` startup/reconnect block, immediately after `TryRefreshTenantInfoAsync` returns. No new NuGet packages (System.Drawing via existing `UseWindowsForms=true`; WinAppSDK already referenced).
+
+### Apply cadence + GPO caveat
+- MVP applies at agent startup + reconnect (same cadence as tenant-name refresh). Instant admin-to-desktop apply via a hub push (`AppearanceUpdated`) is M12.B, deferred.
+- On GPO-managed endpoints a policy-set lock screen may take precedence at login (documented). The overlay, being a live window rather than a wallpaper, is unaffected by wallpaper GPO.

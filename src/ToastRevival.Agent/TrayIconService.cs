@@ -74,6 +74,23 @@ internal sealed class TrayIconService : IDisposable
     }
 
     /// <summary>
+    /// Marshals <paramref name="action"/> onto this service's STA thread — the
+    /// thread that owns the WinForms message pump. Used by the M12 desktop
+    /// overlay to create and paint its layered window on the same thread,
+    /// avoiding a second STA thread. Exceptions are logged, never thrown back
+    /// onto the pump. No-op after dispose.
+    /// </summary>
+    public void Post(Action action)
+    {
+        if (_disposed) return;
+        _uiContext?.Post(_ =>
+        {
+            try { action(); }
+            catch (Exception ex) { DiagLog.Write($"TrayIcon.Post: {ex.GetType().Name}: {ex.Message}"); }
+        }, null);
+    }
+
+    /// <summary>
     /// Shows the "Update Available (vX.X.X)" menu item. Thread-safe — posts to STA thread.
     /// </summary>
     public void ShowUpdateAvailable(string version)

@@ -754,3 +754,80 @@ These are explicitly NOT M7 work:
 3. The 8px grid applies to everything. If a developer eyeballs spacing, I will know.
 4. Character count validation is not optional. If Windows truncates text, our composer prevents it.
 5. The notification preview panel uses Segoe UI. The rest of the app uses Inter. These are different contexts and I will fight anyone who tries to unify them.
+
+---
+
+## M12 — Device Appearance (Desktop Overlay + Lock Screen Branding)
+**Author**: Diana Reyes
+**Status**: Spec locked 2026-05-27. Governs M12 D6 (dashboard) and D7 (marketing).
+
+Two separate concerns, two separate cards. Do not merge them into one "Device Appearance" mega-card. Some tenants want the overlay and not the lock screen, or the reverse. Coupling them in the UI implies they're one decision. They aren't.
+
+Both cards live on `TenantSettings.tsx`, below the existing Branding / Notification Defaults / Rate Limits stack and the Content Moderation pointer. Order: **Desktop Overlay**, then **Lock Screen Branding**.
+
+### Shared card rules (both cards)
+- **Toggle is the card header control.** The enable/disable switch sits top-right in the card header row, aligned with the `<h2>`. Not a checkbox buried in the body.
+- **Disabled ≠ hidden.** When the toggle is off, the body config stays *visible* but goes to a disabled visual state (`opacity: 0.5`, `pointer-events: none` on the config block, inputs `disabled`). The admin must be able to see what they configured without flipping it on. This is the inverse of the annoying "turn it on to see the settings" pattern — banned here.
+- **Isolated Save state per card.** Each card owns its own Save button, spinner, success line, and error banner — independent of the main TenantSettings "Save Changes" button and of each other. Rationale: the overlay config and lock screen image are separate endpoints (`PUT /api/tenant/overlay`, `PUT /api/tenant/lockscreen` + upload). The shared TenantSettings save contract stays clean.
+- 8px grid. 16px internal card padding minimum. Card spacing 24px (matches existing TenantSettings grid gap).
+- No emojis. No purple. White-text-on-dark in the preview elements only — the dashboard chrome stays in the established dark theme tokens.
+
+### Card 1 — Desktop Overlay
+
+**Header**: `<h2>` "Desktop Overlay" + toggle (right-aligned). Sub-line under header in `--text-dim`, 12px: "A read-only info panel shown on the desktop. Does not change the user's wallpaper."  ← that sentence is load-bearing. It is the answer to the #1 question an admin will have. Keep it.
+
+**Body, when enabled:**
+
+1. **Fields** — section label "Show these fields" (`--text-secondary`, 13px, 500 weight). Six checkboxes, single column, 8px vertical rhythm. Labels exactly:
+   - Hostname
+   - Logged-in User
+   - OS Version
+   - IP Address
+   - Tenant Name
+   - Custom Text
+   Checkbox control: square, 16px, accent-checked. No toggle switches for the field list — toggles are for the card-level on/off, checkboxes are for multi-select within. Consistency: switch = one binary state; checkbox = membership in a set.
+
+2. **Custom Text inline reveal** — when "Custom Text" is checked, a single-line text input appears directly below the checkbox group (inline, not a separate section). Placeholder: "e.g. Property of Acme Corp — IT Support x4500". Max 80 chars with a live counter (consistent with the composer's character-count discipline). When unchecked, the input is removed from the DOM, not just hidden.
+
+3. **Position** — section label "Position". A **four-button segmented control** (not a `<select>`): `Bottom Right` · `Bottom Left` · `Top Right` · `Top Left`. Default selected: Bottom Right. Active segment uses the accent fill; inactive segments are `--bg-tertiary` with `--text-secondary`.
+   - Next to the segmented control, a **quadrant preview diagram**: a 16:9 rounded rectangle representing the screen (`--bg-tertiary` fill, 1px `--text-dim` border), with a small filled marker (`--accent-primary`, ~22% width) positioned in the selected corner with the spec corner inset (24px-equivalent). The marker moves as the segment changes. This is the only "preview" — we are NOT live-previewing the actual rendered text. The diagram communicates corner placement, nothing more. Subtle position transition (150ms ease) is allowed and serves a purpose; don't animate anything else.
+
+4. **Save** — card-local "Save Overlay" button, right-aligned, primary style. Spinner + "Saved." success line + error banner scoped to this card.
+
+**Rendered overlay appearance (governs the agent's GDI+ output, D4):**
+- White text (`#FFFFFF`), drop shadow (1px offset, `rgba(0,0,0,0.8)`), over a semi-transparent dark rounded box (`rgba(0,0,0,0.6)`, ~6px corner radius, ~12px internal padding).
+- Font: Segoe UI (this is the OS surface, same logic as the notification preview using Segoe UI — it's a Windows context, not an Inter context). Size DPI-aware, ~14–16px equivalent at 100% scale.
+- Each field renders as `Label: Value` on its own line — e.g. `Hostname: AFNB-DESKTOP22`. Label in slightly dimmer white (`rgba(255,255,255,0.7)`), value in full white. Tenant Name and Custom Text render as a single value line with no "Label:" prefix.
+- Corner inset from screen edge: 24px equivalent (taskbar-aware on the bottom corners — sit above the taskbar, do not let it cover the panel).
+
+### Card 2 — Lock Screen Branding
+
+**Header**: `<h2>` "Lock Screen Branding" + toggle (right-aligned). Sub-line in `--text-dim`, 12px: "A branded image shown when a device is locked (Win+L, screensaver, lid close)."
+
+**Body, when enabled:**
+
+1. **Upload zone + preview** — mirrors the existing logo upload pattern (`TenantSettings.tsx` logo block), but at **16:9** instead of square:
+   - When an image is set: a 16:9 preview thumbnail (~240×135px), `object-fit: cover`, 1px `rgba(15,23,42,0.14)` border, `--radius-sm`, `--bg-tertiary` backing. `onError` → "Preview unavailable" fallback box (same treatment as the logo block).
+   - Upload control: `<input type="file" accept=".jpg,.jpeg,.png">` hidden behind a `btn btn-secondary` "Upload image" / "Replace" label-button (matches logo upload exactly). Uploading state: "Uploading...", 0.6 opacity.
+   - "Remove" `btn btn-ghost` when an image is set.
+
+2. **Constraint helper text** — `--text-dim`, 11px, below the upload zone:
+   - "Recommended: 1920 × 1080 (16:9). JPG or PNG. Max 5 MB."
+   - Second line: "Applied to each device's lock screen at agent startup. On Group-Policy-managed endpoints, a policy-set lock screen may take precedence."
+
+3. **Save** — card-local "Save Lock Screen" button. Note: the image upload commits immediately via `POST /api/tenant/lockscreen-image` (consistent with the logo upload, which persists on upload); the Save button commits the enabled toggle via `PUT /api/tenant/lockscreen`. Same dual-action shape as the existing logo + settings split — keep it consistent.
+
+### D7 — Marketing surface (BgInfo-replacement positioning)
+- **Lead message**: "Branded device info and lock screens, deployed from your dashboard — no login scripts, no GPO, no registry edits." The competitor is the *workflow* (BgInfo + scripting), not a named product. Do NOT name or disparage Sysinternals/BgInfo in customer-facing copy — sell the centrally-managed, no-scripting advantage. (Internal docs and `llms.txt` answering "BgInfo alternative?" queries are fine — that's discovery, not the hero pitch.)
+- **No fake stats.** No "trusted by 10,000 endpoints" invention. Honest capability framing only (standing rule).
+- **No AI-generated screenshots or slop.** If we show the overlay, it's a real screenshot from a real machine, or a clean CSS/SVG mock built to this spec — never a generative render. The quadrant diagram from Card 1 can be reused as a clean explanatory graphic.
+- Capability grid entry on `Home.tsx` + inclusion-grid row on `Pricing.tsx` (reads as included, not an upsell). Docs reference under `/docs/*`. Inter for marketing chrome, Segoe UI only inside any literal overlay mockup.
+- Banned-terms gate before commit: `persona`, `audio drama`, `jailbreak`, internal `M[0-9]+` codes, `ToastRevival` codename. Product name is **Toast Notification**.
+
+### Diana's non-negotiables for M12
+1. The overlay card's "Does not change the user's wallpaper" line ships. It is the whole reason this design exists instead of BgInfo's. Cutting it for space is not an option.
+2. Two cards, never one. Overlay and lock screen are separate decisions.
+3. Disabled state shows config, never hides it.
+4. Position is a segmented control with a quadrant diagram — never a bare dropdown. The admin should *see* where it lands.
+5. Overlay text is white + drop shadow over a translucent dark box. No color picker. If a tenant wants brand-colored overlay text, that's a future request with a real design conversation — not a hex input bolted on now.
+6. The lock screen upload reuses the logo upload pattern exactly, at 16:9. Don't invent a second upload UX.

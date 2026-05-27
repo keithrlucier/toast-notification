@@ -486,6 +486,11 @@ namespace ToastRevival.Agent
                     using var tray = new TrayIconService(config.ServerUrl);
                     client.ConnectionStateChanged += (_, state) => tray.UpdateState(state);
 
+                    // M12 — desktop info overlay, hosted on the tray's STA thread
+                    // (no second thread). Window is created lazily on first Apply,
+                    // so a disabled overlay never realizes a window.
+                    using var overlay = new DesktopOverlayService(tray.Post);
+
                     using var shutdown = new CancellationTokenSource();
                     Console.CancelKeyPress += (_, e) =>
                     {
@@ -533,6 +538,29 @@ namespace ToastRevival.Agent
 
                     await client.StartAsync(shutdown.Token);
                     DiagLog.Write($"PrimaryMode: agent online (deviceId={config.DeviceId})");
+
+                    // M12 — apply device appearance (desktop overlay + lock screen)
+                    // AFTER going online so the device-online signal isn't delayed by
+                    // image download/apply. Best-effort and non-fatal: any failure
+                    // leaves whatever was last applied. MVP cadence is startup-only —
+                    // admin changes take effect at next agent restart (live hub push
+                    // is M12.B). Bounded at 30s so a slow image fetch can't hang here.
+                    try
+                    {
+                        using var apCts = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
+                        apCts.CancelAfter(TimeSpan.FromSeconds(30));
+                        var appearance = await RegistrationService.TryGetAppearanceConfigAsync(config, apCts.Token);
+                        if (appearance is not null)
+                        {
+                            overlay.Apply(appearance.Overlay, config.TenantName);
+                            await LockScreenService.ApplyAsync(appearance.LockScreen, apCts.Token);
+                        }
+                    }
+                    catch (OperationCanceledException) { /* shutdown or 30s cap */ }
+                    catch (Exception ex)
+                    {
+                        DiagLog.Write($"PrimaryMode: device appearance apply failed: {ex.GetType().Name}: {ex.Message}");
+                    }
 
                     try { await Task.Delay(Timeout.InfiniteTimeSpan, shutdown.Token); }
                     catch (OperationCanceledException) { }

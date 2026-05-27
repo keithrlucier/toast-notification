@@ -213,6 +213,37 @@ public class DevicesController : ControllerBase
         return Ok(new TenantAttributionResponse(tenant.Name, ToPublicUrl(tenant.LogoUrl)));
     }
 
+    /// <summary>
+    /// M12 — bundled device-appearance config (desktop overlay + lock screen) in
+    /// one round-trip. Called by the agent at startup and on reconnect, right
+    /// after the tenant-name refresh. Device-JWT only (requires "deviceId" claim).
+    /// A non-200 here is non-fatal — the agent keeps whatever it last applied.
+    /// </summary>
+    [Authorize]
+    [HttpGet("appearance-config")]
+    [EnableRateLimiting("device-per-hour")]
+    public async Task<ActionResult<AppearanceConfigResponse>> GetAppearanceConfig()
+    {
+        var deviceIdClaim = User.FindFirstValue("deviceId");
+        if (string.IsNullOrEmpty(deviceIdClaim)) return Unauthorized();
+
+        var tenantIdClaim = User.FindFirstValue("tenantId");
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId)) return Unauthorized();
+
+        var tenant = await _db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId);
+        if (tenant is null) return NotFound();
+
+        // Lock screen URL is stored absolute, so ToPublicUrl is a no-op on it —
+        // but it rescues any legacy relative value, same defense as tenant-name.
+        var overlay    = TenantAppearance.BuildOverlay(tenant);
+        var lockScreen = TenantAppearance.BuildLockScreen(tenant) with
+        {
+            ImageUrl = ToPublicUrl(tenant.LockScreenImageUrl)
+        };
+        return Ok(new AppearanceConfigResponse(overlay, lockScreen));
+    }
+
     // Called by agent to confirm it's still alive (heartbeat)
     [Authorize]
     [HttpPost("ping")]

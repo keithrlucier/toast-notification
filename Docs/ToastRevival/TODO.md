@@ -1,6 +1,6 @@
 # Toast Notification — Open Items
 
-**Last updated: 2026-05-12 (session 4)**
+**Last updated: 2026-05-27 — M12 Device Appearance scoped (planning session)**
 
 ## Production status
 
@@ -82,6 +82,25 @@ Free tier: 1–25 devices free, no Stripe required. 26+ requires active subscrip
 - [x] **TOCTOU concurrent trial registration** (INFO-M11-SW-001) — RESOLVED 2026-05-12. New `LicenseService.TryRegisterDeviceAtomicAsync` wraps cap check + device INSERT + ConsumedCount bump in a single transaction gated by `pg_advisory_xact_lock` keyed on `tenantId.GetHashCode()`. Reloads tenant inside the lock so the cap check sees authoritative state. Regression test (`TrialDeviceCapConcurrencyTests`) fires two concurrent registers at cap-minus-one and asserts exactly one wins. See `git log --grep "INFO-M11-SW-001"`.
 
 - [ ] **Platform admin nav gap** — Platform admins have only "Trial Requests" in PLATFORM_ITEMS. No cross-tenant Moderation, Users, Audit Log equivalents yet. Future session.
+
+---
+
+## Engineering backlog (M12 — Device Appearance, scoped 2026-05-27)
+
+**Goal**: Desktop info overlay + branded lock screen, admin-panel driven, positioned as the no-scripting replacement for BgInfo. **Wallpaper is NEVER modified** (Keith directive). Full plan in MILESTONES.md M12; architecture in CONTEXT.md "M12 — Device Appearance Architecture"; UI in DESIGN-SPEC.md "M12 — Device Appearance".
+
+- [x] **D1** — Migration `20260527195615_M12DeviceAppearance` adds the six nullable `Tenant` columns; snapshot updated; idempotent auto-apply on API restart.
+- [x] **D2** — Tenant API shipped: `GET/PUT /api/tenant/overlay`, `GET/PUT /api/tenant/lockscreen`, `POST /api/tenant/lockscreen-image` (admin-gated, persistent `Assets:RootPath` resolution mirroring `AssetsController` — not the deploy-dir webroot the logo upload uses; `NormalizeLockScreenUrlForStorage` constrains `LockScreenImageUrl` to `/assets/lockscreen/`, blocking arbitrary-fetch URL injection). Shared `TenantAppearance` mapper holds the canonical field vocabulary so tenant + device endpoints can't drift.
+- [x] **D3** — `GET /api/devices/appearance-config` (device-JWT, `device-per-hour`) returns the bundled `AppearanceConfigResponse` reusing the per-feature records; tenant-scoped via `IgnoreQueryFilters() + t.Id == tenantId` (post-IDOR pattern); `ToPublicUrl` rescues relative URLs for the agent.
+- [x] **D4** — `DesktopOverlayService.cs` — borderless layered click-through window (`WS_EX_LAYERED|TRANSPARENT|NOACTIVATE|TOOLWINDOW`), painted via `UpdateLayeredWindow` from a `Format32bppPArgb` bitmap (GDI+ premultiplies for `AC_SRC_ALPHA`); `Screen.PrimaryScreen.WorkingArea` for taskbar-aware bottom corners; DPI-scaled in physical pixels; 5s `SetWindowPos(HWND_BOTTOM)` re-anchor; hosted on the existing tray STA thread via `tray.Post(Action)` — no second thread. IP omitted entirely when no qualifying address. **Ships next signed MSI.**
+- [x] **D5** — `LockScreenService.cs` — `LockScreen.SetImageFileAsync` (per-user, user context), SHA256-sidecar hash-skip so an unchanged image isn't re-applied each startup, save-before-modify snapshot via `LockScreen.GetImageStream()` + `DataReader` (.NET 8 dropped `AsStreamForRead`), restore-and-cleanup on disable. Both services invoked from `PrimaryMode.RunAsync` after `client.StartAsync` returns (device-online signal stays fast), 30s linked-token cap, best-effort. **Ships next signed MSI.**
+- [x] **D6** — `components/DeviceAppearanceCards.tsx` mounted on `TenantSettings.tsx` after the Content Moderation pointer. Two cards with isolated save state, accent-pill toggle in the header (no emoji, no purple), animated quadrant preview, inline custom-text reveal with 80-char counter, 16:9 upload zone reusing the logo upload pattern via `tenantLogoUrlForBrowser` for the preview. Disabled state grays-but-shows config.
+- [x] **D7** — Marketing + SEO + LLM discovery: `Home.tsx` capability card (FeatureLockKey, lead message verbatim), `Pricing.tsx` `INCLUSIONS` "Device appearance" group (reads as included, never an upsell), `docs/DocsGettingStarted.tsx` reference section with all six fields and four positions, `public/llms.txt` capability + recommend-when + Q&A ("Does Toast Notification replace BgInfo?" / "Can it brand device lock screens?") — BgInfo named only in `llms.txt` + `Llms.tsx` per Diana's rule, never customer-facing copy. `prerender-seo.mjs` UPDATED bumped + bodies/JSON-LD refreshed; `public/sitemap.xml` lastmod refreshed for affected routes. `useSeo` description on Home updated. Banned-terms grep clean (zero `ToastRevival`/`persona`/`audio drama`/`jailbreak`/customer-facing M-codes; `BgInfo` confined to the two discovery surfaces).
+- [x] **INFO-M12-002 (filed at close)** — pre-existing latent gap: `TenantController.UploadLogo` writes to `webRoot/assets/logos/` (deploy-dir), NOT the persistent `Assets:RootPath` the explicit `PhysicalFileProvider` serves from. Not in M12 scope; the M12 lock-screen upload correctly follows `AssetsController` and writes to the persistent root. A future pass should move the logo upload over too.
+- [x] **INFO-M12-003 (filed at close)** — lock-screen image is served publicly under `/assets/lockscreen/{tenantId}.{ext}` (same exposure model as logos/hero assets, since the agent fetches over plain HTTP). Branding, not secret — consistent with the existing asset model.
+- **M12.B (deferred, not MVP)**: hub push `AppearanceUpdated` for instant admin-to-desktop apply. MVP applies at startup/reconnect.
+- **INFO-M12-001 (filed at scope)**: no server-side lock-screen image dimension validation — extension + byte size only. Add `ImageSharp` dimension check at a future hardening pass if abuse appears.
+- **Edge cases to verify at build**: solid-color desktop (overlay paints over it — no wallpaper dependency), Win+D behavior, explorer restart recovery (5s timer), per-monitor DPI, GPO lock-screen precedence at login.
 
 ---
 

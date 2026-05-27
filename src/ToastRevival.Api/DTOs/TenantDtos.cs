@@ -65,3 +65,56 @@ public class UpdateTenantModerationSettingsRequest
     public string? CustomKey { get; set; }
     public string? BlockedMessage { get; set; }
 }
+
+// ── M12 Device Appearance ───────────────────────────────────────────────────
+// Two independent fleet-branding surfaces. The same response records the admin
+// dashboard reads (GET /api/tenant/overlay, /lockscreen) are reused, bundled, as
+// the agent-facing payload (GET /api/devices/appearance-config) so the admin view
+// and the device view can never drift out of shape.
+
+/// <summary>
+/// Desktop info-overlay config. <see cref="Fields"/> is the set of enabled field
+/// keys — canonical vocabulary: hostname | user | os | ip | tenant | customtext —
+/// stored pipe-delimited in the Tenant row. <see cref="Position"/> is normalized
+/// server-side to one of bottom-right | bottom-left | top-right | top-left
+/// (defaults to bottom-right). <see cref="CustomText"/> is the literal line shown
+/// only when "customtext" is in Fields.
+/// </summary>
+public record OverlayConfigResponse(
+    bool Enabled,
+    string[] Fields,
+    string Position,
+    string? CustomText);
+
+public class UpdateOverlayConfigRequest
+{
+    public bool Enabled { get; set; }
+    public string[]? Fields { get; set; }
+    public string? Position { get; set; }
+    public string? CustomText { get; set; }
+}
+
+/// <summary>
+/// Lock screen branding config. <see cref="ImageUrl"/> is the absolute URL of the
+/// uploaded image (served from /assets), fetched directly by the agent.
+/// </summary>
+public record LockScreenConfigResponse(
+    bool Enabled,
+    string? ImageUrl);
+
+public class UpdateLockScreenConfigRequest
+{
+    public bool Enabled { get; set; }
+    /// <summary>The /assets/lockscreen/ path returned by the upload, or null to
+    /// clear (Remove). Mirrors the logo + settings split — Save persists both the
+    /// toggle and the current/cleared image.</summary>
+    public string? ImageUrl { get; set; }
+}
+
+/// <summary>
+/// Agent-facing bundle returned by GET /api/devices/appearance-config — both
+/// features in one round-trip. Reuses the per-feature response records above.
+/// </summary>
+public record AppearanceConfigResponse(
+    OverlayConfigResponse Overlay,
+    LockScreenConfigResponse LockScreen);

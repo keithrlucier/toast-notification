@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const SITE_URL = 'https://toastnotification.com';
 const SITE_NAME = 'Toast Notification';
-const UPDATED = '2026-05-13';
+const UPDATED = '2026-05-27';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -130,7 +130,7 @@ const routes = [
     path: '/',
     title: 'Managed Windows notifications for MSPs',
     description:
-      'Toast Notification helps MSPs send branded, signed, trackable Windows toast notifications with audit evidence and deployment through MSI, Intune, Store, or RMM.',
+      'Toast Notification helps MSPs send branded, signed, trackable Windows toast notifications with audit evidence, plus dashboard-managed desktop info overlays and device lock screen branding, and deployment through MSI, Intune, Store, or RMM.',
     priority: '1.0',
     changefreq: 'weekly',
     jsonLd: [softwareApplicationLd(), breadcrumbLd([{ name: 'Home', path: '/' }])],
@@ -144,6 +144,7 @@ const routes = [
         <li>Track delivered, clicked, dismissed, and failed outcomes.</li>
         <li>Export tenant audit evidence to CSV or PDF.</li>
         <li>Deploy through MSI, Intune, Microsoft Store, or RMM silent install.</li>
+        <li>Brand devices from the dashboard with a read-only desktop info overlay (hostname, logged-in user, OS version, IP address, tenant name, custom text) and a per-device lock screen image, applied by the agent at startup with no login scripts, GPO, or registry edits.</li>
       </ul>
       <p>Three ways to run it: a reviewed Free Trial (2 devices, 14 days), a $22/month Managed SaaS tier up to 100 devices, or a free self-hosted Docker Compose path with no device cap.</p>
     `,
@@ -170,7 +171,7 @@ const routes = [
         <li>Managed SaaS: $22/month flat for up to 100 devices, hosted on Toast2IT infrastructure in a single US region. Cancel anytime.</li>
         <li>Roll Your Own: $0 — self-host the Docker Compose source from GitHub, no device cap, operator runs hosting and updates.</li>
       </ul>
-      <p>The product is identical across tiers. The tier controls who runs the infrastructure, not which features are available.</p>
+      <p>The product is identical across tiers. The tier controls who runs the infrastructure, not which features are available. Every tier includes device appearance — a dashboard-managed read-only desktop info overlay and per-device lock screen branding, applied by the agent at startup.</p>
     `,
   },
   {
@@ -241,7 +242,7 @@ const routes = [
     path: '/docs/getting-started',
     title: 'Getting started',
     description:
-      'Create a Toast Notification tenant, install the Windows agent, register the endpoint, and send a branded test notification.',
+      'Create a Toast Notification tenant, install the Windows agent, register the endpoint, send a branded test notification, and configure device appearance.',
     priority: '0.7',
     changefreq: 'monthly',
     body: `
@@ -254,6 +255,8 @@ const routes = [
         <li>Send a notification using one of the included templates.</li>
         <li>Review delivery and interaction events in history.</li>
       </ol>
+      <h2>Device appearance</h2>
+      <p>Optionally configure device appearance per tenant from the dashboard. A read-only desktop info overlay shows hostname, logged-in user, OS version, IP address, tenant name, and custom text in any of four corners (bottom-right, bottom-left, top-right, top-left) without changing the user's wallpaper. Lock screen branding applies an uploaded image (recommended 1920x1080, JPG or PNG, max 5 MB) to each device's lock screen. Both are toggled on or off per tenant and applied by the agent at startup — no login scripts, GPO, or registry edits.</p>
     `,
   },
   {

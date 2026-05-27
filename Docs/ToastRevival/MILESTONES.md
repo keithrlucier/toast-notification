@@ -640,6 +640,76 @@ Built in 2020 for MSPs during the COVID-19 WFH explosion. 986,000 legitimate mes
 
 ---
 
+## M12: Device Appearance — Desktop Overlay + Lock Screen Branding  **[SHIPPED 2026-05-27 — backend + dashboard deployed; agent D4/D5 rides the next signed MSI build]**
+**Goal**: Give MSP admins two fleet-branding surfaces driven from the admin panel — a BgInfo-style desktop info overlay and a branded per-user lock screen — without ever modifying the user's wallpaper.
+
+### Origin / pitch
+Keith pitched a BgInfo-style overlay: show a configurable line of device info (tenant name + selected device details) on managed endpoints. Sysinternals BgInfo is the visual reference (https://learn.microsoft.com/en-us/sysinternals/downloads/bginfo).
+
+### Critical architecture decision — NO WALLPAPER MODIFICATION
+BgInfo composites text onto a new wallpaper bitmap and calls `SystemParametersInfo(SPI_SETDESKWALLPAPER)`. **We explicitly rejected that approach.** Keith's directive: *"Users tend to get upset if we change their wallpaper. How can we do this without fucking with that?"*
+
+The overlay is a **layered, click-through desktop window** that floats above the wallpaper and below all apps/icons. The user's wallpaper is never read, never modified, never replaced.
+
+- Borderless `System.Windows.Forms.Form`, no taskbar entry.
+- Extended styles: `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`.
+- `SetWindowPos(hWnd, HWND_BOTTOM, ...)` anchors it at the bottom of the Z-order (above wallpaper, below everything else).
+- `UpdateLayeredWindow` paints with per-pixel alpha — semi-transparent dark box behind white drop-shadowed text.
+- `WS_EX_TRANSPARENT` makes it fully click-through: mouse events fall through to whatever is behind it. The user cannot move, resize, focus, or interact with it.
+- A ~5-second timer re-asserts `SetWindowPos(HWND_BOTTOM)` to recover from Z-order drift and explorer.exe restarts.
+- Runs on the **existing tray-icon STA thread** (`TrayIconService` pattern) — no new thread coordination with the SignalR loop.
+- Same technique used by live-wallpaper apps (Wallpaper Engine).
+
+### Confirmed scope (Keith, 2026-05-27)
+1. **Overlay fields (6, confirmed correct)**: Hostname, Logged-in User, OS Version, IP Address, Tenant Name, Custom Text.
+2. **Per-tenant config** (confirmed) — all devices in a tenant share the overlay/lock-screen config. Per-device-group control is a future consideration, not M12.
+3. **Text styling** — white text + drop shadow over a semi-transparent dark box (`rgba(0,0,0,0.6)`) for readability on any background. **No color picker** for M12.
+4. **Lock Screen Branding (added by Keith)** — admin uploads a 1920×1080 image; tenant-level on/off toggle; brands all devices' lock screens.
+
+### Lock screen — technical bounds (Anthony verified)
+- **Target: per-user lock screen** via `Windows.System.UserProfile.LockScreen.SetImageFileAsync()`. Runs in user context, no elevation required. This is the locked-session screen (Win+L, screensaver, lid close).
+- **Out of scope: pre-login greeter screen** — requires `HKLM\...\PersonalizationCSP` (admin/SYSTEM). Agent runs at LeastPrivilege; greeter branding is a GPO/Intune concern. Documented, not built.
+- **Restore on disable**: snapshot the current lock screen via `LockScreen.GetImageStream()` to `lockscreen_original.jpg` on first apply; restore on disable. Same save-before-modify discipline as the overlay.
+- **No server-side dimension validation in M12** — would require an `ImageSharp` pull (API runs on Linux; `System.Drawing.Common` is deprecated cross-platform). UI documents "1920×1080 recommended, JPG or PNG, max 5MB"; server validates extension + byte size only (mirrors `TenantController.UploadLogo`). Wrong dimensions are cropped/pillarboxed by Windows. Dimension validation filed as an INFO item.
+
+### Deliverables
+- **D1** — Migration `M12DeviceAppearance`: six new nullable `Tenant` columns — `DesktopOverlayEnabled` (bool, default false), `DesktopOverlayFields` (string?, pipe-delimited field keys), `DesktopOverlayPosition` (string?, `bottom-right`|`bottom-left`|`top-right`|`top-left`), `DesktopOverlayCustomText` (string?), `LockScreenEnabled` (bool, default false), `LockScreenImageUrl` (string?). Flat columns, not a JSON blob — matches the `Moderation*` column pattern.
+- **D2** — Tenant API: `GET/PUT /api/tenant/overlay`, `GET/PUT /api/tenant/lockscreen`, `POST /api/tenant/lockscreen-image` (admin-only multipart upload; persists to `/opt/toast/shared/assets/lockscreen/{tenantId}.jpg` — the persistent assets path that survives redeploy; extension + 5MB byte-size validation only). All admin-gated via the existing `IsAdmin()` pattern; `[EnableRateLimiting("tenant-per-minute")]`.
+- **D3** — Agent-facing config: `GET /api/devices/appearance-config` — device-JWT authenticated, `device-per-hour` rate limit. Returns one bundled DTO: `{ overlay: { enabled, fields[], position, customText }, lockScreen: { enabled, imageUrl } }`. One round-trip covers both features. `NotificationHub.cs` unchanged.
+- **D4** — Agent `DesktopOverlayService.cs`: layered click-through window (see architecture above). Field resolution — `Environment.MachineName`, `Environment.UserName`, `Environment.OSVersion`, tenant name from config; IP = first non-loopback, non-link-local IPv4 via `NetworkInterface.GetAllNetworkInterfaces()` (skip field entirely if none qualify — never render `169.254.x.x`). GDI+ text layout, DPI-aware sizing, primary monitor only for M12.
+- **D5** — Agent `LockScreenService.cs`: hash-checked download to `lockscreen.jpg` (skip if unchanged, `TenantLogoStore` pattern), `SetImageFileAsync()` apply, snapshot-and-restore on disable. Both services invoked from the `PrimaryMode.RunAsync` startup/reconnect block immediately after `TryRefreshTenantInfoAsync` returns, gated on the bundled appearance config. Shared `AppearanceConfig` DTO in `DeviceConfig.cs` neighborhood.
+- **D6** — Dashboard: two new cards on `TenantSettings.tsx` — **Desktop Overlay** (toggle header, 6 field checkboxes, inline custom-text reveal, 4-button position segmented control with quadrant preview diagram, isolated Save state) and **Lock Screen Branding** (toggle header, upload zone with 16:9 preview thumbnail, Replace/Remove buttons mirroring the logo upload, constraint helper text, isolated Save state). Disabled toggle grays out config but keeps it visible. Diana DESIGN-SPEC governs.
+- **D7** — Public marketing + discovery surface, positioned as the **no-scripting replacement for BgInfo**. Diana leads. Scope:
+  - **Marketing copy** — add a Device Appearance / fleet-branding capability to `Home.tsx` (capability grid) and a dedicated section or feature block. Lead message: *"Branded device info and lock screens, deployed from your dashboard — no login scripts, no GPO, no registry edits."* The implicit competitor is BgInfo + scripting; we sell the managed, toggle-it-on experience. Honest framing only — no fake stats (standing rule). Do NOT disparage Sysinternals by name in customer-facing copy; sell the "no scripting / centrally managed" advantage.
+  - **Pricing/inclusion grid** — add Device Appearance (desktop overlay + lock screen branding) to the "what's included" inclusion grid on `Pricing.tsx` so it reads as a standard included capability, not an upsell.
+  - **Docs** — short reference under `/docs/*` covering what the overlay shows, the available fields, lock screen sizing (1920×1080), and the "applies at agent startup; not a wallpaper modification" behavior note. Wire into `DOCS_PATHS` (single source of truth) if a new docs route is added.
+  - **LLM discovery** — update `llms.txt`, `Llms.tsx`, and `scripts/prerender-seo.mjs` route descriptions/bodies + JSON-LD so AI crawlers can answer "Does Toast Notification replace BgInfo?" and "Can it brand device lock screens?" from the file alone.
+  - **SEO** — `useSeo` per-page metadata + JSON-LD updates; intent-dense MSP terms ("managed Windows desktop info overlay", "branded lock screen for MSP fleets", "BgInfo alternative no scripting"). XML sitemap lastmod refresh if a docs route is added.
+  - **Banned-terms gate** — grep for `persona`, `audio drama`, `jailbreak`, internal `M[0-9]+` codes, and project codename `ToastRevival` across all customer-facing edits before commit. Product name is **Toast Notification**.
+  - Crawler-surface drift check (standing rule): when public copy makes a numeric/enumerated claim, grep the backend for the exact field set before commit. Keep `llms.txt` / `Llms.tsx` / `prerender-seo.mjs` in sync.
+
+### Risks / edge cases
+- **Z-order drift / explorer restart** — handled by the 5s re-anchor timer.
+- **Win+D (Show Desktop)** — `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE` should exclude the overlay from the shell window set; if Win+D hides it, that is acceptable (user asked for a clean desktop) and it returns on next window activation.
+- **No wallpaper / solid-color desktop** — irrelevant now; we don't touch the wallpaper, the overlay window paints over whatever is there.
+- **Multi-monitor** — primary monitor only for M12; documented.
+- **GPO-managed endpoints** — a policy-set lock screen may override ours at login. Document: run the agent after policy applies, or manage lock screen via the same policy. Overlay (a live window) is not affected by wallpaper GPO.
+- **Per-monitor DPI scaling** — documented edge case, not a blocking bug.
+
+### M12.B (optional follow-up — not MVP)
+Hub push `AppearanceUpdated` so admin-panel changes apply to live endpoints instantly instead of at next startup/reconnect. MVP applies at agent startup + reconnect only (same cadence as tenant-name refresh) — acceptable for an MSP branding tool, these are not emergency updates.
+
+### Agent Deployment (planned)
+- Anthony: D1–D5 (system-level — layered-window P/Invoke, WinRT lock screen, agent startup wiring, all three API endpoints + migration). Single-author shape consistent with prior agent milestones.
+- Diana: D6 DESIGN-SPEC + dashboard card review (two-card layout, position preview diagram, upload pattern); D7 marketing copy + docs + crawler-surface lead (BgInfo-replacement positioning).
+- Abish: Code Sweep (multi-file, multi-surface — agent P/Invoke + WinRT + API + frontend + D7 crawler surfaces). Mandatory pre-commit gate; banned-terms + crawler-drift grep on D7.
+- Carl: foreman — scope discipline (M12.A core vs M12.B hub push held), no-wallpaper-modification architecture call.
+
+### SHIP condition
+Overlay window renders configured fields over the wallpaper without modifying it, on a machine with a wallpaper AND a solid-color desktop. Overlay is click-through (verified by clicking through to desktop icons). Lock screen applies the uploaded image on Win+L and restores on disable. Admin panel saves and returns both configs. Both apply after agent restart. No new NuGet packages on the agent.
+
+---
+
 ## Milestone Summary
 
 | Milestone | Focus | Key Risk | Est. Complexity |
@@ -656,3 +726,4 @@ Built in 2020 for MSPs during the COVID-19 WFH explosion. 986,000 legitimate mes
 | M9 | Launch | Store certification, infrastructure hardening | Medium |
 | M10 | Trial approval gate | Turnstile + registration flow correctness | Low |
 | M11 | Self-hosted distribution | LicenseService bypass + git history sanitization | Medium |
+| M12 | Device appearance (overlay + lock screen) + BgInfo-replacement marketing | Layered click-through window Z-order stability without touching wallpaper | Medium |

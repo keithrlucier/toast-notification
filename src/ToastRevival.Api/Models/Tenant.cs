@@ -74,6 +74,15 @@ public class Tenant
     public bool LockScreenEnabled { get; set; }
     public string? LockScreenImageUrl { get; set; }
 
+    // Platform Admin controls. Suspension blocks login and device registration
+    // without deleting tenant data — reversible. Complimentary marks the tenant
+    // as free-forever (no Stripe required, no device cap, LicenseEnd ignored);
+    // overrides the trial / free-tier / paid logic in LicenseService.
+    public DateTime? SuspendedAt { get; set; }
+    public string? SuspendedReason { get; set; }
+    public bool IsComplimentary { get; set; }
+    public string? ComplimentaryReason { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

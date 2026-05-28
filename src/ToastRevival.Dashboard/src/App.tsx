@@ -27,6 +27,9 @@ import AuditLog from './pages/AuditLog';
 import Billing from './pages/Billing';
 import Onboarding from './pages/Onboarding';
 import TrialRequests from './pages/TrialRequests';
+import PlatformTenants from './pages/PlatformTenants';
+import PlatformTenantDetail from './pages/PlatformTenantDetail';
+import PlatformUsers from './pages/PlatformUsers';
 
 // Marketing chunks — lazy so the dashboard bundle doesn't pull in the marketing CSS / pages
 // for already-authenticated users, and the public marketing bundle doesn't pull in Recharts.
@@ -198,6 +201,30 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute requireAdmin>
             <TrialRequests />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/system/tenants',
+        element: (
+          <ProtectedRoute requireAdmin>
+            <PlatformTenants />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/system/tenants/:id',
+        element: (
+          <ProtectedRoute requireAdmin>
+            <PlatformTenantDetail />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/system/users',
+        element: (
+          <ProtectedRoute requireAdmin>
+            <PlatformUsers />
           </ProtectedRoute>
         ),
       },

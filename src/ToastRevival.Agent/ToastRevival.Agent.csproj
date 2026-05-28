@@ -8,12 +8,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- Process-wide DPI awareness. Pairs with the WinForms
+         Application.SetHighDpiMode(PerMonitorV2) call in TrayIconService. The
+         project property makes WinForms emit a manifest fragment that takes
+         effect at process boot — before any GDI call — so DesktopOverlayService
+         renders its bitmap at native pixel size on >100% scale displays
+         instead of getting bilinearly upscaled by the OS. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <RootNamespace>ToastRevival.Agent</RootNamespace>
     <AssemblyName>ToastNotification.Agent</AssemblyName>
     <ApplicationIcon>ToastNotification.ico</ApplicationIcon>
-    <Version>0.4.16</Version>
-    <AssemblyVersion>0.4.16</AssemblyVersion>
-    <FileVersion>0.4.16</FileVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.4.17</Version>
+    <AssemblyVersion>0.4.17</AssemblyVersion>
+    <FileVersion>0.4.17</FileVersion>
     <!-- AssemblyTitle / Product / Company / Description populate the exe's
          version-info resource fields that Task Manager, File Properties, and
          the WinAppSDK auto-derived AUMID DisplayName fallback all read from.

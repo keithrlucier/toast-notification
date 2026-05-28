@@ -255,7 +255,7 @@ internal sealed class DesktopOverlayService : IDisposable
         using (var measureBmp = new Bitmap(1, 1))
         using (var scratch = Graphics.FromImage(measureBmp))
         {
-            scratch.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            scratch.TextRenderingHint = TextRenderingHint.AntiAlias;
             foreach (var ln in lines)
             {
                 var text = ln.Label is null ? ln.Value : $"{ln.Label}: {ln.Value}";
@@ -278,7 +278,12 @@ internal sealed class DesktopOverlayService : IDisposable
         using (var g = Graphics.FromImage(bmp))
         {
             g.SmoothingMode     = SmoothingMode.AntiAlias;
-            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            // AntiAlias (not AntiAliasGridFit): GridFit snaps glyph metrics to
+            // the pixel grid assuming an opaque background, which on a layered
+            // window with per-pixel alpha bleeds the AA edges into the panel
+            // and reads as faintly blocky. Plain AntiAlias on the transparent
+            // surface composites cleanly through UpdateLayeredWindow.
+            g.TextRenderingHint = TextRenderingHint.AntiAlias;
             g.Clear(Color.Transparent);
 
             int panelAlpha = (int)Math.Round(opacityPercent * 2.55);  // 0..255

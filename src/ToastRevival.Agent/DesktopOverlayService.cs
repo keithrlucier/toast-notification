@@ -282,7 +282,8 @@ internal sealed class DesktopOverlayService : IDisposable
             g.Clear(Color.Transparent);
 
             // Panel: fully opaque dark fill inside the rounded rect. Overall
-            // panel translucency is applied later via SourceConstantAlpha.
+            // panel translucency is applied later by ApplyAlphaMask writing
+            // the per-pixel alpha channel from luminance.
             using (var boxBrush = new SolidBrush(Color.FromArgb(255, 24, 24, 28)))
             using (var boxPath = RoundedRect(new RectangleF(0, 0, boxW, boxH), radius))
                 g.FillPath(boxBrush, boxPath);

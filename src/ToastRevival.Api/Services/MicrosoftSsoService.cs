@@ -69,8 +69,13 @@ public class MicrosoftSsoService : IMicrosoftSsoService
             || u.Host.Equals("login.partner.microsoftonline.cn", StringComparison.OrdinalIgnoreCase)
             || u.Host.Equals("login.microsoftonline.de", StringComparison.OrdinalIgnoreCase));
 
-    public string BuildAuthorizeUrl(string state, string nonce)
+    public async Task<string> BuildAuthorizeUrlAsync(string state, string nonce, CancellationToken ct)
     {
+        // The authorize endpoint comes from Microsoft's discovery document, NOT
+        // from string-building on the authority. The /v2.0 authority path is only
+        // the metadata base; the real authorize endpoint is /oauth2/v2.0/authorize.
+        var oidc = await GetMetadataAsync(Authority, ct);
+
         var query = new Dictionary<string, string?>
         {
             ["client_id"]     = ClientId,
@@ -89,7 +94,19 @@ public class MicrosoftSsoService : IMicrosoftSsoService
             .Where(kv => !string.IsNullOrEmpty(kv.Value))
             .Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value!)}"));
 
-        return $"{Authority}/authorize?{qs}";
+        return $"{oidc.AuthorizationEndpoint}?{qs}";
+    }
+
+    // OIDC discovery for this authority, cached. Carries authorization_endpoint,
+    // token_endpoint, issuer, and signing keys — the source of truth for every
+    // endpoint URL so we never drift on Microsoft's path layout.
+    private static Task<OpenIdConnectConfiguration> GetMetadataAsync(string authority, CancellationToken ct)
+    {
+        var cm = MetadataCache.GetOrAdd(
+            $"{authority}/.well-known/openid-configuration",
+            addr => new ConfigurationManager<OpenIdConnectConfiguration>(
+                addr, new OpenIdConnectConfigurationRetriever(), new HttpDocumentRetriever()));
+        return cm.GetConfigurationAsync(ct);
     }
 
     public async Task<MicrosoftIdentity> ExchangeCodeAsync(string code, string expectedNonce, CancellationToken ct)
@@ -97,10 +114,22 @@ public class MicrosoftSsoService : IMicrosoftSsoService
         if (!IsEnabled)
             throw new SsoException("Microsoft sign-in is not configured.");
 
-        var authority = Authority;
-        var clientId  = ClientId!;
+        var clientId = ClientId!;
 
-        // 1. Redeem the authorization code for tokens at Microsoft's token endpoint.
+        // Pull the discovery document FIRST — it carries the real token_endpoint
+        // and the signing keys. We never hand-build endpoint URLs.
+        OpenIdConnectConfiguration oidc;
+        try
+        {
+            oidc = await GetMetadataAsync(Authority, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch Microsoft OIDC metadata.");
+            throw new SsoException("Could not load Microsoft metadata.");
+        }
+
+        // 1. Redeem the authorization code at the discovery-published token endpoint.
         var http = _httpFactory.CreateClient();
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -112,7 +141,7 @@ public class MicrosoftSsoService : IMicrosoftSsoService
             ["scope"]         = Scopes,
         });
 
-        using var resp = await http.PostAsync($"{authority}/token", form, ct);
+        using var resp = await http.PostAsync(oidc.TokenEndpoint, form, ct);
         var body = await resp.Content.ReadAsStringAsync(ct);
         if (!resp.IsSuccessStatusCode)
         {
@@ -136,22 +165,6 @@ public class MicrosoftSsoService : IMicrosoftSsoService
             throw new SsoException("Token response did not include an id_token.");
 
         // 2. Validate the id_token against Microsoft's published signing keys.
-        var cm = MetadataCache.GetOrAdd(
-            $"{authority}/.well-known/openid-configuration",
-            addr => new ConfigurationManager<OpenIdConnectConfiguration>(
-                addr, new OpenIdConnectConfigurationRetriever(), new HttpDocumentRetriever()));
-
-        OpenIdConnectConfiguration oidc;
-        try
-        {
-            oidc = await cm.GetConfigurationAsync(ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to fetch Microsoft OIDC metadata.");
-            throw new SsoException("Could not load Microsoft signing keys.");
-        }
-
         var parameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,

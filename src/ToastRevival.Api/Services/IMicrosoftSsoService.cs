@@ -30,10 +30,11 @@ public interface IMicrosoftSsoService
     /// secret are present and the feature is enabled in config.</summary>
     bool IsEnabled { get; }
 
-    /// <summary>Builds the Entra /authorize URL for the front-channel redirect.
+    /// <summary>Builds the Entra /authorize URL for the front-channel redirect,
+    /// reading the authorization_endpoint from Microsoft's discovery document.
     /// state = CSRF token echoed back to /callback; nonce binds the resulting
     /// id_token to this specific authorize request.</summary>
-    string BuildAuthorizeUrl(string state, string nonce);
+    Task<string> BuildAuthorizeUrlAsync(string state, string nonce, CancellationToken ct);
 
     /// <summary>Redeems the authorization code for an id_token and validates it
     /// (signature against Microsoft's published JWKS, audience, lifetime, issuer

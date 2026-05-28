@@ -57,7 +57,7 @@ public class SsoController : ControllerBase
 
     [HttpGet("start")]
     [EnableRateLimiting("login-per-ip")]
-    public IActionResult Start()
+    public async Task<IActionResult> Start()
     {
         if (!_sso.IsEnabled) return NotFound();
 
@@ -78,7 +78,17 @@ public class SsoController : ControllerBase
             MaxAge   = StateLifetime,
         });
 
-        return Redirect(_sso.BuildAuthorizeUrl(state, nonce));
+        string authorizeUrl;
+        try
+        {
+            authorizeUrl = await _sso.BuildAuthorizeUrlAsync(state, nonce, HttpContext.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to build Microsoft authorize URL.");
+            return LoginError("unavailable");
+        }
+        return Redirect(authorizeUrl);
     }
 
     [HttpGet("callback")]

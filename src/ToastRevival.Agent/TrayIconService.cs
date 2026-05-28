@@ -109,7 +109,23 @@ internal sealed class TrayIconService : IDisposable
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
+        // 0.4.10 hotfix-2 — install the WinForms sync context BEFORE we capture
+        // it. WindowsFormsSynchronizationContext.AutoInstall is true by default,
+        // but it only installs on first Control construction (NotifyIcon is a
+        // Component, not a Control — it doesn't trigger the install). The
+        // original capture at this point grabbed null, so every later
+        // _uiContext?.Post(...) was a silent no-op: ApplyState() never ran on
+        // state transitions, DesktopOverlayService's RenderOrHide never fired.
+        // Symptoms on 0.4.9/0.4.10-1 were "tooltip stuck at Starting..." and
+        // "overlay never appears" (FIX-TRAY-001 / FIX-OVERLAY-001). Both
+        // symptoms collapse to this one missing install.
+        WindowsFormsSynchronizationContext.AutoInstall = true;
+        if (SynchronizationContext.Current is not WindowsFormsSynchronizationContext)
+        {
+            SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+        }
         _uiContext = SynchronizationContext.Current;
+        DiagLog.Write($"TrayIcon.RunMessageLoop: SyncContext={_uiContext?.GetType().FullName ?? "(null)"}");
 
         _connectingIcon      = CreateBellIcon(16, Color.FromArgb(0x7A, 0x7A, 0x92));
         _connectedIcon       = CreateBellIcon(16, Color.FromArgb(0xF5, 0x9E, 0x0B));

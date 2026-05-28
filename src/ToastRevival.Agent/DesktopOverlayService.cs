@@ -206,57 +206,36 @@ internal sealed class DesktopOverlayService : IDisposable
     }
 
     /// <summary>
-    /// Renders the overlay to a premultiplied 32bpp bitmap: a translucent dark
-    /// rounded box with white drop-shadowed text. Format32bppPArgb so GDI+
-    /// stores premultiplied alpha — exactly what UpdateLayeredWindow's
-    /// AC_SRC_ALPHA wants. This is the same renderer that visibly worked in
-    /// 0.4.11 on Keith's box (verified screenshots).
-    /// </summary>
-    /// <summary>
-    /// Renders the overlay to a 32bpp ARGB bitmap. Three bugs fixed in 0.4.15
-    /// vs 0.4.14:
+    /// Renders the overlay to a 32bpp ARGB bitmap composed in three phases:
     ///
-    ///   (a) Panel invisible: 0.4.14 drew into Format32bppPArgb and relied on
-    ///       GDI+ to premultiply the panel color, which on Win11 26200 produced
-    ///       a zero-alpha panel — the dark box never appeared on screen. Fix:
-    ///       use plain Format32bppArgb so the alpha bytes go straight into the
-    ///       DIB unchanged, then UpdateLayeredWindow does the premultiplication
-    ///       at composition time (its documented AC_SRC_ALPHA behavior).
+    ///   1. Panel: fully-opaque dark rounded rect (24,24,28 RGB, alpha 255)
+    ///      drawn with GDI+ <c>FillPath</c> into a <c>Format32bppArgb</c>
+    ///      bitmap. The bitmap is plain (not premultiplied) ARGB — the alpha
+    ///      bytes go into the DIB unchanged and UpdateLayeredWindow handles
+    ///      premultiplication at composition time.
     ///
-    ///   (b) "Hostname:WIN-TEST-001" glued: MeasureString with GenericTypographic
-    ///       strips trailing whitespace from the measured width. The label
-    ///       "Hostname: " (with trailing space) measured as if it were just
-    ///       "Hostname:", so the value got drawn flush against the colon. Fix:
-    ///       use GenericDefault for the LABEL measurement so the trailing
-    ///       space is included in labelW. Keep GenericTypographic for the
-    ///       overall content-width measurement (where we WANT tighter bounds).
+    ///   2. Text: labels and values drawn with <c>TextRenderer.DrawText</c>
+    ///      (GDI DrawTextEx). GDI honors the user's ClearType settings and
+    ///      produces the crisp, sub-pixel-AA "BgInfo look" — softer GDI+
+    ///      <c>Graphics.DrawString</c> rendering was what made text look
+    ///      grainy in 0.4.15–0.4.17. GDI writes fully-opaque pixels.
     ///
-    ///   (c) Text reads dim: 0.4.14's drop-shadow draw bled into the AA edges
-    ///       of the value glyphs, darkening them. Removed the shadow entirely;
-    ///       the now-correctly-rendered dark panel provides all the contrast
-    ///       the text needs. Also switched to AntiAliasGridFit for crisper
-    ///       glyph edges on the dark panel.
+    ///   3. Alpha: <see cref="ApplyAlphaMask"/> walks the bitmap and writes
+    ///      the alpha channel from scratch — 0 outside the rounded-rect
+    ///      corners; <paramref name="opacityPercent"/>·255/100 for panel-
+    ///      colored pixels; 255 for white text pixels; a luminance-driven
+    ///      gradient across glyph AA edges. The opacity slider thus dims
+    ///      ONLY the card; text glyphs stay fully opaque.
     ///
-    /// Panel opacity is now data-driven (admin-controlled, 10–100%). Default
-    /// when the field is absent: 85%.
-    /// </summary>
-    /// <summary>
-    /// Renders the overlay with GDI text (TextRenderer.DrawText / DrawText) so
-    /// glyphs come out with native Windows ClearType — the crisp BgInfo look —
-    /// instead of the soft GDI+ Graphics.DrawString rendering that produced the
-    /// grainy text in 0.4.15–0.4.17.
+    /// <see cref="PushLayeredBitmap"/> then calls UpdateLayeredWindow with
+    /// <c>BLENDFUNCTION.AlphaFormat = AC_SRC_ALPHA</c> and
+    /// <c>SourceConstantAlpha = 255</c>, so per-pixel alpha from the bitmap
+    /// is the only thing driving translucency — no constant-alpha multiply.
     ///
-    /// Trade-off with the layered-window AC_SRC_ALPHA pipeline: GDI text
-    /// writes fully-opaque pixels and ignores per-pixel alpha — ClearType
-    /// would otherwise fight UpdateLayeredWindow. We work around that by
-    /// rendering the panel and the text into a fully-opaque RGB bitmap, then
-    /// applying overall translucency via SourceConstantAlpha on the BLEND-
-    /// FUNCTION (set in PushLayeredBitmap by passing opacityPercent through).
-    /// Per-pixel alpha is no longer needed because the bitmap has no
-    /// transparent corners — the rounded-rect mask is "drawn" by leaving the
-    /// corner regions as fully-transparent ARGB pixels, which we DO want
-    /// per-pixel alpha for. So: rounded-rect mask in alpha channel + ClearType
-    /// glyphs inside the panel.
+    /// History: 0.4.11 used Format32bppPArgb (broke on Win11 26200, zero-alpha
+    /// panel); 0.4.15 switched to plain ARGB + GDI+ DrawString (grainy text);
+    /// 0.4.18 switched text to GDI ClearType and moved opacity into the alpha
+    /// channel via ApplyAlphaMask (current).
     /// </summary>
     private static Bitmap RenderBitmap(List<OverlayLine> lines, float scale, int opacityPercent, out Size size)
     {
@@ -380,7 +359,6 @@ internal sealed class DesktopOverlayService : IDisposable
         var data = bmp.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
         try
         {
-            int r2 = radius * radius;
             byte* scan0 = (byte*)data.Scan0;
             int stride = data.Stride;
             for (int y = 0; y < h; y++)
@@ -403,11 +381,29 @@ internal sealed class DesktopOverlayService : IDisposable
                         if (cx >= 0)
                         {
                             int dx = x - cx, dy = y - cy;
-                            if (dx * dx + dy * dy > r2)
+                            // Sub-pixel coverage across the corner curve:
+                            // 1.0 inside, 0.0 outside, linearly interpolated
+                            // over the ~1px AA band. Preserves the smooth arc
+                            // that FillPath drew under SmoothingMode.AntiAlias
+                            // instead of stepping it into a pixel staircase.
+                            double d = Math.Sqrt(dx * dx + dy * dy);
+                            double coverage = radius + 0.5 - d;
+                            if (coverage <= 0.0)
                             {
                                 px[3] = 0;
                                 continue;
                             }
+                            if (coverage < 1.0)
+                            {
+                                // Corner-edge pixel — guaranteed panel-colored
+                                // (text starts pad=12*scale in, corner radius
+                                // is 6*scale), so skip the luminance interp
+                                // and just scale panel alpha by coverage.
+                                px[3] = (byte)(panelAlpha * coverage);
+                                continue;
+                            }
+                            // coverage >= 1.0 — fully inside the curve; fall
+                            // through to luminance-based alpha below.
                         }
                     }
 

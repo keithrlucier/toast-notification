@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -62,13 +62,23 @@ function Pill({ color, label }: { color: string; label: string }) {
   );
 }
 
+interface CreateTenantResult {
+  tenantId: string;
+  userId: string;
+  subdomain: string;
+  setPasswordViaEmail: boolean;
+  emailSent: boolean;
+}
+
 export default function PlatformTenants() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isPlatformAdmin = Boolean(user?.isPlatformAdmin);
   const [tenants, setTenants] = useState<TenantRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
 
   const load = useCallback(async () => {
     if (!isPlatformAdmin) return;
@@ -115,12 +125,27 @@ export default function PlatformTenants() {
       <div className="page-header">
         <div>
           <h1>Tenants</h1>
-          <p className="subtitle">All tenants on the platform — suspend, extend, comp, or remove</p>
+          <p className="subtitle">All tenants on the platform — create, suspend, extend, comp, or remove</p>
         </div>
-        <button className="btn btn-ghost" onClick={() => void load()} disabled={loading}>
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost" onClick={() => void load()} disabled={loading}>
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+            New tenant
+          </button>
+        </div>
       </div>
+
+      {showCreate && (
+        <CreateTenantModal
+          onClose={() => setShowCreate(false)}
+          onCreated={(result) => {
+            setShowCreate(false);
+            navigate(`/system/tenants/${result.tenantId}`);
+          }}
+        />
+      )}
 
       {error && <div className="error-banner" style={{ marginBottom: 16 }}>{error}</div>}
 
@@ -198,5 +223,248 @@ function Metric({ label, value }: { label: string; value: number }) {
       <div className="metric-label">{label}</div>
       <div className="metric-value" style={{ fontSize: 26 }}>{value}</div>
     </div>
+  );
+}
+
+function CreateTenantModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (result: CreateTenantResult) => void;
+}) {
+  const [name, setName] = useState('');
+  const [subdomain, setSubdomain] = useState('');
+  const [ownerEmail, setOwnerEmail] = useState('');
+  const [ownerFullName, setOwnerFullName] = useState('');
+  const [ownerPhone, setOwnerPhone] = useState('');
+  const [passwordMode, setPasswordMode] = useState<'email' | 'set'>('email');
+  const [initialPassword, setInitialPassword] = useState('');
+  const [billingMode, setBillingMode] = useState<'trial' | 'paid' | 'comp'>('trial');
+  const [trialDays, setTrialDays] = useState('14');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (passwordMode === 'set' && initialPassword.trim().length < 8) {
+      setError('Initial password must be at least 8 characters.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const body = {
+        name: name.trim(),
+        subdomain: subdomain.trim() || null,
+        ownerEmail: ownerEmail.trim(),
+        ownerFullName: ownerFullName.trim() || null,
+        ownerPhone: ownerPhone.trim() || null,
+        initialPassword: passwordMode === 'set' ? initialPassword : null,
+        trialDays: billingMode === 'trial' ? Number.parseInt(trialDays, 10) || 14 : null,
+        isComplimentary: billingMode === 'comp',
+        note: note.trim() || null,
+      };
+      const result = await api.post<CreateTenantResult>('/api/system/tenants', body);
+      onCreated(result);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to create tenant.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(15, 23, 42, 0.45)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '60px 16px',
+        overflowY: 'auto',
+      }}
+    >
+      <div className="card" style={{ width: '100%', maxWidth: 640, padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Create tenant</h2>
+            <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+              Provisions the tenant + a SuperAdmin owner account.
+            </p>
+          </div>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+        </div>
+
+        {error && <div className="error-banner" style={{ marginBottom: 16 }}>{error}</div>}
+
+        <form onSubmit={submit}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+            <div className="field">
+              <label>Tenant name *</label>
+              <input
+                type="text"
+                required
+                placeholder="Acme Corp"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="field">
+              <label>Subdomain (optional)</label>
+              <input
+                type="text"
+                placeholder="auto from name"
+                value={subdomain}
+                onChange={e => setSubdomain(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '0 -24px 16px', padding: '16px 24px 0' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dim)' }}>
+              Owner account
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+              <div className="field">
+                <label>Email *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="owner@company.com"
+                  value={ownerEmail}
+                  onChange={e => setOwnerEmail(e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label>Full name</label>
+                <input
+                  type="text"
+                  value={ownerFullName}
+                  onChange={e => setOwnerFullName(e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label>Phone (enables SMS MFA)</label>
+                <input
+                  type="tel"
+                  placeholder="+1 555 555 1212"
+                  value={ownerPhone}
+                  onChange={e => setOwnerPhone(e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label>Initial credentials</label>
+                <select value={passwordMode} onChange={e => setPasswordMode(e.target.value as 'email' | 'set')}>
+                  <option value="email">Email set-password link</option>
+                  <option value="set">Set password now</option>
+                </select>
+              </div>
+            </div>
+            {passwordMode === 'set' && (
+              <div className="field" style={{ marginBottom: 16 }}>
+                <label>Initial password (min 8 chars)</label>
+                <input
+                  type="text"
+                  required
+                  minLength={8}
+                  placeholder="Share with owner out-of-band"
+                  value={initialPassword}
+                  onChange={e => setInitialPassword(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '0 -24px 16px', padding: '16px 24px 0' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dim)' }}>
+              Billing
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+              <BillingChoice
+                label="Trial"
+                detail={`${trialDays || '0'} days, then expires`}
+                active={billingMode === 'trial'}
+                onClick={() => setBillingMode('trial')}
+              />
+              <BillingChoice
+                label="Paid / perpetual"
+                detail="No expiry, standard billing"
+                active={billingMode === 'paid'}
+                onClick={() => setBillingMode('paid')}
+              />
+              <BillingChoice
+                label="Complimentary"
+                detail="No expiry, no caps, no billing"
+                active={billingMode === 'comp'}
+                onClick={() => setBillingMode('comp')}
+              />
+            </div>
+            {billingMode === 'trial' && (
+              <div className="field" style={{ marginBottom: 16, maxWidth: 200 }}>
+                <label>Trial length (days)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={trialDays}
+                  onChange={e => setTrialDays(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="field" style={{ marginBottom: 20 }}>
+            <label>Note (audit log — optional)</label>
+            <input
+              type="text"
+              placeholder='e.g. "Signed MSA 2026-05-28, comp through M9 GA"'
+              value={note}
+              onChange={e => setNote(e.target.value)}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-ghost" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>
+              {submitting ? 'Creating…' : 'Create tenant'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function BillingChoice({
+  label, detail, active, onClick,
+}: { label: string; detail: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '12px 14px',
+        borderRadius: 6,
+        border: active ? '2px solid var(--accent)' : '1px solid var(--border-subtle)',
+        background: active ? 'rgba(31, 111, 189, 0.06)' : 'var(--bg-primary)',
+        cursor: 'pointer',
+        textAlign: 'left',
+        fontFamily: 'inherit',
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{detail}</div>
+    </button>
   );
 }

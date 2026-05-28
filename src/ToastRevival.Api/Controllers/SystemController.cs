@@ -286,6 +286,10 @@ public class SystemController : ControllerBase
                 t.BillingStatus,
                 t.LicenseStart,
                 t.LicenseEnd,
+                t.SuspendedAt,
+                t.SuspendedReason,
+                t.IsComplimentary,
+                t.ComplimentaryReason,
                 t.CreatedAt,
             })
             .ToListAsync();
@@ -312,7 +316,11 @@ public class SystemController : ControllerBase
                     billingStatus = t.BillingStatus.ToString(),
                     subscriptionStartedAt = t.LicenseStart,
                     subscriptionEndsAt = t.LicenseEnd,
-                    monthlyBill = BillingPlanRules.CurrentBill(deviceCount),
+                    monthlyBill = t.IsComplimentary ? 0m : BillingPlanRules.CurrentBill(deviceCount),
+                    t.SuspendedAt,
+                    t.SuspendedReason,
+                    t.IsComplimentary,
+                    t.ComplimentaryReason,
                     t.CreatedAt,
                 };
             }),
@@ -382,8 +390,12 @@ public class SystemController : ControllerBase
                 tenant.LicenseEnd,
                 tenant.StripeCustomerId,
                 tenant.StripeSubscriptionId,
+                tenant.SuspendedAt,
+                tenant.SuspendedReason,
+                tenant.IsComplimentary,
+                tenant.ComplimentaryReason,
                 activeDeviceCount,
-                monthlyBill = BillingPlanRules.CurrentBill(activeDeviceCount),
+                monthlyBill = tenant.IsComplimentary ? 0m : BillingPlanRules.CurrentBill(activeDeviceCount),
                 recentNotificationVolume,
                 tenant.CreatedAt,
                 tenant.UpdatedAt,
@@ -398,13 +410,13 @@ public class SystemController : ControllerBase
     {
         var tenants = await _db.Tenants.IgnoreQueryFilters()
             .AsNoTracking()
-            .Select(t => new { t.Id, t.BillingStatus })
+            .Select(t => new { t.Id, t.BillingStatus, t.IsComplimentary })
             .ToListAsync();
 
         var deviceCounts = await ActiveDeviceCountsAsync();
         var totalDevices = deviceCounts.Values.Sum();
         var monthlyRecurringRevenue = tenants
-            .Where(t => t.BillingStatus != BillingStatus.Canceled)
+            .Where(t => t.BillingStatus != BillingStatus.Canceled && !t.IsComplimentary)
             .Sum(t => BillingPlanRules.CurrentBill(deviceCounts.GetValueOrDefault(t.Id)));
 
         var byBillingStatus = tenants
@@ -420,6 +432,281 @@ public class SystemController : ControllerBase
             monthlyRecurringRevenue,
             byBillingStatus,
         });
+    }
+
+    // ─── Tenant lifecycle (Platform Admin) ─────────────────────────────────────
+
+    [HttpPost("tenants/{id:guid}/suspend")]
+    public async Task<IActionResult> SuspendTenant(Guid id, [FromBody] SuspendTenantRequest? request)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant is null) return NotFound();
+        if (tenant.SuspendedAt.HasValue) return Conflict("Tenant is already suspended.");
+
+        tenant.SuspendedAt = DateTime.UtcNow;
+        tenant.SuspendedReason = Truncate(request?.Reason?.Trim(), 500);
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(
+            GetTenantId(), GetUserId(),
+            "platform.tenant.suspended", "Tenant", tenant.Id.ToString(),
+            new { tenant.Name, tenant.SuspendedReason },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new { tenant.Id, tenant.SuspendedAt, tenant.SuspendedReason });
+    }
+
+    [HttpPost("tenants/{id:guid}/resume")]
+    public async Task<IActionResult> ResumeTenant(Guid id)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant is null) return NotFound();
+        if (!tenant.SuspendedAt.HasValue) return Conflict("Tenant is not suspended.");
+
+        tenant.SuspendedAt = null;
+        tenant.SuspendedReason = null;
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(
+            GetTenantId(), GetUserId(),
+            "platform.tenant.resumed", "Tenant", tenant.Id.ToString(),
+            new { tenant.Name },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new { tenant.Id, tenant.SuspendedAt });
+    }
+
+    [HttpPost("tenants/{id:guid}/extend")]
+    public async Task<IActionResult> ExtendTenant(Guid id, [FromBody] ExtendTenantRequest request)
+    {
+        if (request is null || request.Days <= 0 || request.Days > 3650)
+            return BadRequest("Days must be between 1 and 3650.");
+
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant is null) return NotFound();
+
+        var anchor = tenant.LicenseEnd is { } current && current > DateTime.UtcNow
+            ? current
+            : DateTime.UtcNow;
+        tenant.LicenseEnd = anchor.AddDays(request.Days);
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(
+            GetTenantId(), GetUserId(),
+            "platform.tenant.extended", "Tenant", tenant.Id.ToString(),
+            new { tenant.Name, request.Days, newLicenseEnd = tenant.LicenseEnd },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new { tenant.Id, tenant.LicenseEnd });
+    }
+
+    [HttpPost("tenants/{id:guid}/grant-complimentary")]
+    public async Task<IActionResult> GrantComplimentary(Guid id, [FromBody] GrantComplimentaryRequest? request)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant is null) return NotFound();
+
+        tenant.IsComplimentary = true;
+        tenant.ComplimentaryReason = Truncate(request?.Reason?.Trim(), 500);
+        // Clear LicenseEnd so the tenant never expires.
+        tenant.LicenseEnd = null;
+        // Promote billing status off Trialing/PastDue so UI surfaces match.
+        if (tenant.BillingStatus is BillingStatus.Trialing or BillingStatus.PastDue or BillingStatus.Canceled)
+            tenant.BillingStatus = BillingStatus.Active;
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(
+            GetTenantId(), GetUserId(),
+            "platform.tenant.grant_complimentary", "Tenant", tenant.Id.ToString(),
+            new { tenant.Name, tenant.ComplimentaryReason },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new { tenant.Id, tenant.IsComplimentary, tenant.ComplimentaryReason });
+    }
+
+    [HttpPost("tenants/{id:guid}/revoke-complimentary")]
+    public async Task<IActionResult> RevokeComplimentary(Guid id)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant is null) return NotFound();
+        if (!tenant.IsComplimentary) return Conflict("Tenant is not complimentary.");
+
+        tenant.IsComplimentary = false;
+        tenant.ComplimentaryReason = null;
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(
+            GetTenantId(), GetUserId(),
+            "platform.tenant.revoke_complimentary", "Tenant", tenant.Id.ToString(),
+            new { tenant.Name },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new { tenant.Id, tenant.IsComplimentary });
+    }
+
+    [HttpDelete("tenants/{id:guid}")]
+    public async Task<IActionResult> DeleteTenant(Guid id, [FromQuery] string? confirm = null)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant is null) return NotFound();
+
+        // Caller cannot delete the tenant they themselves belong to — prevents a
+        // platform admin from accidentally wiping their own home tenant.
+        if (tenant.Id == GetTenantId())
+            return BadRequest("Refusing to delete the tenant you are signed into.");
+
+        // Type-to-confirm: caller must pass the exact tenant name as ?confirm=.
+        if (!string.Equals(confirm, tenant.Name, StringComparison.Ordinal))
+            return BadRequest("Confirmation text does not match the tenant name.");
+
+        // Bulk-delete with EF 8 ExecuteDelete — bypasses query filters and skips
+        // hydrating thousands of rows into the change tracker. Order matters: kill
+        // Restrict-FK rows first (Notifications, Users) so the cascade behavior
+        // on the rest fires cleanly when we drop the tenant row.
+        await _db.NotificationDeliveries.IgnoreQueryFilters()
+            .Where(d => d.Notification.TenantId == id).ExecuteDeleteAsync();
+        await _db.Notifications.IgnoreQueryFilters()
+            .Where(n => n.TenantId == id).ExecuteDeleteAsync();
+        await _db.Users.IgnoreQueryFilters()
+            .Where(u => u.TenantId == id).ExecuteDeleteAsync();
+
+        _db.Tenants.Remove(tenant);
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(
+            GetTenantId(), GetUserId(),
+            "platform.tenant.deleted", "Tenant", id.ToString(),
+            new { tenant.Name, tenant.Subdomain },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return NoContent();
+    }
+
+    // ─── Cross-tenant user ops (Platform Admin) ────────────────────────────────
+
+    [HttpGet("users")]
+    public async Task<IActionResult> SearchUsers([FromQuery] string? search = null, [FromQuery] int limit = 50)
+    {
+        limit = Math.Clamp(limit, 1, 200);
+        var needle = search?.Trim().ToLowerInvariant();
+
+        var query = _db.Users.IgnoreQueryFilters()
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (!string.IsNullOrEmpty(needle))
+        {
+            query = query.Where(u =>
+                (u.Email != null && u.Email.ToLower().Contains(needle)) ||
+                (u.FullName != null && u.FullName.ToLower().Contains(needle)));
+        }
+
+        var rows = await query
+            .OrderBy(u => u.Email)
+            .Take(limit)
+            .Select(u => new
+            {
+                u.Id,
+                u.Email,
+                u.FullName,
+                u.TenantId,
+                tenantName = u.Tenant.Name,
+                u.Role,
+                u.IsPlatformAdmin,
+                mfaEnabled = u.MfaSecret != null,
+                u.LastLogin,
+                u.CreatedAt,
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            users = rows.Select(u => new
+            {
+                u.Id,
+                u.Email,
+                u.FullName,
+                u.TenantId,
+                u.tenantName,
+                role = u.Role.ToString(),
+                u.IsPlatformAdmin,
+                u.mfaEnabled,
+                u.LastLogin,
+                u.CreatedAt,
+            }),
+        });
+    }
+
+    [HttpPost("users/{id:guid}/reset-password")]
+    public async Task<IActionResult> SendUserPasswordReset(Guid id)
+    {
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id);
+        if (user is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(user.Email))
+            return BadRequest("User has no email on file.");
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var baseUrl = _config["App:BaseUrl"] ?? "https://toastnotification.com";
+        var link = $"{baseUrl}/reset-password?userId={user.Id}&token={Uri.EscapeDataString(token)}";
+
+        var emailSent = true;
+        try
+        {
+            await _email.SendAsync(
+                user.Email,
+                user.FullName ?? user.Email,
+                "Reset your password — Toast Notification",
+                EmailTemplates.PasswordReset(user.FullName, link));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send platform-initiated password reset email for {UserId}", user.Id);
+            emailSent = false;
+        }
+
+        await _audit.LogAsync(
+            GetTenantId(), GetUserId(),
+            "platform.user.password_reset_sent", "AppUser", user.Id.ToString(),
+            new { user.Email, user.TenantId, emailSent },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new { user.Id, emailSent });
+    }
+
+    [HttpDelete("users/{id:guid}")]
+    public async Task<IActionResult> DeleteUser(Guid id)
+    {
+        var callerUserId = GetUserId();
+        if (callerUserId == id)
+            return BadRequest("Refusing to delete your own account.");
+
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id);
+        if (user is null) return NotFound();
+
+        // Don't strand a tenant: refuse to remove the last SuperAdmin in a tenant
+        // that still has other users. Platform admin can delete the tenant outright
+        // if that's the intent.
+        if (user.Role == UserRole.SuperAdmin)
+        {
+            var siblingSuperAdmins = await _db.Users.IgnoreQueryFilters()
+                .CountAsync(u => u.TenantId == user.TenantId && u.Id != user.Id && u.Role == UserRole.SuperAdmin);
+            var siblingUsers = await _db.Users.IgnoreQueryFilters()
+                .CountAsync(u => u.TenantId == user.TenantId && u.Id != user.Id);
+            if (siblingUsers > 0 && siblingSuperAdmins == 0)
+                return BadRequest("Cannot remove the last tenant owner while other users remain. Promote another user first.");
+        }
+
+        var result = await _userManager.DeleteAsync(user);
+        if (!result.Succeeded)
+            return StatusCode(500, result.Errors.Select(e => e.Description));
+
+        await _audit.LogAsync(
+            GetTenantId(), GetUserId(),
+            "platform.user.deleted", "AppUser", id.ToString(),
+            new { user.Email, user.TenantId, role = user.Role.ToString() },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return NoContent();
     }
 
     [HttpGet("devices")]
@@ -568,6 +855,12 @@ public class SystemController : ControllerBase
         if (priceId.Length <= 12) return "price_***";
         return $"{priceId[..10]}...{priceId[^4..]}";
     }
+
+    private static string? Truncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        return value.Length <= maxLength ? value : value[..maxLength];
+    }
 }
 
 public sealed record UpdateBillingConfigRequest(string? PerDevicePriceId);
@@ -580,3 +873,7 @@ public sealed record UpdateMessagingConfigRequest(
     string? MailjetApiKey,
     string? MailjetApiSecret,
     string? MailjetSenderEmail);
+
+public sealed record SuspendTenantRequest(string? Reason);
+public sealed record ExtendTenantRequest(int Days);
+public sealed record GrantComplimentaryRequest(string? Reason);

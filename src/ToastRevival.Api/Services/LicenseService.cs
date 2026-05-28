@@ -93,7 +93,14 @@ public class LicenseService : ILicenseService
 
     private bool IsWithinCap(Tenant tenant)
     {
+        // Suspended tenants can't register new devices regardless of billing mode.
+        if (tenant.SuspendedAt.HasValue) return false;
+
         if (!_requireBilling) return true;
+
+        // Complimentary tenants (Platform Admin grant) bypass all caps —
+        // no trial limit, no free-tier ceiling, no Stripe requirement.
+        if (tenant.IsComplimentary) return true;
 
         // Trial tenants are capped at 2 devices.
         if (tenant.BillingStatus == BillingStatus.Trialing)

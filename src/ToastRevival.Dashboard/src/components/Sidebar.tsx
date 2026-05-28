@@ -91,7 +91,9 @@ const ADMIN_ITEMS = [
 ];
 
 const PLATFORM_ITEMS = [
-  { to: '/system/trial-requests', label: 'Trial Requests', icon: UsersIcon },
+  { to: '/system/tenants',        label: 'Tenants',        icon: TenantsIcon },
+  { to: '/system/users',          label: 'All Users',      icon: UsersIcon },
+  { to: '/system/trial-requests', label: 'Trial Requests', icon: TrialRequestsIcon },
 ];
 
 function roleLabel(role?: string, isPlatformAdmin?: boolean): string {
@@ -338,6 +340,25 @@ function SettingsIcon() {
       <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.5" />
       <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.42 1.42M11.53 11.53l1.42 1.42M3.05 12.95l1.42-1.42M11.53 4.47l1.42-1.42"
         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TenantsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="1.5" y="5.5" width="6" height="9" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="8.5" y="1.5" width="6" height="13" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M3 8h3M3 10.5h3M10 4h3M10 6.5h3M10 9h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TrialRequestsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="2" width="12" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5 6h6M5 8.5h6M5 11h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

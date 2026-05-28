@@ -433,6 +433,11 @@ public class AuthController : ControllerBase
         if (user.RegistrationStep != RegistrationStep.Complete)
             return Unauthorized("Registration is incomplete. Please finish registering your account.");
 
+        // Tenant suspension blocks login for tenant users. Platform admins
+        // are exempt so they can still investigate and lift the suspension.
+        if (!user.IsPlatformAdmin && await IsTenantSuspendedAsync(user.TenantId))
+            return Unauthorized("This tenant has been suspended. Contact support.");
+
         await PromoteSoleTenantOwnerAsync(user);
 
         // SMS MFA: all users with a confirmed phone number must verify via SMS
@@ -474,6 +479,9 @@ public class AuthController : ControllerBase
         if (user is null || user.RegistrationStep != RegistrationStep.Complete)
             return Unauthorized("Invalid request.");
 
+        if (!user.IsPlatformAdmin && await IsTenantSuspendedAsync(user.TenantId))
+            return Unauthorized("This tenant has been suspended. Contact support.");
+
         if (user.SmsCodeExpiry is null || user.SmsCodeExpiry < DateTime.UtcNow)
             return Unauthorized("Verification code expired. Please sign in again.");
 
@@ -491,6 +499,15 @@ public class AuthController : ControllerBase
         var refresh   = _tokens.CreateRefreshToken();
         var expiresAt = DateTime.UtcNow.AddMinutes(60);
         return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
+    }
+
+    private async Task<bool> IsTenantSuspendedAsync(Guid tenantId)
+    {
+        var suspendedAt = await _db.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId)
+            .Select(t => t.SuspendedAt)
+            .FirstOrDefaultAsync();
+        return suspendedAt.HasValue;
     }
 
     private async Task PromoteSoleTenantOwnerAsync(AppUser user)

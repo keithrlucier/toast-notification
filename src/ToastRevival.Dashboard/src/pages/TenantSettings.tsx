@@ -4,6 +4,7 @@ import { api, ApiError, apiErrorFromResponse, authHeaders } from '../api/client'
 import { useAuth } from '../contexts/AuthContext';
 import { notifyTenantBrandingUpdated, tenantLogoUrlForBrowser } from '../lib/tenantBranding';
 import DeviceAppearanceCards from '../components/DeviceAppearanceCards';
+import SsoSettingsCard from '../components/SsoSettingsCard';
 
 interface TenantSettingsData {
   tenantName: string;
@@ -389,6 +390,9 @@ export default function TenantSettings() {
           for the full reference.
         </p>
       </div>
+
+      {/* M14 Microsoft SSO — per-tenant directory mapping + opt-in */}
+      <SsoSettingsCard />
 
       {/* M12 Device Appearance — Desktop Overlay + Lock Screen Branding (two cards) */}
       <DeviceAppearanceCards />

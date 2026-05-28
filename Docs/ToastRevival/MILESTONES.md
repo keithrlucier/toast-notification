@@ -710,6 +710,41 @@ Overlay window renders configured fields over the wallpaper without modifying it
 
 ---
 
+## M14 — Microsoft SSO (Entra / Azure AD work-or-school sign-in)
+
+**Status:** Built + QA passed (SHIP WITH NOTES) 2026-05-28. Pending prod deploy + live verify.
+
+### Architecture (Keith-driven, locked this session)
+- **One platform-owned multitenant Entra app.** Single client id + secret, held server-side. Each customer org admin-consents once.
+- **Per-tenant opt-in by Directory (tenant) ID.** A tenant admin pastes their Entra Directory ID into Tenant Settings → SSO card. Sign-in is gated: the id_token `tid` claim must match `Tenant.AzureAdTenantId` **and** `Tenant.SsoEnabled`. A valid Microsoft token from any non-opted-in directory is rejected at the callback. **This is the gate that keeps a multitenant app from being an open door.**
+- **Link-only provisioning.** The federated user must already exist in the mapped tenant (matched by Entra `oid`, then `NormalizedEmail`). No JIT self-provisioning — honors the locked-down trial-request onboarding. JIT is a deferred follow-on.
+- **SSO satisfies MFA.** Entra already ran the org's MFA, so the SMS step is skipped for federated sign-ins. Optional per-tenant `SsoRequireMfa` enforces the id_token `amr` claim asserting MFA.
+- **Secret managed in the admin panel, never SSH.** Platform admin pastes Client ID + Secret into Billing → Single Sign-On; stored in `appsettings.Local.json` (git-ignored, reloaded live, masked on read) via `SsoConfigService` — the same rails as messaging config. Backend reads creds live so a panel save applies without restart.
+
+### Backend
+- `Models`: `Tenant.{SsoEnabled,AzureAdTenantId,SsoRequireMfa}`, `AppUser.{ExternalProvider,ExternalId}`. Migration `20260528200318_M14_MicrosoftSso` (5 nullable/defaulted columns).
+- `MicrosoftSsoService`: backend OIDC authorization-code flow. Builds `/authorize` URL, redeems code at the token endpoint, validates id_token against Microsoft JWKS (signature, audience=client id, per-`tid` issuer, lifetime, nonce). Authority host pinned to Microsoft login domains.
+- `SsoController`: `GET /api/auth/sso/microsoft/{config,start,callback}`. State+nonce sealed in a DataProtection cookie; callback runs the tid gate, link-only match, issues our JWT via URL fragment.
+- `TenantController`: `GET/PUT /api/tenant/sso` (admin-only, GUID-validated, one-directory-per-tenant).
+- `SystemController`: `GET/POST /api/system/sso/config` (PlatformAdmin).
+
+### Frontend
+- Login: "Sign in with Microsoft" button (shown only when configured), `sso_error` messaging.
+- `/sso/callback`: hydrates session from the JWT fragment.
+- Tenant Settings: SSO card (Directory ID, enable, Require-MFA, admin-consent deep link).
+- Billing → Single Sign-On: platform-admin Client ID + Secret + Enabled.
+
+### Notes / follow-ons
+- No automated integration test yet (needs a live Entra round-trip). Recommend before GA.
+- `SsoRequireMfa` depends on Entra emitting `amr`.
+- SSO requires HTTPS (Secure state cookie) — prod only, not local http.
+- JIT auto-provisioning deferred (link-only first).
+
+### SHIP condition
+Tenant admin maps their Directory ID + enables SSO; platform admin has configured the app secret; admin consent granted; a work-account user who already exists in the tenant signs in via the Microsoft button and lands on the dashboard; a non-mapped directory is rejected.
+
+---
+
 ## Milestone Summary
 
 | Milestone | Focus | Key Risk | Est. Complexity |

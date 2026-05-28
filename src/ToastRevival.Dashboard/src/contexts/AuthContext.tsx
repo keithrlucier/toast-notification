@@ -36,6 +36,9 @@ interface AuthContextValue {
   logout: () => void;
   setMfaToken: (token: string) => void;
   setSession: (res: AuthResponse) => void;
+  /** Hydrate a session from a raw JWT (Microsoft SSO callback delivers one in
+   *  the URL fragment). Returns true if the token was valid and the session set. */
+  setSessionFromToken: (token: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -227,8 +230,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     maybeUpdateFavicon(u.isPlatformAdmin);
   };
 
+  // SSO returns only a JWT (in the callback URL fragment), not a full
+  // AuthResponse — so build the session from the token's own claims. The token
+  // carries sub/tenantId/email/role/platformAdmin, the same fields setSession
+  // would otherwise read off the response body.
+  const setSessionFromToken = (token: string): boolean => {
+    const payload = decodeJwtPayload(token);
+    const info = parseToken(token);
+    if (!payload || !info.valid || isExpired(info)) {
+      clearSession(SESSION_EXPIRED_MESSAGE);
+      return false;
+    }
+    const u: AuthUser = {
+      userId:          String(payload.sub ?? payload.nameid ?? ''),
+      tenantId:        String(payload.tenantId ?? ''),
+      email:           String(payload.email ?? ''),
+      role:            String(payload.role ?? ''),
+      isPlatformAdmin: info.isPlatformAdmin,
+      token,
+      mfaElevated:     info.mfaElevated,
+    };
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(u));
+    setUser(u);
+    maybeUpdateFavicon(u.isPlatformAdmin);
+    return true;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, setMfaToken, setSession }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, setMfaToken, setSession, setSessionFromToken }}>
       {children}
     </AuthContext.Provider>
   );

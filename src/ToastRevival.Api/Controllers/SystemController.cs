@@ -20,6 +20,7 @@ public class SystemController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IBillingConfigService _billingConfig;
     private readonly IMessagingConfigService _messagingConfig;
+    private readonly ISsoConfigService _ssoConfig;
     private readonly IAuditService _audit;
     private readonly UserManager<AppUser> _userManager;
     private readonly IEmailService _email;
@@ -30,6 +31,7 @@ public class SystemController : ControllerBase
         AppDbContext db,
         IBillingConfigService billingConfig,
         IMessagingConfigService messagingConfig,
+        ISsoConfigService ssoConfig,
         IAuditService audit,
         UserManager<AppUser> userManager,
         IEmailService email,
@@ -39,6 +41,7 @@ public class SystemController : ControllerBase
         _db = db;
         _billingConfig = billingConfig;
         _messagingConfig = messagingConfig;
+        _ssoConfig = ssoConfig;
         _audit = audit;
         _userManager = userManager;
         _email = email;
@@ -226,6 +229,44 @@ public class SystemController : ControllerBase
                 request.MailjetApiSecret   is not null ? "Mailjet:ApiSecret"     : null,
                 request.MailjetSenderEmail is not null ? "Mailjet:SenderEmail"   : null,
             }.Where(f => f is not null) },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(snapshot);
+    }
+
+    // ── M14 Microsoft SSO — platform app credentials ───────────────────────────
+    // Same secret-handling rails as messaging config: written to appsettings.Local.json
+    // (git-ignored, process-only), reloaded live, and surfaced back with the secret
+    // masked. The client id is public and returned in full.
+
+    [HttpGet("sso/config")]
+    public IActionResult SsoConfig() => Ok(_ssoConfig.GetSnapshot());
+
+    [HttpPost("sso/config")]
+    public async Task<IActionResult> UpdateSsoConfig([FromBody] UpdateSsoConfigRequest request)
+    {
+        if (request is null)
+            return BadRequest(new { message = "SSO configuration is required." });
+
+        var snapshot = await _ssoConfig.UpdateAsync(
+            request.Enabled,
+            request.ClientId,
+            request.ClientSecret,
+            HttpContext.RequestAborted);
+
+        await _audit.LogAsync(
+            GetTenantId(),
+            GetUserId(),
+            "sso.config.updated",
+            "SystemSsoConfig",
+            null,
+            new
+            {
+                request.Enabled,
+                clientIdSet = request.ClientId is not null,
+                // Never log the secret — only that it changed.
+                clientSecretChanged = request.ClientSecret is not null,
+            },
             HttpContext.Connection.RemoteIpAddress?.ToString());
 
         return Ok(snapshot);
@@ -989,6 +1030,13 @@ public sealed record UpdateMessagingConfigRequest(
     string? MailjetApiKey,
     string? MailjetApiSecret,
     string? MailjetSenderEmail);
+
+// Microsoft SSO platform credentials. ClientSecret: null = leave unchanged,
+// "__clear__" = remove, anything else = set/rotate (write-only — never returned).
+public sealed record UpdateSsoConfigRequest(
+    bool? Enabled,
+    string? ClientId,
+    string? ClientSecret);
 
 public sealed record SuspendTenantRequest(string? Reason);
 public sealed record ExtendTenantRequest(int Days);

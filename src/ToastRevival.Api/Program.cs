@@ -226,6 +226,14 @@ builder.Services.AddScoped<ILicenseService, LicenseService>();
 builder.Services.AddScoped<IStripeBillingSyncService, StripeBillingSyncService>();
 builder.Services.AddSingleton<IBillingConfigService, BillingConfigService>();
 builder.Services.AddSingleton<IMessagingConfigService, MessagingConfigService>();
+builder.Services.AddSingleton<ISsoConfigService, SsoConfigService>();
+
+// Microsoft Entra SSO. Singleton, but credentials are read live from config on
+// each call so a platform-panel secret change (written to appsettings.Local.json
+// and reloaded) applies without a restart. Uses IHttpClientFactory for the token
+// exchange; OIDC signing-key metadata is cached statically inside the service.
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<IMicrosoftSsoService, MicrosoftSsoService>();
 
 // Transactional messaging (Mailjet email + ClickSend SMS)
 builder.Services.AddHttpClient<IEmailService, MailjetEmailService>();

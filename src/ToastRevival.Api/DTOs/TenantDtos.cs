@@ -123,3 +123,25 @@ public class UpdateLockScreenConfigRequest
 public record AppearanceConfigResponse(
     OverlayConfigResponse Overlay,
     LockScreenConfigResponse LockScreen);
+
+// ── M14 Microsoft SSO (per-tenant directory mapping) ─────────────────────────
+// The platform owns the Entra app credentials (managed under System SSO config);
+// each tenant opts in here by mapping its own Entra Directory (tenant) ID.
+public record TenantSsoSettingsResponse(
+    bool Enabled,
+    string? AzureAdTenantId,
+    bool RequireMfa,
+    // True only when the PLATFORM app registration is fully configured (client id
+    // + secret present + enabled). When false the tenant toggle is inert and the UI
+    // should explain Microsoft sign-in isn't set up on this server yet.
+    bool PlatformConfigured,
+    // Public client id, surfaced read-only so the panel can build the Entra
+    // admin-consent deep link prefilled with the tenant's directory id.
+    string? MicrosoftClientId);
+
+public class UpdateTenantSsoSettingsRequest
+{
+    public bool Enabled { get; set; }
+    public string? AzureAdTenantId { get; set; }
+    public bool RequireMfa { get; set; }
+}

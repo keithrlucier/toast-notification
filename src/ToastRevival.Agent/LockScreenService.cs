@@ -63,6 +63,12 @@ internal static class LockScreenService
                 DiagLog.Write($"LockScreen: download returned {(int)resp.StatusCode} for '{uri}'");
                 return;
             }
+            var mediaType = resp.Content.Headers.ContentType?.MediaType;
+            if (mediaType is not ("image/jpeg" or "image/png"))
+            {
+                DiagLog.Write($"LockScreen: unexpected content-type '{mediaType}' for '{uri}'");
+                return;
+            }
             bytes = await resp.Content.ReadAsByteArrayAsync(ct);
         }
         catch (OperationCanceledException) { return; }

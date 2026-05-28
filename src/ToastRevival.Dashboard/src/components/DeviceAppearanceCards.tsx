@@ -294,6 +294,7 @@ function LockScreenCard() {
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
+  const [removeArmed, setRemoveArmed] = useState(false);
 
   const previewUrl = tenantLogoUrlForBrowser(imageUrl ?? '');
 
@@ -305,6 +306,7 @@ function LockScreenCard() {
   }, []);
 
   useEffect(() => { setPreviewState(previewUrl ? 'loading' : 'idle'); }, [previewUrl]);
+  useEffect(() => { setRemoveArmed(false); }, [imageUrl]);
 
   const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -390,11 +392,24 @@ function LockScreenCard() {
                 {imageUrl && (
                   <button
                     className="btn btn-ghost"
-                    style={{ fontSize: 12, padding: '6px 10px', minHeight: 0 }}
+                    style={{
+                      fontSize: 12,
+                      padding: '6px 10px',
+                      minHeight: 0,
+                      color: removeArmed ? 'var(--status-error)' : undefined,
+                    }}
                     disabled={!enabled}
-                    onClick={() => setImageUrl(null)}
+                    onClick={() => {
+                      if (removeArmed) {
+                        setImageUrl(null);
+                        setRemoveArmed(false);
+                      } else {
+                        setRemoveArmed(true);
+                      }
+                    }}
+                    onBlur={() => setRemoveArmed(false)}
                   >
-                    Remove
+                    {removeArmed ? 'Confirm remove?' : 'Remove'}
                   </button>
                 )}
               </div>

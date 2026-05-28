@@ -282,7 +282,8 @@ internal sealed class DesktopOverlayService : IDisposable
             g.Clear(Color.Transparent);
 
             // Panel: fully opaque dark fill inside the rounded rect. Overall
-            // panel translucency is applied later via SourceConstantAlpha.
+            // panel translucency is applied later by ApplyAlphaMask writing
+            // the per-pixel alpha channel from luminance.
             using (var boxBrush = new SolidBrush(Color.FromArgb(255, 24, 24, 28)))
             using (var boxPath = RoundedRect(new RectangleF(0, 0, boxW, boxH), radius))
                 g.FillPath(boxBrush, boxPath);
@@ -359,7 +360,6 @@ internal sealed class DesktopOverlayService : IDisposable
         var data = bmp.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
         try
         {
-            int r2 = radius * radius;
             byte* scan0 = (byte*)data.Scan0;
             int stride = data.Stride;
             for (int y = 0; y < h; y++)
@@ -382,11 +382,29 @@ internal sealed class DesktopOverlayService : IDisposable
                         if (cx >= 0)
                         {
                             int dx = x - cx, dy = y - cy;
-                            if (dx * dx + dy * dy > r2)
+                            // Sub-pixel coverage across the corner curve:
+                            // 1.0 inside, 0.0 outside, linearly interpolated
+                            // over the ~1px AA band. Preserves the smooth arc
+                            // that FillPath drew under SmoothingMode.AntiAlias
+                            // instead of stepping it into a pixel staircase.
+                            double d = Math.Sqrt(dx * dx + dy * dy);
+                            double coverage = radius + 0.5 - d;
+                            if (coverage <= 0.0)
                             {
                                 px[3] = 0;
                                 continue;
                             }
+                            if (coverage < 1.0)
+                            {
+                                // Corner-edge pixel — guaranteed panel-colored
+                                // (text starts pad=12*scale in, corner radius
+                                // is 6*scale), so skip the luminance interp
+                                // and just scale panel alpha by coverage.
+                                px[3] = (byte)(panelAlpha * coverage);
+                                continue;
+                            }
+                            // coverage >= 1.0 — fully inside the curve; fall
+                            // through to luminance-based alpha below.
                         }
                     }
 

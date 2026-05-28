@@ -34,37 +34,63 @@
       • Credential prompts have started to reappear (someone overrode config)
 
 .PARAMETER PrivatePat
-    GitHub PAT with repo scope on keithrlucier/toast. Required.
+    GitHub PAT with repo scope on keithrlucier/toast. Required. SecureString
+    so the PAT body never lands in Get-History, Start-Transcript output, or
+    process-line audit logs (Sysmon, Defender for Endpoint). Pipe it in via
+    Read-Host -AsSecureString or pre-build with ConvertTo-SecureString.
 
 .PARAMETER PublicPat
     GitHub PAT with repo scope on keithrlucier/toast-notification. Required.
+    See PrivatePat for the SecureString rationale.
 
 .PARAMETER CredentialsPath
     Override the credentials file location. Defaults to ~/.git-credentials,
     which is git's built-in default for the `store` helper.
 
 .EXAMPLE
+    # Interactive — operator pastes each PAT; nothing reaches shell history.
     .\setup-git-credentials.ps1 `
-        -PrivatePat 'github_pat_11AJ...' `
-        -PublicPat  'github_pat_11AJ...'
+        -PrivatePat (Read-Host 'Private PAT' -AsSecureString) `
+        -PublicPat  (Read-Host 'Public PAT'  -AsSecureString)
+
+.EXAMPLE
+    # Programmatic — caller already has the PATs in SecureString form.
+    .\setup-git-credentials.ps1 -PrivatePat $privatePatSecure -PublicPat $publicPatSecure
 
 .NOTES
     Safe to run repeatedly. Existing credential lines for hosts other than
     github.com/keithrlucier/{toast,toast-notification} are preserved.
 
-    PATs are never committed — .git-credentials lives under the user profile
-    and is git-ignored everywhere it could leak.
+    PATs land plain-text inside .git-credentials by necessity — git's `store`
+    helper has no other format. The SecureString gate hardens only the
+    shell-side surfaces (history, transcripts, process-line audit). The
+    credentials file itself lives under the user profile and is git-ignored
+    everywhere it could leak.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][string] $PrivatePat,
-    [Parameter(Mandatory = $true)][string] $PublicPat,
+    [Parameter(Mandatory = $true)][SecureString] $PrivatePat,
+    [Parameter(Mandatory = $true)][SecureString] $PublicPat,
     [string] $CredentialsPath = (Join-Path $env:USERPROFILE '.git-credentials')
 )
 
 $ErrorActionPreference = 'Stop'
 
 function Write-Step([string] $Message) { Write-Host "==> $Message" -ForegroundColor Cyan }
+
+# Unwrap SecureString -> plain text via BSTR. Works on Windows PowerShell 5.1
+# AND PowerShell 7+ (ConvertFrom-SecureString -AsPlainText is PS7-only). The
+# BSTR is zero-freed in finally so the plaintext doesn't linger in unmanaged
+# memory beyond this function's scope.
+function ConvertFrom-SecureToPlain {
+    param([Parameter(Mandatory = $true)][SecureString] $Secure)
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secure)
+    try     { [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+}
+
+$privatePatPlain = ConvertFrom-SecureToPlain -Secure $PrivatePat
+$publicPatPlain  = ConvertFrom-SecureToPlain -Secure $PublicPat
 
 # ── 1. git config — reset helper chain to JUST `store`, key by full path ───
 Write-Step "Resetting global credential.helper chain to file-store only"
@@ -89,10 +115,10 @@ $pattern = [regex] '@github\.com/keithrlucier/(toast|toast-notification)(\.git)?
 $preserved = $existing | Where-Object { $_ -and -not $pattern.IsMatch($_) }
 
 $toastEntries = @(
-    "https://x-access-token:$PrivatePat@github.com/keithrlucier/toast"
-    "https://x-access-token:$PrivatePat@github.com/keithrlucier/toast.git"
-    "https://x-access-token:$PublicPat@github.com/keithrlucier/toast-notification"
-    "https://x-access-token:$PublicPat@github.com/keithrlucier/toast-notification.git"
+    "https://x-access-token:$privatePatPlain@github.com/keithrlucier/toast"
+    "https://x-access-token:$privatePatPlain@github.com/keithrlucier/toast.git"
+    "https://x-access-token:$publicPatPlain@github.com/keithrlucier/toast-notification"
+    "https://x-access-token:$publicPatPlain@github.com/keithrlucier/toast-notification.git"
 )
 
 $out = @($preserved) + $toastEntries | Where-Object { $_ }

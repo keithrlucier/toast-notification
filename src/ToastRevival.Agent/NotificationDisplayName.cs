@@ -8,9 +8,9 @@ namespace ToastRevival.Agent;
 /// Overrides the notification attribution (the small app name shown above
 /// every toast) with the tenant's display name.
 ///
-/// Evidence-based design (2026-05-12, agent.log + HKCU hive dump from the
-/// Colo Solutions test machine). WinAppSDK AppNotificationManager for
-/// unpackaged apps does the following at <c>Register()</c> time:
+/// Evidence-based design (2026-05-12, agent.log + HKCU hive dump from a
+/// test endpoint). WinAppSDK AppNotificationManager for unpackaged apps
+/// does the following at <c>Register()</c> time:
 ///
 ///   1. Generates its OWN COM activator CLSID (NOT the one in our
 ///      Package.appxmanifest — that file is only consumed by MSIX builds).

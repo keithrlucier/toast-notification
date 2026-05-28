@@ -1,68 +1,62 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Drawing.Text;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Windows.Forms;
 
 namespace ToastRevival.Agent;
 
 /// <summary>
-/// M12.B — the BgInfo-style desktop info overlay. Pinned to the desktop
-/// (above wallpaper + icons, below every app window) by parenting our window
-/// to explorer's WorkerW, exactly like Wallpaper Engine and Lively Wallpaper
-/// do. The user can never move, resize, focus, or click it: mouse events fall
-/// straight through.
+/// M12 desktop info overlay (0.4.14).
 ///
-/// Why WorkerW: the original M12 (0.4.9–0.4.11) used a top-level layered
-/// window with z-order tricks (HWND_BOTTOM, then HWND_NOTOPMOST). Both lost
-/// to the desktop's SysListView32 icon container — on a populated desktop
-/// the icons painted over us, and on a bare desktop the per-pixel alpha
-/// composited against nothing produced washed-out text without the dark
-/// panel showing. The fix is to become a CHILD of explorer's secondary
-/// WorkerW (the one Progman spawns when it gets the magic message 0x052C),
-/// which sits between the wallpaper bitmap and the icon ListView. As a
-/// child window we paint via WM_PAINT against an opaque dark panel — no
-/// UpdateLayeredWindow, no per-pixel alpha compositing edge cases.
+/// History — we tried two architectures before landing here:
 ///
-/// Click-through is preserved via WS_EX_TRANSPARENT. Re-anchor timer fires
-/// every 5s to recover from explorer.exe restarts (which destroy the
-/// WorkerW we parented to). All window operations are marshalled onto the
-/// tray's STA thread via the postToUi delegate handed in by the caller.
-/// Primary monitor only for M12.B.
+///   1. 0.4.9–0.4.11 — Top-level layered window with HWND_BOTTOM / NOTOPMOST.
+///      Painted correctly via UpdateLayeredWindow but Z-order was always wrong:
+///      either parked below the desktop icon ListView (invisible on populated
+///      desktops) or composited at NOTOPMOST with desktop icons overlapping
+///      the text.
+///
+///   2. 0.4.12–0.4.13 — WorkerW / Progman parenting (Wallpaper Engine recipe).
+///      Window successfully became a child of Progman, but on Windows 11 25H2
+///      (build 26200) the magic message 0x052C does NOT spawn the sibling
+///      WorkerW that DWM recognizes as a desktop overlay target. Falling back
+///      to Progman put the window in DWM dead-zone — the window exists in the
+///      kernel at the right rect with IsWindowVisible=true, but its surface is
+///      not composited to the desktop output. Invisible.
+///
+/// Current approach (0.4.14): top-level WS_EX_LAYERED window with
+/// per-pixel-alpha rendering (UpdateLayeredWindow) at HWND_NOTOPMOST z-order.
+/// Click-through, no-activate, no-Alt-Tab. Sits above the wallpaper. May be
+/// overlapped by desktop icons (known limitation — documented in FIX-LIST as
+/// FIX-OVERLAY-005, deferred until/unless we figure out how to make DWM
+/// composite a Progman child on Win11 26200+).
+///
+/// Hosted on the tray's STA thread via the postToUi delegate — no second
+/// thread. Re-anchor timer (5s) reasserts NOTOPMOST z-order to recover from
+/// other windows promoting themselves above us. Primary monitor only.
 /// </summary>
 internal sealed class DesktopOverlayService : IDisposable
 {
     private readonly Action<Action> _postToUi;
     private readonly System.Threading.Timer _reanchorTimer;
     private OverlayForm? _form;
-    private List<OverlayLine>? _lastLines;
-    private string _lastPosition = "bottom-right";
-    // Cached parent HWND from the last successful EnsureParentedToWorkerW. Used
-    // by ReanchorParent to detect explorer.exe restart (parent handle no longer
-    // a window). GetParent() can't be used as the liveness check because it
-    // returns 0 for desktop-owned popups even when SetParent succeeded — that
-    // was the false-positive re-anchor loop in 0.4.12.
-    private IntPtr _parentHwnd;
     private bool _disposed;
 
     public DesktopOverlayService(Action<Action> postToUi)
     {
         _postToUi = postToUi;
-        // Explorer.exe restarts (shell crash, Settings → Personalization changes)
-        // destroy our WorkerW parent. Every 5s, verify the parent is still alive
-        // and re-attach if not. Harmless no-op while hidden.
         _reanchorTimer = new System.Threading.Timer(
-            _ => _postToUi(ReanchorParent), null, Timeout.Infinite, Timeout.Infinite);
+            _ => _postToUi(ReanchorZOrder), null, Timeout.Infinite, Timeout.Infinite);
     }
 
     /// <summary>
     /// Resolves the configured field values on the calling thread (cheap, thread-
-    /// agnostic), then marshals the paint (or hide) onto the UI thread. Safe to
-    /// call repeatedly; re-renders if the content changed.
+    /// agnostic), then marshals the paint (or hide) onto the UI thread.
     /// </summary>
     public void Apply(OverlayConfig? config, string? tenantName)
     {
@@ -115,8 +109,6 @@ internal sealed class DesktopOverlayService : IDisposable
         return lines;
     }
 
-    /// <summary>First non-loopback, non-link-local IPv4 on an operational
-    /// interface, or null if none qualify.</summary>
     private static string? GetLocalIPv4()
     {
         try
@@ -132,7 +124,7 @@ internal sealed class DesktopOverlayService : IDisposable
                     var ip = ua.Address;
                     if (IPAddress.IsLoopback(ip)) continue;
                     var b = ip.GetAddressBytes();
-                    if (b[0] == 169 && b[1] == 254) continue; // 169.254/16 link-local (APIPA)
+                    if (b[0] == 169 && b[1] == 254) continue;
                     return ip.ToString();
                 }
             }
@@ -151,17 +143,12 @@ internal sealed class DesktopOverlayService : IDisposable
         if (_disposed) return;
         try
         {
-            _lastLines    = lines;
-            _lastPosition = position;
-
             var firstRender = _form is null;
-            _form ??= new OverlayForm(lines);
-            _form.SetLines(lines);
+            _form ??= new OverlayForm();
+            if (!_form.Visible) _form.Show();
 
-            // Realize the handle so DeviceDpi is correct.
-            _ = _form.Handle;
             var dpiScale = _form.DeviceDpi / 96f;
-            var size     = _form.MeasureContent(dpiScale);
+            using var bmp = RenderBitmap(lines, dpiScale, out var size);
 
             var wa     = Screen.PrimaryScreen!.WorkingArea;
             var inset  = (int)Math.Round(24 * dpiScale);
@@ -173,39 +160,11 @@ internal sealed class DesktopOverlayService : IDisposable
                 _             => (wa.Right - size.Width - inset, wa.Bottom - size.Height - inset),
             };
 
-            // Parent FIRST. WinForms borderless forms are WS_POPUP by default; on
-            // a popup, SetParent gives "owned popup" semantics — the window
-            // belongs to the parent for Z-order but doesn't paint inside the
-            // parent's client area. We need real child semantics: flip
-            // WS_POPUP → WS_CHILD AFTER SetParent, then SetWindowPos to commit
-            // the style change and position the window in parent-client
-            // coordinates. Wallpaper Engine + Lively Wallpaper both do this
-            // exact sequence — getting the order wrong leaves an invisible
-            // window owned by Progman, which is exactly what 0.4.12 shipped.
-            EnsureParentedToWorkerW(_form.Handle);
-
-            // WorkerW / Progman client origin is at (0,0) of the virtual screen
-            // on every Windows 11 build we've seen, so the screen coords
-            // computed above become parent-client coords 1:1. If a future build
-            // changes that, the regression will be "overlay paints in the
-            // wrong corner" (visible) rather than "overlay invisible" (silent).
-            var style = Native.GetWindowLong(_form.Handle, Native.GWL_STYLE);
-            var newStyle = (style & ~Native.WS_POPUP) | Native.WS_CHILD;
-            if (newStyle != style)
-            {
-                Native.SetWindowLong(_form.Handle, Native.GWL_STYLE, newStyle);
-            }
-
-            Native.SetWindowPos(_form.Handle, IntPtr.Zero, x, y, size.Width, size.Height,
-                Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW
-                | Native.SWP_FRAMECHANGED); // FRAMECHANGED tells Windows to apply the new style
-
-            if (!_form.Visible) _form.Show();
-            _form.Invalidate();
-
+            PushLayeredBitmap(_form.Handle, bmp, new Point(x, y));
+            ReanchorZOrder();
             _reanchorTimer.Change(5000, 5000);
 
-            DiagLog.Write($"DesktopOverlay.RenderOrHide: painted {size.Width}x{size.Height} at ({x},{y}); dpi={dpiScale:F2}; firstRender={firstRender}; hwnd=0x{_form.Handle.ToInt64():X}; parent=0x{Native.GetParent(_form.Handle).ToInt64():X}");
+            DiagLog.Write($"DesktopOverlay.RenderOrHide: painted {size.Width}x{size.Height} at ({x},{y}); dpi={dpiScale:F2}; firstRender={firstRender}; hwnd=0x{_form.Handle.ToInt64():X}");
         }
         catch (Exception ex)
         {
@@ -220,144 +179,149 @@ internal sealed class DesktopOverlayService : IDisposable
     }
 
     /// <summary>
-    /// Verifies our window is still parented to a live parent; re-parents if not.
-    /// Fires every 5s. We track the parent HWND we set in _parentHwnd because
-    /// GetParent() returns 0 for desktop-owned popups even when SetParent
-    /// succeeded — that misfire produced the 5s re-anchor spam loop in 0.4.12.
-    /// IsWindow on the cached handle is the real liveness check: it goes false
-    /// only when explorer.exe restarts and tears down WorkerW/Progman.
+    /// Reasserts NOTOPMOST z-order on the overlay. NOTOPMOST means: not in the
+    /// always-on-top band, but at the highest z-level below the topmost band.
+    /// Other ordinary windows that the user opens after us will get focus and
+    /// composite above us until they're closed/minimized — that's the
+    /// "above wallpaper, below apps" behavior the user signed off on.
+    /// Re-issued every 5s in case Windows promoted something else above us.
     /// </summary>
-    private void ReanchorParent()
+    private void ReanchorZOrder()
     {
         if (_form is not { IsDisposed: false } f || !f.Visible) return;
+        Native.SetWindowPos(f.Handle, Native.HWND_NOTOPMOST, 0, 0, 0, 0,
+            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+    }
+
+    /// <summary>
+    /// Renders the overlay to a premultiplied 32bpp bitmap: a translucent dark
+    /// rounded box with white drop-shadowed text. Format32bppPArgb so GDI+
+    /// stores premultiplied alpha — exactly what UpdateLayeredWindow's
+    /// AC_SRC_ALPHA wants. This is the same renderer that visibly worked in
+    /// 0.4.11 on Keith's box (verified screenshots).
+    /// </summary>
+    private static Bitmap RenderBitmap(List<OverlayLine> lines, float scale, out Size size)
+    {
+        float fontPx   = 14f * scale;
+        float pad      = 12f * scale;
+        float lineGap  = 4f  * scale;
+        float radius   = 6f  * scale;
+        float shadow   = Math.Max(1f, scale);
+
+        using var font = new Font("Segoe UI", fontPx, FontStyle.Regular, GraphicsUnit.Pixel);
+        var fmt = StringFormat.GenericTypographic;
+
+        float contentW = 0, lineH = 0;
+        using (var scratch = Graphics.FromImage(new Bitmap(1, 1)))
+        {
+            scratch.TextRenderingHint = TextRenderingHint.AntiAlias;
+            foreach (var ln in lines)
+            {
+                var text = ln.Label is null ? ln.Value : $"{ln.Label}: {ln.Value}";
+                var sz = scratch.MeasureString(text, font, int.MaxValue, fmt);
+                contentW = Math.Max(contentW, sz.Width);
+                lineH = Math.Max(lineH, sz.Height);
+            }
+        }
+
+        int boxW = (int)Math.Ceiling(contentW + pad * 2);
+        int boxH = (int)Math.Ceiling(lineH * lines.Count + lineGap * (lines.Count - 1) + pad * 2);
+        int bmpW = boxW + (int)Math.Ceiling(shadow) + 1;
+        int bmpH = boxH + (int)Math.Ceiling(shadow) + 1;
+
+        var bmp = new Bitmap(bmpW, bmpH, PixelFormat.Format32bppPArgb);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode     = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.AntiAlias;
+            g.Clear(Color.Transparent);
+
+            // Bumped from 0.6 → 0.85 opacity vs 0.4.9 so the panel reads
+            // cleanly against light/medium wallpapers, not just dark ones.
+            // The text-on-wallpaper problem from screenshot 1 of the 0.4.11
+            // verification was the original 0.6 alpha being too light to
+            // anchor white text against a near-black wallpaper.
+            using (var boxBrush = new SolidBrush(Color.FromArgb(217, 0, 0, 0))) // rgba(0,0,0,0.85)
+            using (var boxPath = RoundedRect(new RectangleF(0, 0, boxW, boxH), radius))
+                g.FillPath(boxBrush, boxPath);
+
+            using var shadowBrush = new SolidBrush(Color.FromArgb(204, 0, 0, 0));
+            using var labelBrush  = new SolidBrush(Color.FromArgb(178, 255, 255, 255));
+            using var valueBrush  = new SolidBrush(Color.White);
+
+            float y = pad;
+            foreach (var ln in lines)
+            {
+                float x = pad;
+                if (ln.Label is null)
+                {
+                    g.DrawString(ln.Value, font, shadowBrush, x + shadow, y + shadow, fmt);
+                    g.DrawString(ln.Value, font, valueBrush, x, y, fmt);
+                }
+                else
+                {
+                    var label = $"{ln.Label}: ";
+                    var labelW = g.MeasureString(label, font, int.MaxValue, fmt).Width;
+                    g.DrawString(label + ln.Value, font, shadowBrush, x + shadow, y + shadow, fmt);
+                    g.DrawString(label, font, labelBrush, x, y, fmt);
+                    g.DrawString(ln.Value, font, valueBrush, x + labelW, y, fmt);
+                }
+                y += lineH + lineGap;
+            }
+        }
+
+        size = new Size(boxW, boxH);
+        return bmp;
+    }
+
+    private static GraphicsPath RoundedRect(RectangleF r, float radius)
+    {
+        float d = radius * 2;
+        var path = new GraphicsPath();
+        if (d <= 0) { path.AddRectangle(r); return path; }
+        path.AddArc(r.X, r.Y, d, d, 180, 90);
+        path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    private static void PushLayeredBitmap(IntPtr hWnd, Bitmap bmp, Point screenPos)
+    {
+        IntPtr screenDc = Native.GetDC(IntPtr.Zero);
+        IntPtr memDc    = Native.CreateCompatibleDC(screenDc);
+        IntPtr hBitmap  = IntPtr.Zero;
+        IntPtr oldBmp   = IntPtr.Zero;
         try
         {
-            if (_parentHwnd != IntPtr.Zero && Native.IsWindow(_parentHwnd))
+            hBitmap = bmp.GetHbitmap(Color.FromArgb(0));
+            oldBmp  = Native.SelectObject(memDc, hBitmap);
+
+            var size   = new Native.SIZE { cx = bmp.Width, cy = bmp.Height };
+            var src    = new Native.POINT { x = 0, y = 0 };
+            var dst    = new Native.POINT { x = screenPos.X, y = screenPos.Y };
+            var blend  = new Native.BLENDFUNCTION
             {
-                // Parent still alive. Nothing to do.
-                return;
-            }
+                BlendOp             = Native.AC_SRC_OVER,
+                BlendFlags          = 0,
+                SourceConstantAlpha = 255,
+                AlphaFormat         = Native.AC_SRC_ALPHA,
+            };
 
-            DiagLog.Write($"DesktopOverlay.ReanchorParent: parent=0x{_parentHwnd.ToInt64():X} (gone) — re-attaching.");
-            EnsureParentedToWorkerW(f.Handle);
-
-            // After re-parenting we must re-apply the WS_CHILD style and reposition.
-            // SetParent on a freshly-orphaned window often leaves it at (0,0) with
-            // the wrong style word — same setup logic as the initial render path.
-            if (_lastLines is not null)
+            Native.UpdateLayeredWindow(hWnd, screenDc, ref dst, ref size, memDc, ref src,
+                0, ref blend, Native.ULW_ALPHA);
+        }
+        finally
+        {
+            Native.ReleaseDC(IntPtr.Zero, screenDc);
+            if (hBitmap != IntPtr.Zero)
             {
-                var dpi  = f.DeviceDpi / 96f;
-                var size = f.MeasureContent(dpi);
-                var wa   = Screen.PrimaryScreen!.WorkingArea;
-                var inset = (int)Math.Round(24 * dpi);
-                var (x, y) = _lastPosition switch
-                {
-                    "bottom-left" => (wa.Left + inset, wa.Bottom - size.Height - inset),
-                    "top-right"   => (wa.Right - size.Width - inset, wa.Top + inset),
-                    "top-left"    => (wa.Left + inset, wa.Top + inset),
-                    _             => (wa.Right - size.Width - inset, wa.Bottom - size.Height - inset),
-                };
-                var style = Native.GetWindowLong(f.Handle, Native.GWL_STYLE);
-                var newStyle = (style & ~Native.WS_POPUP) | Native.WS_CHILD;
-                if (newStyle != style) Native.SetWindowLong(f.Handle, Native.GWL_STYLE, newStyle);
-                Native.SetWindowPos(f.Handle, IntPtr.Zero, x, y, size.Width, size.Height,
-                    Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW
-                    | Native.SWP_FRAMECHANGED);
-                f.Invalidate();
+                Native.SelectObject(memDc, oldBmp);
+                Native.DeleteObject(hBitmap);
             }
+            Native.DeleteDC(memDc);
         }
-        catch (Exception ex)
-        {
-            DiagLog.Write($"DesktopOverlay.ReanchorParent: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
-    // ── WorkerW plumbing ────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Finds the desktop's secondary WorkerW (the one between the wallpaper bitmap
-    /// and the icon ListView) and re-parents our window to it. If anything in this
-    /// path fails — shell replacement, locked-down system, message timeout — the
-    /// window stays top-level and we paint click-through on top of the desktop.
-    /// Logs each step so support can triage shell-variance issues from agent.log.
-    /// Updates <see cref="_parentHwnd"/> on success so ReanchorParent can check
-    /// liveness without relying on GetParent (which lies for desktop-owned popups).
-    /// </summary>
-    private void EnsureParentedToWorkerW(IntPtr hWnd)
-    {
-        var workerW = FindWorkerW();
-        if (workerW == IntPtr.Zero)
-        {
-            DiagLog.Write("DesktopOverlay.EnsureParentedToWorkerW: WorkerW not found — staying top-level (overlay will sit above wallpaper but may be covered by icons/apps).");
-            _parentHwnd = IntPtr.Zero;
-            return;
-        }
-        var prev = Native.SetParent(hWnd, workerW);
-        if (prev == IntPtr.Zero)
-        {
-            var err = Marshal.GetLastWin32Error();
-            DiagLog.Write($"DesktopOverlay.EnsureParentedToWorkerW: SetParent failed errno={err}");
-            return;
-        }
-        _parentHwnd = workerW;
-        DiagLog.Write($"DesktopOverlay.EnsureParentedToWorkerW: parented hwnd=0x{hWnd.ToInt64():X} to WorkerW=0x{workerW.ToInt64():X} (was 0x{prev.ToInt64():X})");
-    }
-
-    /// <summary>
-    /// Sends Progman the magic 0x052C message to spawn (if not already present)
-    /// the secondary WorkerW window between the wallpaper renderer and the icon
-    /// ListView. Then walks top-level windows looking for the WorkerW whose
-    /// sibling is NOT the SHELLDLL_DefView host — that's the one we want.
-    /// </summary>
-    private static IntPtr FindWorkerW()
-    {
-        var progman = Native.FindWindow("Progman", null);
-        if (progman == IntPtr.Zero)
-        {
-            DiagLog.Write("DesktopOverlay.FindWorkerW: Progman not found.");
-            return IntPtr.Zero;
-        }
-
-        // Spawn-or-no-op: tell Progman to ensure WorkerW exists. The exact wParam
-        // values 0xD/0x1 are the documented Wallpaper Engine recipe; SendMessageTimeout
-        // returns quickly because Progman handles this synchronously.
-        Native.SendMessageTimeout(progman, 0x052C, new IntPtr(0xD), new IntPtr(0x1),
-            Native.SMTO_NORMAL, 1000, out _);
-
-        IntPtr foundWorkerW = IntPtr.Zero;
-        Native.EnumWindows((tophandle, _) =>
-        {
-            // We're looking for a WorkerW that has SHELLDLL_DefView as a child.
-            // That WorkerW is the one BEHIND the wallpaper bitmap — wrong target.
-            // Then take its NEXT sibling WorkerW — that's our destination.
-            var defView = Native.FindWindowEx(tophandle, IntPtr.Zero, "SHELLDLL_DefView", null);
-            if (defView != IntPtr.Zero)
-            {
-                var sibling = Native.FindWindowEx(IntPtr.Zero, tophandle, "WorkerW", null);
-                if (sibling != IntPtr.Zero)
-                {
-                    foundWorkerW = sibling;
-                    return false; // stop enumeration
-                }
-            }
-            return true;
-        }, IntPtr.Zero);
-
-        if (foundWorkerW == IntPtr.Zero)
-        {
-            // Some Windows 11 builds host the icon ListView directly under Progman
-            // instead of spawning a secondary WorkerW. In that case parenting
-            // directly to Progman gives us the same Z-layer (above wallpaper,
-            // below the icon view that Progman renders on top). Fall back.
-            var progmanDefView = Native.FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
-            if (progmanDefView != IntPtr.Zero)
-            {
-                DiagLog.Write("DesktopOverlay.FindWorkerW: no secondary WorkerW; falling back to Progman as parent.");
-                return progman;
-            }
-        }
-
-        return foundWorkerW;
     }
 
     public void Dispose()
@@ -374,72 +338,20 @@ internal sealed class DesktopOverlayService : IDisposable
 
     private readonly record struct OverlayLine(string? Label, string Value);
 
-    // ── The window ──────────────────────────────────────────────────────────
-
     /// <summary>
-    /// Borderless, click-through, no-taskbar, no-activate child window. Painted
-    /// opaquely via WM_PAINT against a solid dark rounded panel (no per-pixel
-    /// alpha — that pipeline doesn't work for child windows of WorkerW). The
-    /// rounded corners use a window region so the corners of the rectangle are
-    /// genuinely cut out, not painted with alpha. Click-through is preserved via
-    /// WS_EX_TRANSPARENT on the ext-style.
+    /// Borderless, layered, click-through, no-taskbar, no-activate tool window.
+    /// Top-level (no SetParent) — keeps UpdateLayeredWindow's per-pixel alpha
+    /// pipeline working, which is what makes the overlay actually composite
+    /// to the desktop on Windows 11 26200+.
     /// </summary>
     private sealed class OverlayForm : Form
     {
-        // Visual constants — kept in lock-step with the prior layered-window
-        // bitmap so the spec design stays intact: rgba(0,0,0,0.85) panel, 6px
-        // radius, 12px padding, 4px line gap, 14px Segoe UI, white values with
-        // dim white labels.
-        private static readonly Color PanelColor = Color.FromArgb(217, 12, 14, 22); // ~rgba(12,14,22,0.85)
-        private const int   PanelRadius = 6;
-        private const int   PadPx       = 12;
-        private const int   LineGapPx   = 4;
-        private const float FontSizePx  = 14f;
-
-        private List<OverlayLine> _lines;
-
-        public OverlayForm(List<OverlayLine> initialLines)
+        public OverlayForm()
         {
-            _lines          = initialLines;
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar   = false;
             StartPosition   = FormStartPosition.Manual;
             Text            = string.Empty;
-            DoubleBuffered  = true;
-            BackColor       = Color.FromArgb(PanelColor.R, PanelColor.G, PanelColor.B);
-
-            // The panel is opaque; we render text in a Graphics created from
-            // the WM_PAINT DC. ClearType is fine because the background is
-            // solid.
-            SetStyle(ControlStyles.AllPaintingInWmPaint
-                   | ControlStyles.OptimizedDoubleBuffer
-                   | ControlStyles.UserPaint, true);
-        }
-
-        public void SetLines(List<OverlayLine> lines) => _lines = lines;
-
-        public Size MeasureContent(float scale)
-        {
-            float fontPx  = FontSizePx * scale;
-            float pad     = PadPx      * scale;
-            float lineGap = LineGapPx  * scale;
-
-            using var font = new Font("Segoe UI", fontPx, FontStyle.Regular, GraphicsUnit.Pixel);
-            using var scratch = Graphics.FromImage(new Bitmap(1, 1));
-            scratch.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-
-            float contentW = 0, lineH = 0;
-            foreach (var ln in _lines)
-            {
-                var text = ln.Label is null ? ln.Value : $"{ln.Label}: {ln.Value}";
-                var sz = scratch.MeasureString(text, font, int.MaxValue, StringFormat.GenericTypographic);
-                contentW = Math.Max(contentW, sz.Width);
-                lineH = Math.Max(lineH, sz.Height);
-            }
-
-            int boxW = (int)Math.Ceiling(contentW + pad * 2);
-            int boxH = (int)Math.Ceiling(lineH * _lines.Count + lineGap * (_lines.Count - 1) + pad * 2);
-            return new Size(boxW, boxH);
         }
 
         protected override bool ShowWithoutActivation => true;
@@ -449,155 +361,71 @@ internal sealed class DesktopOverlayService : IDisposable
             get
             {
                 var cp = base.CreateParams;
-                cp.ExStyle |= Native.WS_EX_TRANSPARENT // click-through: mouse falls to desktop behind
-                            | Native.WS_EX_NOACTIVATE  // never take focus
-                            | Native.WS_EX_TOOLWINDOW; // no Alt+Tab / taskbar presence
-                // Note: WS_EX_LAYERED is intentionally NOT set. Child windows
-                // of WorkerW cannot use UpdateLayeredWindow's per-pixel alpha;
-                // the panel is rendered opaquely instead and the rounded corners
-                // are cut out via SetWindowRgn (see OnResize).
+                cp.ExStyle |= Native.WS_EX_LAYERED
+                            | Native.WS_EX_TRANSPARENT
+                            | Native.WS_EX_NOACTIVATE
+                            | Native.WS_EX_TOOLWINDOW;
                 return cp;
-            }
-        }
-
-        protected override void OnResize(EventArgs e)
-        {
-            base.OnResize(e);
-            ApplyRoundedRegion();
-        }
-
-        protected override void OnHandleCreated(EventArgs e)
-        {
-            base.OnHandleCreated(e);
-            ApplyRoundedRegion();
-        }
-
-        private void ApplyRoundedRegion()
-        {
-            if (!IsHandleCreated || Width <= 0 || Height <= 0) return;
-            // CreateRoundRectRgn rounds the literal window rect. Replace existing
-            // region (SetWindowRgn deletes the previous one when bRedraw = true).
-            var rgn = Native.CreateRoundRectRgn(0, 0, Width + 1, Height + 1,
-                PanelRadius * 2, PanelRadius * 2);
-            Native.SetWindowRgn(Handle, rgn, true);
-            // Don't DeleteObject — Windows owns the region after SetWindowRgn.
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            g.SmoothingMode     = SmoothingMode.AntiAlias;
-            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-            g.Clear(Color.FromArgb(PanelColor.R, PanelColor.G, PanelColor.B));
-
-            float scale   = DeviceDpi / 96f;
-            float fontPx  = FontSizePx * scale;
-            float pad     = PadPx      * scale;
-            float lineGap = LineGapPx  * scale;
-
-            using var font        = new Font("Segoe UI", fontPx, FontStyle.Regular, GraphicsUnit.Pixel);
-            using var labelBrush  = new SolidBrush(Color.FromArgb(178, 255, 255, 255));
-            using var valueBrush  = new SolidBrush(Color.White);
-            var fmt = StringFormat.GenericTypographic;
-
-            float y = pad;
-            float lineH = 0;
-            foreach (var ln in _lines)
-            {
-                var text = ln.Label is null ? ln.Value : $"{ln.Label}: {ln.Value}";
-                var sz = g.MeasureString(text, font, int.MaxValue, fmt);
-                lineH = Math.Max(lineH, sz.Height);
-            }
-
-            foreach (var ln in _lines)
-            {
-                float x = pad;
-                if (ln.Label is null)
-                {
-                    g.DrawString(ln.Value, font, valueBrush, x, y, fmt);
-                }
-                else
-                {
-                    var label = $"{ln.Label}: ";
-                    var labelW = g.MeasureString(label, font, int.MaxValue, fmt).Width;
-                    g.DrawString(label, font, labelBrush, x, y, fmt);
-                    g.DrawString(ln.Value, font, valueBrush, x + labelW, y, fmt);
-                }
-                y += lineH + lineGap;
             }
         }
     }
 
     private static class Native
     {
+        public const int WS_EX_LAYERED     = 0x00080000;
         public const int WS_EX_TRANSPARENT = 0x00000020;
         public const int WS_EX_NOACTIVATE  = 0x08000000;
         public const int WS_EX_TOOLWINDOW  = 0x00000080;
 
-        // WS_POPUP and WS_CHILD are mutually exclusive in the window style word.
-        // Borderless WinForms forms are WS_POPUP by default; SetParent on a
-        // popup yields owned-popup semantics, not real child semantics — the
-        // window doesn't paint inside the parent's client area. Flipping to
-        // WS_CHILD after SetParent is required to make the parent relationship
-        // actually take effect for compositing.
-        public const int  WS_POPUP = unchecked((int)0x80000000);
-        public const int  WS_CHILD = 0x40000000;
-        public const int  GWL_STYLE = -16;
+        public static readonly IntPtr HWND_NOTOPMOST = new(-2);
+        public const uint SWP_NOSIZE     = 0x0001;
+        public const uint SWP_NOMOVE     = 0x0002;
+        public const uint SWP_NOACTIVATE = 0x0010;
 
-        public const uint SWP_NOSIZE       = 0x0001;
-        public const uint SWP_NOMOVE       = 0x0002;
-        public const uint SWP_NOZORDER     = 0x0004;
-        public const uint SWP_NOACTIVATE   = 0x0010;
-        public const uint SWP_FRAMECHANGED = 0x0020; // applies pending GWL_STYLE change
-        public const uint SWP_SHOWWINDOW   = 0x0040;
+        public const byte AC_SRC_OVER  = 0x00;
+        public const byte AC_SRC_ALPHA = 0x01;
+        public const int  ULW_ALPHA    = 0x00000002;
 
-        public const uint SMTO_NORMAL = 0x0000;
+        [StructLayout(LayoutKind.Sequential)] public struct POINT { public int x; public int y; }
+        [StructLayout(LayoutKind.Sequential)] public struct SIZE  { public int cx; public int cy; }
+        [StructLayout(LayoutKind.Sequential)] public struct BLENDFUNCTION
+        {
+            public byte BlendOp;
+            public byte BlendFlags;
+            public byte SourceConstantAlpha;
+            public byte AlphaFormat;
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool UpdateLayeredWindow(
+            IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst, ref SIZE psize,
+            IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SetWindowPos(
             IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
-
-        [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongW")]
-        public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-
-        [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongW")]
-        public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern IntPtr GetParent(IntPtr hWnd);
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetDC(IntPtr hWnd);
 
         [DllImport("user32.dll")]
+        public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr CreateCompatibleDC(IntPtr hDC);
+
+        [DllImport("gdi32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool IsWindow(IntPtr hWnd);
+        public static extern bool DeleteDC(IntPtr hDC);
 
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        public static extern IntPtr FindWindow(string lpClassName, string? lpWindowName);
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
 
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        public static extern IntPtr FindWindowEx(IntPtr hWndParent, IntPtr hWndChildAfter,
-            string? lpszClass, string? lpszWindow);
-
-        public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-        [DllImport("user32.dll", SetLastError = true)]
+        [DllImport("gdi32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam,
-            IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
-
-        [DllImport("gdi32.dll", SetLastError = true)]
-        public static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect,
-            int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn,
-            [MarshalAs(UnmanagedType.Bool)] bool bRedraw);
+        public static extern bool DeleteObject(IntPtr hObject);
     }
 }
 

@@ -234,8 +234,9 @@ public class DevicesController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == tenantId);
         if (tenant is null) return NotFound();
 
-        // Lock screen URL is stored absolute, so ToPublicUrl is a no-op on it —
-        // but it rescues any legacy relative value, same defense as tenant-name.
+        // Lock screen URL is stored as a /assets/lockscreen/ relative path
+        // (see TenantController.NormalizeLockScreenUrlForStorage); the agent's
+        // LockScreenService strictly requires an http(s) URL, so absolutize here.
         var overlay    = TenantAppearance.BuildOverlay(tenant);
         var lockScreen = TenantAppearance.BuildLockScreen(tenant) with
         {
@@ -275,7 +276,12 @@ public class DevicesController : ControllerBase
     {
         var trimmed = value?.Trim();
         if (string.IsNullOrWhiteSpace(trimmed)) return null;
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _)) return trimmed;
+        // Require http(s) on the "already absolute" branch. On Linux,
+        // Uri.TryCreate("/foo", Absolute, ...) returns true with Scheme="file",
+        // which would return "/assets/lockscreen/..." untouched and break
+        // LockScreenService's strict-absolute check on the agent.
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var existing)
+            && existing.Scheme is "http" or "https") return trimmed;
         if (!trimmed.StartsWith('/')) return trimmed;
 
         var scheme = Request.Headers["X-Forwarded-Proto"].FirstOrDefault()?.Split(',')[0].Trim();

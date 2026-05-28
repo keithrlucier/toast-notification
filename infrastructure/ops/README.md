@@ -16,9 +16,11 @@ Run after rotating a Toast PAT, on a fresh dev box, or any time git prompts
 have started reappearing:
 
 ```powershell
+# PATs are SecureString — paste each when prompted; nothing reaches shell history,
+# Start-Transcript output, or process-line audit logs.
 .\infrastructure\ops\setup-git-credentials.ps1 `
-    -PrivatePat 'github_pat_11AJ...' `
-    -PublicPat  'github_pat_11AJ...'
+    -PrivatePat (Read-Host 'Private PAT' -AsSecureString) `
+    -PublicPat  (Read-Host 'Public PAT'  -AsSecureString)
 ```
 
 Open a new terminal after running so the env-var changes (`GIT_TERMINAL_PROMPT=0`,

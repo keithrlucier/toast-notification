@@ -26,6 +26,7 @@ Docs/PUBLIC-MIRROR.md
 # Code-review ledger and rotated history — internal QA artifacts. Reference
 # customer hostnames, internal finding IDs, file:line evidence trails.
 REVIEW_LEDGER.md
+REVIEW_AUDIT.md
 Docs/review_history/
 docs/review_history/
 

@@ -712,7 +712,9 @@ Overlay window renders configured fields over the wallpaper without modifying it
 
 ## M14 — Microsoft SSO (Entra / Azure AD work-or-school sign-in)
 
-**Status:** Built + QA passed (SHIP WITH NOTES) 2026-05-28. Pending prod deploy + live verify.
+**Status:** SHIPPED + live-verified 2026-05-28 (commits 29074eb, 771ce8d). Microsoft work-account sign-in confirmed working end-to-end on prod. Remaining: public-mirror release sync for self-hosters.
+
+**Post-deploy fix (771ce8d):** the authorize/token URLs were hand-built off the `/v2.0` metadata base → 404. Now read from Microsoft's OIDC discovery document (`authorization_endpoint`/`token_endpoint`). Also corrected the committed client id (transcription typo `c5b`→`c6b`). Lesson: never transcribe GUIDs/secrets from screenshots — have the operator paste the authoritative value.
 
 ### Architecture (Keith-driven, locked this session)
 - **One platform-owned multitenant Entra app.** Single client id + secret, held server-side. Each customer org admin-consents once.

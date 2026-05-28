@@ -11,18 +11,16 @@ namespace ToastRevival.Api.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // NOTE: DesktopOverlayOpacityPercent is intentionally NOT added here —
+            // it was already shipped by M12_OverlayOpacity (2026-05-28). The EF
+            // model snapshot lagged behind that migration, so `ef migrations add`
+            // re-emitted the AddColumn. Removed by hand to keep prod migration
+            // idempotent. The column ends up in the post-M13 snapshot anyway.
             migrationBuilder.AddColumn<string>(
                 name: "ComplimentaryReason",
                 table: "Tenants",
                 type: "text",
                 nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "DesktopOverlayOpacityPercent",
-                table: "Tenants",
-                type: "integer",
-                nullable: false,
-                defaultValue: 0);
 
             migrationBuilder.AddColumn<bool>(
                 name: "IsComplimentary",
@@ -49,10 +47,6 @@ namespace ToastRevival.Api.Data.Migrations
         {
             migrationBuilder.DropColumn(
                 name: "ComplimentaryReason",
-                table: "Tenants");
-
-            migrationBuilder.DropColumn(
-                name: "DesktopOverlayOpacityPercent",
                 table: "Tenants");
 
             migrationBuilder.DropColumn(

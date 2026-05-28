@@ -40,7 +40,7 @@ Repeat steps 2–10 with `uninstall-toast-agent.ps1`. No parameters required. Sc
 
 If your customer is running an internal NinjaOne mirror with a private MSI hosting URL, add a fourth variable:
 
-- `MsiUrl` — String, optional, default `https://toastnotification.com/downloads/agent/ToastNotification.Agent-latest.msi`.
+- `MsiUrl` — String, optional, default `https://toastnotification.com/downloads/ToastNotification.msi`.
 
 Override per-policy. The Authenticode check still runs against whatever binary is downloaded — if your mirror serves a re-signed MSI signed by anyone other than `Toast2IT, LLC`, the install will refuse to execute. Mirrors must serve the unmodified original MSI.
 

@@ -240,85 +240,187 @@ internal sealed class DesktopOverlayService : IDisposable
     /// Panel opacity is now data-driven (admin-controlled, 10–100%). Default
     /// when the field is absent: 85%.
     /// </summary>
+    /// <summary>
+    /// Renders the overlay with GDI text (TextRenderer.DrawText / DrawText) so
+    /// glyphs come out with native Windows ClearType — the crisp BgInfo look —
+    /// instead of the soft GDI+ Graphics.DrawString rendering that produced the
+    /// grainy text in 0.4.15–0.4.17.
+    ///
+    /// Trade-off with the layered-window AC_SRC_ALPHA pipeline: GDI text
+    /// writes fully-opaque pixels and ignores per-pixel alpha — ClearType
+    /// would otherwise fight UpdateLayeredWindow. We work around that by
+    /// rendering the panel and the text into a fully-opaque RGB bitmap, then
+    /// applying overall translucency via SourceConstantAlpha on the BLEND-
+    /// FUNCTION (set in PushLayeredBitmap by passing opacityPercent through).
+    /// Per-pixel alpha is no longer needed because the bitmap has no
+    /// transparent corners — the rounded-rect mask is "drawn" by leaving the
+    /// corner regions as fully-transparent ARGB pixels, which we DO want
+    /// per-pixel alpha for. So: rounded-rect mask in alpha channel + ClearType
+    /// glyphs inside the panel.
+    /// </summary>
     private static Bitmap RenderBitmap(List<OverlayLine> lines, float scale, int opacityPercent, out Size size)
     {
-        float fontPx  = 14f * scale;
-        float pad     = 12f * scale;
-        float lineGap = 4f  * scale;
-        float radius  = 6f  * scale;
+        int fontPx  = (int)Math.Round(14 * scale);
+        int pad     = (int)Math.Round(12 * scale);
+        int lineGap = (int)Math.Round(4  * scale);
+        int radius  = (int)Math.Round(6  * scale);
 
         using var font = new Font("Segoe UI", fontPx, FontStyle.Regular, GraphicsUnit.Pixel);
-        var measureFmt = StringFormat.GenericDefault;       // preserves trailing space in label measurement
-        var drawFmt    = StringFormat.GenericTypographic;   // tighter glyph layout for the actual paint
 
-        float contentW = 0, lineH = 0;
+        // GDI flags: NoPadding for tight measurement; NoPrefix so '&' is literal.
+        // Measurement uses the same flags as draw so widths line up exactly.
+        const TextFormatFlags TextFlags =
+            TextFormatFlags.NoPadding   |
+            TextFormatFlags.NoPrefix    |
+            TextFormatFlags.SingleLine  |
+            TextFormatFlags.Left        |
+            TextFormatFlags.Top;
+
+        int contentW = 0, lineH = 0;
         using (var measureBmp = new Bitmap(1, 1))
         using (var scratch = Graphics.FromImage(measureBmp))
         {
-            scratch.TextRenderingHint = TextRenderingHint.AntiAlias;
             foreach (var ln in lines)
             {
                 var text = ln.Label is null ? ln.Value : $"{ln.Label}: {ln.Value}";
-                var sz = scratch.MeasureString(text, font, int.MaxValue, measureFmt);
+                var sz = TextRenderer.MeasureText(scratch, text, font, new Size(int.MaxValue, int.MaxValue), TextFlags);
                 contentW = Math.Max(contentW, sz.Width);
                 lineH = Math.Max(lineH, sz.Height);
             }
         }
 
-        int boxW = (int)Math.Ceiling(contentW + pad * 2);
-        int boxH = (int)Math.Ceiling(lineH * lines.Count + lineGap * (lines.Count - 1) + pad * 2);
-        int bmpW = boxW;
-        int bmpH = boxH;
+        int boxW = contentW + pad * 2;
+        int boxH = lineH * lines.Count + lineGap * (lines.Count - 1) + pad * 2;
 
-        // Format32bppArgb — plain (non-premultiplied) ARGB. UpdateLayeredWindow
-        // with AlphaFormat = AC_SRC_ALPHA accepts both formats; using the plain
-        // format avoids the GDI+ → premultiplication path that was eating the
-        // panel alpha on Win11 26200 in 0.4.14.
-        var bmp = new Bitmap(bmpW, bmpH, PixelFormat.Format32bppArgb);
+        // 32bpp ARGB: alpha channel carries the rounded-rect mask (transparent
+        // outside the panel, opaque inside). Inside the panel the pixels are
+        // fully opaque RGB — that's what lets GDI ClearType write correct
+        // sub-pixel colored glyphs without fighting per-pixel alpha.
+        var bmp = new Bitmap(boxW, boxH, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp))
         {
-            g.SmoothingMode     = SmoothingMode.AntiAlias;
-            // AntiAlias (not AntiAliasGridFit): GridFit snaps glyph metrics to
-            // the pixel grid assuming an opaque background, which on a layered
-            // window with per-pixel alpha bleeds the AA edges into the panel
-            // and reads as faintly blocky. Plain AntiAlias on the transparent
-            // surface composites cleanly through UpdateLayeredWindow.
-            g.TextRenderingHint = TextRenderingHint.AntiAlias;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
             g.Clear(Color.Transparent);
 
-            int panelAlpha = (int)Math.Round(opacityPercent * 2.55);  // 0..255
-            using (var boxBrush = new SolidBrush(Color.FromArgb(Math.Clamp(panelAlpha, 0, 255), 0, 0, 0)))
+            // Panel: fully opaque dark fill inside the rounded rect. Overall
+            // panel translucency is applied later via SourceConstantAlpha.
+            using (var boxBrush = new SolidBrush(Color.FromArgb(255, 24, 24, 28)))
             using (var boxPath = RoundedRect(new RectangleF(0, 0, boxW, boxH), radius))
                 g.FillPath(boxBrush, boxPath);
+        }
 
-            using var labelBrush = new SolidBrush(Color.FromArgb(204, 255, 255, 255));  // ~80% white
-            using var valueBrush = new SolidBrush(Color.White);                          // 100% white
+        // Phase 2 — GDI ClearType text on top of the now-opaque panel.
+        // TextRenderer.DrawText goes through DrawTextEx, which honors the
+        // user's ClearType settings and renders glyphs at native quality.
+        using (var g = Graphics.FromImage(bmp))
+        {
+            // Pure white for both labels and values — labels were previously
+            // dimmed to a cool gray; Keith wants matching contrast across the
+            // panel so "Hostname:" reads at the same brightness as the value.
+            var textColor = Color.White;
 
-            float y = pad;
+            int y = pad;
             foreach (var ln in lines)
             {
-                float x = pad;
+                int x = pad;
                 if (ln.Label is null)
                 {
-                    g.DrawString(ln.Value, font, valueBrush, x, y, drawFmt);
+                    TextRenderer.DrawText(g, ln.Value, font, new Point(x, y), textColor, TextFlags);
                 }
                 else
                 {
                     var label = $"{ln.Label}: ";
-                    // Measure with GenericDefault so the trailing space is
-                    // included in labelW — that's the gap between label and
-                    // value. GenericTypographic on the measurement was the
-                    // 0.4.14 "Hostname:COL-L-003" bug.
-                    var labelW = g.MeasureString(label, font, int.MaxValue, measureFmt).Width;
-                    g.DrawString(label, font, labelBrush, x, y, drawFmt);
-                    g.DrawString(ln.Value, font, valueBrush, x + labelW, y, drawFmt);
+                    var labelSz = TextRenderer.MeasureText(g, label, font, new Size(int.MaxValue, int.MaxValue), TextFlags);
+                    TextRenderer.DrawText(g, label,    font, new Point(x,                y), textColor, TextFlags);
+                    TextRenderer.DrawText(g, ln.Value, font, new Point(x + labelSz.Width, y), textColor, TextFlags);
                 }
                 y += lineH + lineGap;
             }
         }
 
+        // Build the alpha channel post-render so the opacity slider dims ONLY
+        // the dark panel — text glyphs stay fully opaque. Walk every pixel:
+        // outside the rounded-rect → alpha 0; otherwise alpha is interpolated
+        // by luminance between panelAlpha (dark panel base) and 255 (white text).
+        // AA edges interpolate smoothly between the two.
+        ApplyAlphaMask(bmp, radius, opacityPercent);
+
         size = new Size(boxW, boxH);
         return bmp;
+    }
+
+    /// <summary>
+    /// Builds the bitmap's alpha channel in a single pass so the layered
+    /// window composites correctly:
+    ///
+    ///   • Outside the rounded-rect corners → alpha = 0 (click-through, shape).
+    ///   • Inside the panel → alpha is interpolated by luminance between
+    ///     <paramref name="opacityPercent"/>·255/100 (panel base) and 255
+    ///     (white text). Dark panel pixels get the user-controlled translucency;
+    ///     bright text pixels stay fully opaque; AA-edge pixels interpolate
+    ///     smoothly across the gradient so the glyph silhouettes don't band.
+    ///
+    /// This lets the admin opacity slider dim ONLY the card without bleeding
+    /// the dim into the text. GDI ClearType requires an opaque background, so
+    /// we render the panel + text fully opaque and reconstruct the alpha
+    /// channel here from luminance.
+    /// </summary>
+    private static unsafe void ApplyAlphaMask(Bitmap bmp, int radius, int opacityPercent)
+    {
+        int w = bmp.Width, h = bmp.Height;
+        byte panelAlpha = (byte)Math.Clamp((int)Math.Round(opacityPercent * 2.55), 0, 255);
+
+        // Panel base color is (24, 24, 28) — Rec.601 luminance ≈ 25. Anything
+        // above this is text or AA edge bleeding into the panel.
+        const int panelLum = 25;
+        const int textLum  = 255;
+        const int range    = textLum - panelLum;
+
+        var rect = new Rectangle(0, 0, w, h);
+        var data = bmp.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+        try
+        {
+            int r2 = radius * radius;
+            byte* scan0 = (byte*)data.Scan0;
+            int stride = data.Stride;
+            for (int y = 0; y < h; y++)
+            {
+                byte* row = scan0 + y * stride;
+                for (int x = 0; x < w; x++)
+                {
+                    byte* px = row + x * 4;
+
+                    // Corner check — only the four corner squares can fall
+                    // outside the rounded rect.
+                    if (radius > 0)
+                    {
+                        int cx = -1, cy = -1;
+                        if      (x <  radius     && y <  radius)     { cx = radius - 1; cy = radius - 1; }
+                        else if (x >= w - radius && y <  radius)     { cx = w - radius; cy = radius - 1; }
+                        else if (x <  radius     && y >= h - radius) { cx = radius - 1; cy = h - radius; }
+                        else if (x >= w - radius && y >= h - radius) { cx = w - radius; cy = h - radius; }
+
+                        if (cx >= 0)
+                        {
+                            int dx = x - cx, dy = y - cy;
+                            if (dx * dx + dy * dy > r2)
+                            {
+                                px[3] = 0;
+                                continue;
+                            }
+                        }
+                    }
+
+                    // Luminance-driven alpha (Rec.601 weights).
+                    int lum = (px[2] * 299 + px[1] * 587 + px[0] * 114) / 1000;
+                    int t   = lum - panelLum;
+                    if (t <= 0)        px[3] = panelAlpha;
+                    else if (t >= range) px[3] = 255;
+                    else                 px[3] = (byte)(panelAlpha + (255 - panelAlpha) * t / range);
+                }
+            }
+        }
+        finally { bmp.UnlockBits(data); }
     }
 
     private static GraphicsPath RoundedRect(RectangleF r, float radius)

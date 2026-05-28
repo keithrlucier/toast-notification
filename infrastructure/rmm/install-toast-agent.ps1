@@ -83,7 +83,11 @@ param(
 
     [string] $EnrollmentKey = '',
 
-    [string] $MsiUrl = 'https://toastnotification.com/downloads/agent/ToastNotification.Agent-latest.msi',
+    # Single canonical install URL — same file the dashboard's DeployCommand /
+    # InstallAgent page hands to admins. Every signed-MSI ship overwrites this
+    # one file on prod, so the RMM channel and the dashboard channel can never
+    # drift to different versions.
+    [string] $MsiUrl = 'https://toastnotification.com/downloads/ToastNotification.msi',
 
     [string] $WorkDir = (Join-Path $env:ProgramData 'Toast2IT\Install'),
 

@@ -84,7 +84,8 @@ public record OverlayConfigResponse(
     bool Enabled,
     string[] Fields,
     string Position,
-    string? CustomText);
+    string? CustomText,
+    int OpacityPercent);
 
 public class UpdateOverlayConfigRequest
 {
@@ -92,6 +93,10 @@ public class UpdateOverlayConfigRequest
     public string[]? Fields { get; set; }
     public string? Position { get; set; }
     public string? CustomText { get; set; }
+    /// <summary>Panel translucency 10..100, snapped to 5% steps. Server
+    /// normalizes via TenantAppearance.NormalizeOpacity so a junk inbound
+    /// value can't get persisted.</summary>
+    public int? OpacityPercent { get; set; }
 }
 
 /// <summary>

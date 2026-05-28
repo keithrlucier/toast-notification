@@ -61,10 +61,24 @@ public static class TenantAppearance
     }
 
     public static OverlayConfigResponse BuildOverlay(Tenant t) => new(
-        Enabled:    t.DesktopOverlayEnabled,
-        Fields:     SplitFields(t.DesktopOverlayFields),
-        Position:   NormalizePosition(t.DesktopOverlayPosition),
-        CustomText: t.DesktopOverlayCustomText);
+        Enabled:        t.DesktopOverlayEnabled,
+        Fields:         SplitFields(t.DesktopOverlayFields),
+        Position:       NormalizePosition(t.DesktopOverlayPosition),
+        CustomText:     t.DesktopOverlayCustomText,
+        OpacityPercent: NormalizeOpacity(t.DesktopOverlayOpacityPercent));
+
+    /// <summary>
+    /// Clamps and snaps the stored opacity to a value the agent renders cleanly:
+    /// 10..100 inclusive, snapped to the nearest 5% step. Acts on inbound
+    /// requests AND outbound responses so a hand-edited DB row can't push a
+    /// junk value out to the agent.
+    /// </summary>
+    public static int NormalizeOpacity(int raw)
+    {
+        var clamped = Math.Clamp(raw, 10, 100);
+        var snapped = (int)Math.Round(clamped / 5.0) * 5;
+        return Math.Clamp(snapped, 10, 100);
+    }
 
     public static LockScreenConfigResponse BuildLockScreen(Tenant t) => new(
         Enabled:  t.LockScreenEnabled,

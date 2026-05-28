@@ -106,6 +106,16 @@ function disabledBlock(enabled: boolean): React.CSSProperties {
   return { opacity: enabled ? 1 : 0.5, pointerEvents: enabled ? 'auto' : 'none' };
 }
 
+/**
+ * Clamps to [10,100] and snaps to the nearest 5% step. Mirrors the server-side
+ * normalizer in TenantAppearance.NormalizeOpacity so what the UI displays is
+ * exactly what the server will persist — no surprise rounding on Save.
+ */
+function clampOpacity(raw: number): number {
+  const clamped = Math.min(100, Math.max(10, Number.isFinite(raw) ? raw : 85));
+  return Math.min(100, Math.max(10, Math.round(clamped / 5) * 5));
+}
+
 function Spinner() {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
@@ -122,17 +132,24 @@ function DesktopOverlayCard() {
   const [fields, setFields]         = useState<string[]>([]);
   const [position, setPosition]     = useState('bottom-right');
   const [customText, setCustomText] = useState('');
+  // 0.4.15 — admin-controlled panel translucency, 10..100 in 5% steps.
+  // Initial 85 matches the agent's pre-control hardcoded default; the GET
+  // overwrites this once the live tenant value loads.
+  const [opacityPercent, setOpacityPercent] = useState(85);
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    api.get<{ enabled: boolean; fields: string[] | null; position: string | null; customText: string | null }>('/api/tenant/overlay')
+    api.get<{ enabled: boolean; fields: string[] | null; position: string | null; customText: string | null; opacityPercent: number | null }>('/api/tenant/overlay')
       .then(c => {
         setEnabled(c.enabled);
         setFields(c.fields ?? []);
         setPosition(c.position ?? 'bottom-right');
         setCustomText(c.customText ?? '');
+        // Tolerate a pre-0.4.15 API that omits the field; clamp anything else
+        // to the supported range so a hand-edited DB row can't break the UI.
+        setOpacityPercent(clampOpacity(c.opacityPercent ?? 85));
       })
       .catch(() => { /* defaults stand; any real error resurfaces on Save */ })
       .finally(() => setLoaded(true));
@@ -150,6 +167,7 @@ function DesktopOverlayCard() {
         fields,
         position,
         customText: customTextChecked ? (customText.trim() || null) : null,
+        opacityPercent,
       });
       setSuccess('Saved.');
       setTimeout(() => setSuccess(''), 3000);
@@ -227,6 +245,32 @@ function DesktopOverlayCard() {
                 ))}
               </div>
               <QuadrantPreview position={position} />
+            </div>
+          </div>
+
+          <div className="field" style={{ marginTop: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+              <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>
+                Panel translucency
+              </label>
+              <span style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)' }}>
+                {opacityPercent}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min={10}
+              max={100}
+              step={5}
+              value={opacityPercent}
+              disabled={!enabled}
+              onChange={e => setOpacityPercent(clampOpacity(Number(e.target.value)))}
+              style={{ width: '100%', accentColor: 'var(--accent)' }}
+              aria-label="Panel translucency percent"
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
+              <span>Faint (10%)</span>
+              <span>Solid (100%)</span>
             </div>
           </div>
         </div>

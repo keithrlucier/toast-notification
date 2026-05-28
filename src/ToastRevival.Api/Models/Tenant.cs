@@ -67,6 +67,10 @@ public class Tenant
     public string? DesktopOverlayFields { get; set; }
     public string? DesktopOverlayPosition { get; set; }
     public string? DesktopOverlayCustomText { get; set; }
+    // 0.4.15 — admin-controlled panel translucency, 10..100 in 5% steps.
+    // Default 85 matches the agent's pre-control hardcoded value, so a tenant
+    // that never touches the slider keeps the visual they had at upgrade.
+    public int DesktopOverlayOpacityPercent { get; set; } = 85;
     public bool LockScreenEnabled { get; set; }
     public string? LockScreenImageUrl { get; set; }
 

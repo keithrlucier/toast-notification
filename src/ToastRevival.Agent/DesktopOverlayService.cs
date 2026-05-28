@@ -74,8 +74,20 @@ internal sealed class DesktopOverlayService : IDisposable
         }
 
         var position = TenantAppearancePosition.Normalize(config!.Position);
-        DiagLog.Write($"DesktopOverlay.Apply: lines={lines.Count}; position={position} — posting RenderOrHide.");
-        _postToUi(() => RenderOrHide(lines, position));
+        var opacity  = NormalizeOpacity(config.OpacityPercent);
+        DiagLog.Write($"DesktopOverlay.Apply: lines={lines.Count}; position={position}; opacity={opacity}% — posting RenderOrHide.");
+        _postToUi(() => RenderOrHide(lines, position, opacity));
+    }
+
+    /// <summary>
+    /// Clamps the configured opacity to the supported range. The server validates
+    /// to [10, 100] in 5% increments; this is a defensive normalizer for older
+    /// configs or hand-edited DB rows.
+    /// </summary>
+    private static int NormalizeOpacity(int? raw)
+    {
+        if (raw is null) return 85; // sensible default if a pre-opacity server omits the field
+        return Math.Clamp(raw.Value, 10, 100);
     }
 
     // ── Field resolution (off the UI thread) ────────────────────────────────
@@ -138,7 +150,7 @@ internal sealed class DesktopOverlayService : IDisposable
 
     // ── Rendering (UI/STA thread only) ──────────────────────────────────────
 
-    private void RenderOrHide(List<OverlayLine> lines, string position)
+    private void RenderOrHide(List<OverlayLine> lines, string position, int opacityPercent)
     {
         if (_disposed) return;
         try
@@ -148,7 +160,7 @@ internal sealed class DesktopOverlayService : IDisposable
             if (!_form.Visible) _form.Show();
 
             var dpiScale = _form.DeviceDpi / 96f;
-            using var bmp = RenderBitmap(lines, dpiScale, out var size);
+            using var bmp = RenderBitmap(lines, dpiScale, opacityPercent, out var size);
 
             var wa     = Screen.PrimaryScreen!.WorkingArea;
             var inset  = (int)Math.Round(24 * dpiScale);
@@ -200,25 +212,53 @@ internal sealed class DesktopOverlayService : IDisposable
     /// AC_SRC_ALPHA wants. This is the same renderer that visibly worked in
     /// 0.4.11 on Keith's box (verified screenshots).
     /// </summary>
-    private static Bitmap RenderBitmap(List<OverlayLine> lines, float scale, out Size size)
+    /// <summary>
+    /// Renders the overlay to a 32bpp ARGB bitmap. Three bugs fixed in 0.4.15
+    /// vs 0.4.14:
+    ///
+    ///   (a) Panel invisible: 0.4.14 drew into Format32bppPArgb and relied on
+    ///       GDI+ to premultiply the panel color, which on Win11 26200 produced
+    ///       a zero-alpha panel — the dark box never appeared on screen. Fix:
+    ///       use plain Format32bppArgb so the alpha bytes go straight into the
+    ///       DIB unchanged, then UpdateLayeredWindow does the premultiplication
+    ///       at composition time (its documented AC_SRC_ALPHA behavior).
+    ///
+    ///   (b) "Hostname:COL-L-003" glued: MeasureString with GenericTypographic
+    ///       strips trailing whitespace from the measured width. The label
+    ///       "Hostname: " (with trailing space) measured as if it were just
+    ///       "Hostname:", so the value got drawn flush against the colon. Fix:
+    ///       use GenericDefault for the LABEL measurement so the trailing
+    ///       space is included in labelW. Keep GenericTypographic for the
+    ///       overall content-width measurement (where we WANT tighter bounds).
+    ///
+    ///   (c) Text reads dim: 0.4.14's drop-shadow draw bled into the AA edges
+    ///       of the value glyphs, darkening them. Removed the shadow entirely;
+    ///       the now-correctly-rendered dark panel provides all the contrast
+    ///       the text needs. Also switched to AntiAliasGridFit for crisper
+    ///       glyph edges on the dark panel.
+    ///
+    /// Panel opacity is now data-driven (admin-controlled, 10–100%). Default
+    /// when the field is absent: 85%.
+    /// </summary>
+    private static Bitmap RenderBitmap(List<OverlayLine> lines, float scale, int opacityPercent, out Size size)
     {
-        float fontPx   = 14f * scale;
-        float pad      = 12f * scale;
-        float lineGap  = 4f  * scale;
-        float radius   = 6f  * scale;
-        float shadow   = Math.Max(1f, scale);
+        float fontPx  = 14f * scale;
+        float pad     = 12f * scale;
+        float lineGap = 4f  * scale;
+        float radius  = 6f  * scale;
 
         using var font = new Font("Segoe UI", fontPx, FontStyle.Regular, GraphicsUnit.Pixel);
-        var fmt = StringFormat.GenericTypographic;
+        var measureFmt = StringFormat.GenericDefault;       // preserves trailing space in label measurement
+        var drawFmt    = StringFormat.GenericTypographic;   // tighter glyph layout for the actual paint
 
         float contentW = 0, lineH = 0;
         using (var scratch = Graphics.FromImage(new Bitmap(1, 1)))
         {
-            scratch.TextRenderingHint = TextRenderingHint.AntiAlias;
+            scratch.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             foreach (var ln in lines)
             {
                 var text = ln.Label is null ? ln.Value : $"{ln.Label}: {ln.Value}";
-                var sz = scratch.MeasureString(text, font, int.MaxValue, fmt);
+                var sz = scratch.MeasureString(text, font, int.MaxValue, measureFmt);
                 contentW = Math.Max(contentW, sz.Width);
                 lineH = Math.Max(lineH, sz.Height);
             }
@@ -226,28 +266,27 @@ internal sealed class DesktopOverlayService : IDisposable
 
         int boxW = (int)Math.Ceiling(contentW + pad * 2);
         int boxH = (int)Math.Ceiling(lineH * lines.Count + lineGap * (lines.Count - 1) + pad * 2);
-        int bmpW = boxW + (int)Math.Ceiling(shadow) + 1;
-        int bmpH = boxH + (int)Math.Ceiling(shadow) + 1;
+        int bmpW = boxW;
+        int bmpH = boxH;
 
-        var bmp = new Bitmap(bmpW, bmpH, PixelFormat.Format32bppPArgb);
+        // Format32bppArgb — plain (non-premultiplied) ARGB. UpdateLayeredWindow
+        // with AlphaFormat = AC_SRC_ALPHA accepts both formats; using the plain
+        // format avoids the GDI+ → premultiplication path that was eating the
+        // panel alpha on Win11 26200 in 0.4.14.
+        var bmp = new Bitmap(bmpW, bmpH, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp))
         {
             g.SmoothingMode     = SmoothingMode.AntiAlias;
-            g.TextRenderingHint = TextRenderingHint.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             g.Clear(Color.Transparent);
 
-            // Bumped from 0.6 → 0.85 opacity vs 0.4.9 so the panel reads
-            // cleanly against light/medium wallpapers, not just dark ones.
-            // The text-on-wallpaper problem from screenshot 1 of the 0.4.11
-            // verification was the original 0.6 alpha being too light to
-            // anchor white text against a near-black wallpaper.
-            using (var boxBrush = new SolidBrush(Color.FromArgb(217, 0, 0, 0))) // rgba(0,0,0,0.85)
+            int panelAlpha = (int)Math.Round(opacityPercent * 2.55);  // 0..255
+            using (var boxBrush = new SolidBrush(Color.FromArgb(Math.Clamp(panelAlpha, 0, 255), 0, 0, 0)))
             using (var boxPath = RoundedRect(new RectangleF(0, 0, boxW, boxH), radius))
                 g.FillPath(boxBrush, boxPath);
 
-            using var shadowBrush = new SolidBrush(Color.FromArgb(204, 0, 0, 0));
-            using var labelBrush  = new SolidBrush(Color.FromArgb(178, 255, 255, 255));
-            using var valueBrush  = new SolidBrush(Color.White);
+            using var labelBrush = new SolidBrush(Color.FromArgb(204, 255, 255, 255));  // ~80% white
+            using var valueBrush = new SolidBrush(Color.White);                          // 100% white
 
             float y = pad;
             foreach (var ln in lines)
@@ -255,16 +294,18 @@ internal sealed class DesktopOverlayService : IDisposable
                 float x = pad;
                 if (ln.Label is null)
                 {
-                    g.DrawString(ln.Value, font, shadowBrush, x + shadow, y + shadow, fmt);
-                    g.DrawString(ln.Value, font, valueBrush, x, y, fmt);
+                    g.DrawString(ln.Value, font, valueBrush, x, y, drawFmt);
                 }
                 else
                 {
                     var label = $"{ln.Label}: ";
-                    var labelW = g.MeasureString(label, font, int.MaxValue, fmt).Width;
-                    g.DrawString(label + ln.Value, font, shadowBrush, x + shadow, y + shadow, fmt);
-                    g.DrawString(label, font, labelBrush, x, y, fmt);
-                    g.DrawString(ln.Value, font, valueBrush, x + labelW, y, fmt);
+                    // Measure with GenericDefault so the trailing space is
+                    // included in labelW — that's the gap between label and
+                    // value. GenericTypographic on the measurement was the
+                    // 0.4.14 "Hostname:COL-L-003" bug.
+                    var labelW = g.MeasureString(label, font, int.MaxValue, measureFmt).Width;
+                    g.DrawString(label, font, labelBrush, x, y, drawFmt);
+                    g.DrawString(ln.Value, font, valueBrush, x + labelW, y, drawFmt);
                 }
                 y += lineH + lineGap;
             }

@@ -265,10 +265,15 @@ public class TenantController : ControllerBase
         var t = await _db.Tenants.FindAsync(tenantId);
         if (t is null) return NotFound();
 
-        t.DesktopOverlayEnabled    = req.Enabled;
-        t.DesktopOverlayFields     = TenantAppearance.JoinFields(req.Fields);
-        t.DesktopOverlayPosition   = TenantAppearance.NormalizePosition(req.Position);
-        t.DesktopOverlayCustomText = customText;
+        t.DesktopOverlayEnabled        = req.Enabled;
+        t.DesktopOverlayFields         = TenantAppearance.JoinFields(req.Fields);
+        t.DesktopOverlayPosition       = TenantAppearance.NormalizePosition(req.Position);
+        t.DesktopOverlayCustomText     = customText;
+        // OpacityPercent normalizes/snaps to 5% steps in [10,100]; an absent
+        // field on inbound request keeps the existing stored value (don't
+        // clobber to default 85 on an upsert that didn't touch this control).
+        if (req.OpacityPercent is int op)
+            t.DesktopOverlayOpacityPercent = TenantAppearance.NormalizeOpacity(op);
         await _db.SaveChangesAsync();
         return NoContent();
     }

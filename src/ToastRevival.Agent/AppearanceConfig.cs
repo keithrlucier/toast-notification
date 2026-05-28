@@ -15,12 +15,15 @@ internal sealed record AppearanceConfig(
 /// Desktop info-overlay config. <see cref="Fields"/> holds the enabled field keys
 /// (canonical: hostname | user | os | ip | tenant | customtext). <see cref="Position"/>
 /// is one of bottom-right | bottom-left | top-right | top-left.
+/// <see cref="OpacityPercent"/> is the panel translucency 10–100 (in 5% steps).
+/// Nullable so a pre-0.4.15 server that omits the field defaults agent-side to 85.
 /// </summary>
 internal sealed record OverlayConfig(
     bool Enabled,
     string[]? Fields,
     string? Position,
-    string? CustomText);
+    string? CustomText,
+    int? OpacityPercent);
 
 /// <summary>Lock screen branding config. ImageUrl is an absolute http(s) URL.</summary>
 internal sealed record LockScreenConfig(

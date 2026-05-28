@@ -7,6 +7,12 @@ namespace ToastRevival.Api.Data.Migrations
     /// <inheritdoc />
     public partial class M12DeviceAppearance : Migration
     {
+        // REVIEW-2026-05-28 Api-L1 REJECTED-by-design: text columns are unbounded but every
+        // write path is admin-gated and enforces controller-side caps (CustomText<=80,
+        // JoinFields whitelists ~70 bytes of canonical keys, LockScreenImageUrl is
+        // server-constrained to /assets/lockscreen/). Editing a shipped migration to add
+        // HasMaxLength is prohibited (Anthony's standing rule); a schema cap will ride on
+        // the next net-new migration that touches these columns if one lands.
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {

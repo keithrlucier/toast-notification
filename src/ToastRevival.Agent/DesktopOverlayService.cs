@@ -252,7 +252,8 @@ internal sealed class DesktopOverlayService : IDisposable
         var drawFmt    = StringFormat.GenericTypographic;   // tighter glyph layout for the actual paint
 
         float contentW = 0, lineH = 0;
-        using (var scratch = Graphics.FromImage(new Bitmap(1, 1)))
+        using (var measureBmp = new Bitmap(1, 1))
+        using (var scratch = Graphics.FromImage(measureBmp))
         {
             scratch.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             foreach (var ln in lines)

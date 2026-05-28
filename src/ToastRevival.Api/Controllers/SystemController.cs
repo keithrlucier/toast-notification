@@ -436,6 +436,122 @@ public class SystemController : ControllerBase
 
     // ─── Tenant lifecycle (Platform Admin) ─────────────────────────────────────
 
+    [HttpPost("tenants")]
+    public async Task<IActionResult> CreateTenant([FromBody] CreateTenantRequest request)
+    {
+        if (request is null) return BadRequest("Body required.");
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest("Tenant name is required.");
+        if (string.IsNullOrWhiteSpace(request.OwnerEmail))
+            return BadRequest("Owner email is required.");
+
+        var email = request.OwnerEmail.Trim().ToLowerInvariant();
+        if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == email))
+            return Conflict("An account with that email already exists.");
+
+        // Subdomain: explicit (must pass validation) or auto-allocated from name.
+        string subdomain;
+        if (!string.IsNullOrWhiteSpace(request.Subdomain))
+        {
+            subdomain = request.Subdomain.Trim().ToLowerInvariant();
+            if (!System.Text.RegularExpressions.Regex.IsMatch(subdomain, @"^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$"))
+                return BadRequest("Subdomain must be 1-32 chars, lowercase alphanumeric or hyphen, no leading/trailing hyphen.");
+            if (await _db.Tenants.IgnoreQueryFilters().AnyAsync(t => t.Subdomain == subdomain))
+                return Conflict("Subdomain is already in use.");
+        }
+        else
+        {
+            subdomain = await AllocateSubdomainAsync(request.Name);
+        }
+
+        var now = DateTime.UtcNow;
+        var isComp = request.IsComplimentary;
+        var trialDays = isComp ? 0 : Math.Clamp(request.TrialDays ?? 0, 0, 3650);
+
+        using var tx = await _db.Database.BeginTransactionAsync();
+
+        var tenant = new Tenant
+        {
+            Name = request.Name.Trim(),
+            Subdomain = subdomain,
+            SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+            EnrollmentKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)),
+            BillingStatus = isComp ? BillingStatus.Active
+                          : trialDays > 0 ? BillingStatus.Trialing
+                          : BillingStatus.Active,
+            LicenseStart = now,
+            LicenseEnd = isComp ? null
+                       : trialDays > 0 ? now.AddDays(trialDays)
+                       : null,
+            IsComplimentary = isComp,
+            ComplimentaryReason = isComp ? Truncate(request.Note?.Trim(), 500) : null,
+        };
+        _db.Tenants.Add(tenant);
+        await _db.SaveChangesAsync();
+
+        // If admin supplied an initial password, account is immediately usable.
+        // Otherwise create the user in PendingPasswordSet and email the magic-link
+        // set-password flow — same path the trial-approval already uses.
+        var initialPassword = request.InitialPassword?.Trim();
+        var setPasswordViaEmail = string.IsNullOrEmpty(initialPassword);
+
+        var user = new AppUser
+        {
+            TenantId = tenant.Id,
+            FullName = string.IsNullOrWhiteSpace(request.OwnerFullName) ? null : request.OwnerFullName.Trim(),
+            Email = email,
+            UserName = email,
+            PhoneNumber = string.IsNullOrWhiteSpace(request.OwnerPhone) ? null : request.OwnerPhone.Trim(),
+            Role = UserRole.SuperAdmin,
+            SecurityStamp = Guid.NewGuid().ToString(),
+            RegistrationStep = setPasswordViaEmail ? RegistrationStep.PendingPasswordSet : RegistrationStep.Complete,
+        };
+
+        var createResult = setPasswordViaEmail
+            ? await _userManager.CreateAsync(user)
+            : await _userManager.CreateAsync(user, initialPassword!);
+        if (!createResult.Succeeded)
+        {
+            await tx.RollbackAsync();
+            return BadRequest(new { errors = createResult.Errors.Select(e => e.Description).ToArray() });
+        }
+
+        foreach (var template in TemplatesController.BuildDefaultTemplates(tenant.Id))
+            _db.NotificationTemplates.Add(template);
+
+        await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        var emailSent = false;
+        if (setPasswordViaEmail)
+            emailSent = await SendTrialApprovedEmailAsync(user, tenant);
+
+        await _audit.LogAsync(
+            GetTenantId(), GetUserId(),
+            "platform.tenant.created", "Tenant", tenant.Id.ToString(),
+            new
+            {
+                tenant.Name,
+                tenant.Subdomain,
+                ownerEmail = email,
+                tenant.IsComplimentary,
+                trialDays,
+                setPasswordViaEmail,
+                emailSent,
+                request.Note,
+            },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new
+        {
+            tenantId = tenant.Id,
+            userId = user.Id,
+            tenant.Subdomain,
+            setPasswordViaEmail,
+            emailSent,
+        });
+    }
+
     [HttpPost("tenants/{id:guid}/suspend")]
     public async Task<IActionResult> SuspendTenant(Guid id, [FromBody] SuspendTenantRequest? request)
     {
@@ -877,3 +993,14 @@ public sealed record UpdateMessagingConfigRequest(
 public sealed record SuspendTenantRequest(string? Reason);
 public sealed record ExtendTenantRequest(int Days);
 public sealed record GrantComplimentaryRequest(string? Reason);
+
+public sealed record CreateTenantRequest(
+    string Name,
+    string? Subdomain,
+    string OwnerEmail,
+    string? OwnerFullName,
+    string? OwnerPhone,
+    string? InitialPassword,
+    int? TrialDays,
+    bool IsComplimentary,
+    string? Note);

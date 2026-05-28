@@ -157,38 +157,54 @@ internal sealed class TrayIconService : IDisposable
 
         _animTimer?.Change(Timeout.Infinite, Timeout.Infinite);
 
+        string text;
         switch (_currentState)
         {
             case AgentConnectionState.Connected:
                 _notifyIcon.Icon = _connectedIcon;
-                _notifyIcon.Text = Truncate($"Connected to {ExtractHost(_stateDetail ?? _serverUrl)}");
+                text = Truncate($"Connected to {ExtractHost(_stateDetail ?? _serverUrl)}");
                 SetReconnectEnabled(true);
                 break;
 
             case AgentConnectionState.Reconnecting:
                 _notifyIcon.Icon = _reconnectingIcon;
-                _notifyIcon.Text = Truncate($"Reconnecting since {_stateDetail ?? DateTime.Now.ToString("HH:mm:ss")}");
+                text = Truncate($"Reconnecting since {_stateDetail ?? DateTime.Now.ToString("HH:mm:ss")}");
                 SetReconnectEnabled(false);
                 StartAnimation();
                 break;
 
             case AgentConnectionState.Disconnected:
                 _notifyIcon.Icon = _disconnectedIcon;
-                _notifyIcon.Text = Truncate($"Lost connection at {_stateDetail ?? DateTime.Now.ToString("HH:mm:ss")}");
+                text = Truncate($"Lost connection at {_stateDetail ?? DateTime.Now.ToString("HH:mm:ss")}");
                 SetReconnectEnabled(true);
                 break;
 
             case AgentConnectionState.Error:
                 _notifyIcon.Icon = _errorIcon;
-                _notifyIcon.Text = Truncate(_stateDetail ?? "Not configured — run installer");
+                text = Truncate(_stateDetail ?? "Not configured — run installer");
                 SetReconnectEnabled(false);
                 break;
 
             default: // Connecting
                 _notifyIcon.Icon = _connectingIcon;
-                _notifyIcon.Text = "Toast Notification — Starting...";
+                text = "Toast Notification — Starting...";
                 SetReconnectEnabled(false);
                 break;
+        }
+
+        // Force the tray tooltip to actually refresh. NotifyIcon.Text writes the
+        // new value into the NOTIFYICONDATA struct, but Windows 11 has been
+        // observed to keep showing the previous tooltip until the icon is
+        // re-modified (FIX-TRAY-001 — Keith on 0.4.9: tooltip stuck at "Starting…"
+        // after hub had logged Hub started: state=Connected). Toggling Visible
+        // off/on issues a NIM_DELETE + NIM_ADD, which forces the shell to drop
+        // the cached tooltip. Cheap, no flicker visible to the user.
+        if (_notifyIcon.Text != text)
+        {
+            DiagLog.Write($"TrayIcon.ApplyState: state={_currentState}; tooltip='{text}'");
+            _notifyIcon.Text = text;
+            _notifyIcon.Visible = false;
+            _notifyIcon.Visible = true;
         }
     }
 

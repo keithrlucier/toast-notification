@@ -51,14 +51,24 @@ internal sealed class DesktopOverlayService : IDisposable
     {
         if (_disposed) return;
 
+        // M12 observability — log entry, the toggle state, and which branch we take.
+        // Silent paths in this method were the M12 release blocker on Keith's box:
+        // an enabled-but-empty config or a thrown-then-swallowed exception left zero
+        // trace in agent.log. Always log enough to localize the failure to one of
+        // (a) wire config, (b) field resolution, (c) the STA post, (d) GDI+ paint.
+        var fieldsCount = config?.Fields?.Length ?? 0;
+        DiagLog.Write($"DesktopOverlay.Apply: enabled={config?.Enabled.ToString() ?? "(null-config)"}; fieldsCount={fieldsCount}; position={config?.Position ?? "(null)"}; tenantName={(tenantName ?? "(null)")}; customText={(string.IsNullOrEmpty(config?.CustomText) ? "(none)" : "(set)")}");
+
         var lines = config is { Enabled: true } ? ResolveLines(config, tenantName) : [];
         if (lines.Count == 0)
         {
+            DiagLog.Write("DesktopOverlay.Apply: lines=0 — calling Hide.");
             _postToUi(Hide);
             return;
         }
 
         var position = TenantAppearancePosition.Normalize(config!.Position);
+        DiagLog.Write($"DesktopOverlay.Apply: lines={lines.Count}; position={position} — posting RenderOrHide.");
         _postToUi(() => RenderOrHide(lines, position));
     }
 
@@ -132,6 +142,7 @@ internal sealed class DesktopOverlayService : IDisposable
         if (_disposed) return;
         try
         {
+            var firstRender = _form is null;
             _form ??= new OverlayForm();
             // Realize the handle so DeviceDpi and Show behave; never activates
             // (WS_EX_NOACTIVATE + ShowWithoutActivation).
@@ -153,6 +164,8 @@ internal sealed class DesktopOverlayService : IDisposable
             PushLayeredBitmap(_form.Handle, bmp, new Point(x, y));
             ReanchorZOrder();
             _reanchorTimer.Change(5000, 5000);
+
+            DiagLog.Write($"DesktopOverlay.RenderOrHide: painted {size.Width}x{size.Height} at ({x},{y}); dpi={dpiScale:F2}; firstRender={firstRender}; hwnd=0x{_form.Handle.ToInt64():X}");
         }
         catch (Exception ex)
         {
@@ -169,8 +182,16 @@ internal sealed class DesktopOverlayService : IDisposable
     private void ReanchorZOrder()
     {
         if (_form is not { IsDisposed: false } f || !f.Visible) return;
-        // Push to the very bottom of the Z-order (above wallpaper, below apps/icons).
-        Native.SetWindowPos(f.Handle, Native.HWND_BOTTOM, 0, 0, 0, 0,
+        // M12 v0.4.10 — HWND_BOTTOM was the original spec but it parks us
+        // BELOW the desktop's icon ListView, which on a populated desktop hides
+        // the overlay entirely (the FIX-OVERLAY-001 symptom Keith reported on
+        // 0.4.9). HWND_NOTOPMOST keeps the overlay at normal Z-order: visible
+        // above the wallpaper and above desktop icons, but ordinary app windows
+        // can still come on top of it. Click-through (WS_EX_TRANSPARENT) and
+        // NoActivate (WS_EX_NOACTIVATE) prevent it from stealing focus or
+        // interfering with anything in front of it. Pinning to the Progman /
+        // WorkerW desktop window so it stays "under all apps" is M12.B work.
+        Native.SetWindowPos(f.Handle, Native.HWND_NOTOPMOST, 0, 0, 0, 0,
             Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
     }
 
@@ -355,7 +376,8 @@ internal sealed class DesktopOverlayService : IDisposable
         public const int WS_EX_NOACTIVATE  = 0x08000000;
         public const int WS_EX_TOOLWINDOW  = 0x00000080;
 
-        public static readonly IntPtr HWND_BOTTOM = new(1);
+        public static readonly IntPtr HWND_BOTTOM    = new(1);
+        public static readonly IntPtr HWND_NOTOPMOST = new(-2);
         public const uint SWP_NOSIZE     = 0x0001;
         public const uint SWP_NOMOVE     = 0x0002;
         public const uint SWP_NOACTIVATE = 0x0010;

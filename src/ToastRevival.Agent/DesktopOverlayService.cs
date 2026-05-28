@@ -41,6 +41,12 @@ internal sealed class DesktopOverlayService : IDisposable
     private OverlayForm? _form;
     private List<OverlayLine>? _lastLines;
     private string _lastPosition = "bottom-right";
+    // Cached parent HWND from the last successful EnsureParentedToWorkerW. Used
+    // by ReanchorParent to detect explorer.exe restart (parent handle no longer
+    // a window). GetParent() can't be used as the liveness check because it
+    // returns 0 for desktop-owned popups even when SetParent succeeded — that
+    // was the false-positive re-anchor loop in 0.4.12.
+    private IntPtr _parentHwnd;
     private bool _disposed;
 
     public DesktopOverlayService(Action<Action> postToUi)
@@ -167,13 +173,32 @@ internal sealed class DesktopOverlayService : IDisposable
                 _             => (wa.Right - size.Width - inset, wa.Bottom - size.Height - inset),
             };
 
-            // Position + size BEFORE parenting so the child sits at the right
-            // screen coordinates from the first paint. WorkerW uses screen
-            // coordinates (it's full-virtual-screen), so X/Y here are absolute.
-            Native.SetWindowPos(_form.Handle, IntPtr.Zero, x, y, size.Width, size.Height,
-                Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
-
+            // Parent FIRST. WinForms borderless forms are WS_POPUP by default; on
+            // a popup, SetParent gives "owned popup" semantics — the window
+            // belongs to the parent for Z-order but doesn't paint inside the
+            // parent's client area. We need real child semantics: flip
+            // WS_POPUP → WS_CHILD AFTER SetParent, then SetWindowPos to commit
+            // the style change and position the window in parent-client
+            // coordinates. Wallpaper Engine + Lively Wallpaper both do this
+            // exact sequence — getting the order wrong leaves an invisible
+            // window owned by Progman, which is exactly what 0.4.12 shipped.
             EnsureParentedToWorkerW(_form.Handle);
+
+            // WorkerW / Progman client origin is at (0,0) of the virtual screen
+            // on every Windows 11 build we've seen, so the screen coords
+            // computed above become parent-client coords 1:1. If a future build
+            // changes that, the regression will be "overlay paints in the
+            // wrong corner" (visible) rather than "overlay invisible" (silent).
+            var style = Native.GetWindowLong(_form.Handle, Native.GWL_STYLE);
+            var newStyle = (style & ~Native.WS_POPUP) | Native.WS_CHILD;
+            if (newStyle != style)
+            {
+                Native.SetWindowLong(_form.Handle, Native.GWL_STYLE, newStyle);
+            }
+
+            Native.SetWindowPos(_form.Handle, IntPtr.Zero, x, y, size.Width, size.Height,
+                Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW
+                | Native.SWP_FRAMECHANGED); // FRAMECHANGED tells Windows to apply the new style
 
             if (!_form.Visible) _form.Show();
             _form.Invalidate();
@@ -195,43 +220,50 @@ internal sealed class DesktopOverlayService : IDisposable
     }
 
     /// <summary>
-    /// Verifies our window is still parented to a live WorkerW; re-parents if not.
-    /// Fires every 5s. Cheap: a single GetParent + IsWindow check unless re-parenting
-    /// is needed. Handles explorer.exe restart (which destroys the WorkerW we attached
-    /// to and frees our window into top-level orphan space).
+    /// Verifies our window is still parented to a live parent; re-parents if not.
+    /// Fires every 5s. We track the parent HWND we set in _parentHwnd because
+    /// GetParent() returns 0 for desktop-owned popups even when SetParent
+    /// succeeded — that misfire produced the 5s re-anchor spam loop in 0.4.12.
+    /// IsWindow on the cached handle is the real liveness check: it goes false
+    /// only when explorer.exe restarts and tears down WorkerW/Progman.
     /// </summary>
     private void ReanchorParent()
     {
         if (_form is not { IsDisposed: false } f || !f.Visible) return;
         try
         {
-            var currentParent = Native.GetParent(f.Handle);
-            if (currentParent == IntPtr.Zero || !Native.IsWindow(currentParent))
+            if (_parentHwnd != IntPtr.Zero && Native.IsWindow(_parentHwnd))
             {
-                DiagLog.Write($"DesktopOverlay.ReanchorParent: parent=0x{currentParent.ToInt64():X} (gone) — re-attaching.");
-                EnsureParentedToWorkerW(f.Handle);
+                // Parent still alive. Nothing to do.
+                return;
+            }
 
-                // After re-parenting, restore screen position. The child window's
-                // coordinates were preserved through the SetParent call only if
-                // explorer's WorkerW lives at virtual-screen origin (it does), but
-                // re-issue SetWindowPos for safety after a shell restart.
-                if (_lastLines is not null)
+            DiagLog.Write($"DesktopOverlay.ReanchorParent: parent=0x{_parentHwnd.ToInt64():X} (gone) — re-attaching.");
+            EnsureParentedToWorkerW(f.Handle);
+
+            // After re-parenting we must re-apply the WS_CHILD style and reposition.
+            // SetParent on a freshly-orphaned window often leaves it at (0,0) with
+            // the wrong style word — same setup logic as the initial render path.
+            if (_lastLines is not null)
+            {
+                var dpi  = f.DeviceDpi / 96f;
+                var size = f.MeasureContent(dpi);
+                var wa   = Screen.PrimaryScreen!.WorkingArea;
+                var inset = (int)Math.Round(24 * dpi);
+                var (x, y) = _lastPosition switch
                 {
-                    var dpi  = f.DeviceDpi / 96f;
-                    var size = f.MeasureContent(dpi);
-                    var wa   = Screen.PrimaryScreen!.WorkingArea;
-                    var inset = (int)Math.Round(24 * dpi);
-                    var (x, y) = _lastPosition switch
-                    {
-                        "bottom-left" => (wa.Left + inset, wa.Bottom - size.Height - inset),
-                        "top-right"   => (wa.Right - size.Width - inset, wa.Top + inset),
-                        "top-left"    => (wa.Left + inset, wa.Top + inset),
-                        _             => (wa.Right - size.Width - inset, wa.Bottom - size.Height - inset),
-                    };
-                    Native.SetWindowPos(f.Handle, IntPtr.Zero, x, y, size.Width, size.Height,
-                        Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
-                    f.Invalidate();
-                }
+                    "bottom-left" => (wa.Left + inset, wa.Bottom - size.Height - inset),
+                    "top-right"   => (wa.Right - size.Width - inset, wa.Top + inset),
+                    "top-left"    => (wa.Left + inset, wa.Top + inset),
+                    _             => (wa.Right - size.Width - inset, wa.Bottom - size.Height - inset),
+                };
+                var style = Native.GetWindowLong(f.Handle, Native.GWL_STYLE);
+                var newStyle = (style & ~Native.WS_POPUP) | Native.WS_CHILD;
+                if (newStyle != style) Native.SetWindowLong(f.Handle, Native.GWL_STYLE, newStyle);
+                Native.SetWindowPos(f.Handle, IntPtr.Zero, x, y, size.Width, size.Height,
+                    Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW
+                    | Native.SWP_FRAMECHANGED);
+                f.Invalidate();
             }
         }
         catch (Exception ex)
@@ -248,13 +280,16 @@ internal sealed class DesktopOverlayService : IDisposable
     /// path fails — shell replacement, locked-down system, message timeout — the
     /// window stays top-level and we paint click-through on top of the desktop.
     /// Logs each step so support can triage shell-variance issues from agent.log.
+    /// Updates <see cref="_parentHwnd"/> on success so ReanchorParent can check
+    /// liveness without relying on GetParent (which lies for desktop-owned popups).
     /// </summary>
-    private static void EnsureParentedToWorkerW(IntPtr hWnd)
+    private void EnsureParentedToWorkerW(IntPtr hWnd)
     {
         var workerW = FindWorkerW();
         if (workerW == IntPtr.Zero)
         {
             DiagLog.Write("DesktopOverlay.EnsureParentedToWorkerW: WorkerW not found — staying top-level (overlay will sit above wallpaper but may be covered by icons/apps).");
+            _parentHwnd = IntPtr.Zero;
             return;
         }
         var prev = Native.SetParent(hWnd, workerW);
@@ -264,6 +299,7 @@ internal sealed class DesktopOverlayService : IDisposable
             DiagLog.Write($"DesktopOverlay.EnsureParentedToWorkerW: SetParent failed errno={err}");
             return;
         }
+        _parentHwnd = workerW;
         DiagLog.Write($"DesktopOverlay.EnsureParentedToWorkerW: parented hwnd=0x{hWnd.ToInt64():X} to WorkerW=0x{workerW.ToInt64():X} (was 0x{prev.ToInt64():X})");
     }
 
@@ -498,11 +534,22 @@ internal sealed class DesktopOverlayService : IDisposable
         public const int WS_EX_NOACTIVATE  = 0x08000000;
         public const int WS_EX_TOOLWINDOW  = 0x00000080;
 
-        public const uint SWP_NOSIZE     = 0x0001;
-        public const uint SWP_NOMOVE     = 0x0002;
-        public const uint SWP_NOZORDER   = 0x0004;
-        public const uint SWP_NOACTIVATE = 0x0010;
-        public const uint SWP_SHOWWINDOW = 0x0040;
+        // WS_POPUP and WS_CHILD are mutually exclusive in the window style word.
+        // Borderless WinForms forms are WS_POPUP by default; SetParent on a
+        // popup yields owned-popup semantics, not real child semantics — the
+        // window doesn't paint inside the parent's client area. Flipping to
+        // WS_CHILD after SetParent is required to make the parent relationship
+        // actually take effect for compositing.
+        public const int  WS_POPUP = unchecked((int)0x80000000);
+        public const int  WS_CHILD = 0x40000000;
+        public const int  GWL_STYLE = -16;
+
+        public const uint SWP_NOSIZE       = 0x0001;
+        public const uint SWP_NOMOVE       = 0x0002;
+        public const uint SWP_NOZORDER     = 0x0004;
+        public const uint SWP_NOACTIVATE   = 0x0010;
+        public const uint SWP_FRAMECHANGED = 0x0020; // applies pending GWL_STYLE change
+        public const uint SWP_SHOWWINDOW   = 0x0040;
 
         public const uint SMTO_NORMAL = 0x0000;
 
@@ -513,6 +560,12 @@ internal sealed class DesktopOverlayService : IDisposable
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+
+        [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongW")]
+        public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongW")]
+        public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr GetParent(IntPtr hWnd);

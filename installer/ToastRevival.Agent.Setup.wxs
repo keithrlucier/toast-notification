@@ -42,8 +42,16 @@
       MajorUpgrade fire on >= comparison so the new ProductCode REPLACES the
       old one even when the user-visible version is unchanged.
     -->
+    <!--
+      Schedule="afterInstallFinalize": new product files land FIRST, old product
+      is removed AFTER InstallFinalize completes. This makes the upgrade resilient
+      to missing MSI cache entries (C:\Windows\Installer\ orphans from disk
+      cleanup), which cause 1619 when RemoveExistingProducts runs before the
+      install and can't find the cached MSI for the product it's trying to remove.
+    -->
     <MajorUpgrade
         AllowSameVersionUpgrades="yes"
+        Schedule="afterInstallFinalize"
         DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 
     <StandardDirectory Id="ProgramFiles64Folder">

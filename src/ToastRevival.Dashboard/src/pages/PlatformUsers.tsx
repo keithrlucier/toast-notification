@@ -31,7 +31,7 @@ export default function PlatformUsers() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [acting, setActing] = useState<string | null>(null);
+  const [acting, setActing] = useState<ReadonlySet<string>>(() => new Set());
 
   const load = useCallback(async (search: string) => {
     if (!isPlatformAdmin) return;
@@ -67,15 +67,16 @@ export default function PlatformUsers() {
   }
 
   const onResetPassword = async (u: UserRow) => {
-    if (!window.confirm(`Send password reset email to ${u.email}?`)) return;
-    setActing(`reset-${u.id}`);
+    const key = `reset-${u.id}`;
+    if (acting.has(key) || !window.confirm(`Send password reset email to ${u.email}?`)) return;
+    setActing(prev => new Set(prev).add(key));
     setError('');
     try {
       await api.post(`/api/system/users/${u.id}/reset-password`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to send reset email.');
     } finally {
-      setActing(null);
+      setActing(prev => { const n = new Set(prev); n.delete(key); return n; });
     }
   };
 
@@ -84,8 +85,9 @@ export default function PlatformUsers() {
       setError('You cannot delete your own account.');
       return;
     }
-    if (!window.confirm(`Delete user ${u.email} from tenant "${u.tenantName}"? This cannot be undone.`)) return;
-    setActing(`delete-${u.id}`);
+    const key = `delete-${u.id}`;
+    if (acting.has(key) || !window.confirm(`Delete user ${u.email} from tenant "${u.tenantName}"? This cannot be undone.`)) return;
+    setActing(prev => new Set(prev).add(key));
     setError('');
     try {
       await api.delete(`/api/system/users/${u.id}`);
@@ -93,7 +95,7 @@ export default function PlatformUsers() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete user.');
     } finally {
-      setActing(null);
+      setActing(prev => { const n = new Set(prev); n.delete(key); return n; });
     }
   };
 
@@ -167,19 +169,19 @@ export default function PlatformUsers() {
                         <button
                           className="btn btn-ghost"
                           style={{ fontSize: 12, padding: '4px 10px', height: 30 }}
-                          disabled={acting === `reset-${u.id}`}
+                          disabled={acting.has(`reset-${u.id}`)}
                           onClick={() => void onResetPassword(u)}
                         >
-                          {acting === `reset-${u.id}` ? '…' : 'Reset password'}
+                          {acting.has(`reset-${u.id}`) ? '…' : 'Reset password'}
                         </button>
                         <button
                           className="btn btn-ghost"
                           style={{ fontSize: 12, padding: '4px 10px', height: 30, color: 'var(--status-error)' }}
-                          disabled={acting === `delete-${u.id}` || isMe}
+                          disabled={acting.has(`delete-${u.id}`) || isMe}
                           onClick={() => void onDelete(u)}
                           title={isMe ? 'You cannot delete your own account.' : undefined}
                         >
-                          {acting === `delete-${u.id}` ? '…' : 'Delete'}
+                          {acting.has(`delete-${u.id}`) ? '…' : 'Delete'}
                         </button>
                       </div>
                     </td>

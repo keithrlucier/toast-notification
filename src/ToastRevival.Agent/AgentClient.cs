@@ -195,6 +195,12 @@ internal sealed class AgentHubClient : IAsyncDisposable
     private readonly HttpClient _http;
     // Bounded dedup cache. 50k entries × ~100 bytes ≈ 5MB ceiling.
     private readonly MemoryCache _renderedCache = new(new MemoryCacheOptions { SizeLimit = 50_000 });
+    // Bounded activation dedup cache. Both ToastNotification.Activated (legacy path) and
+    // AppNotificationManager.NotificationInvoked (WinAppSDK path) can fire for the SAME physical
+    // click on some OS builds (observed on Win11), so HandleActivationAsync dedups on the exact
+    // argument string within a short window to ReportInteraction / open the URL exactly once.
+    private readonly MemoryCache _activationCache = new(new MemoryCacheOptions { SizeLimit = 1_024 });
+    private static readonly TimeSpan ActivationDedupWindow = TimeSpan.FromSeconds(5);
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _pingLoop;
 
@@ -339,6 +345,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
         try { await _hub.DisposeAsync(); } catch { /* best-effort */ }
         _http.Dispose();
         _renderedCache.Dispose();
+        _activationCache.Dispose();
         _shutdown.Dispose();
     }
 
@@ -482,7 +489,10 @@ internal sealed class AgentHubClient : IAsyncDisposable
         try
         {
             var notification = ToastTemplateBuilder.BuildFromPayload(payload);
-            LegacyToastShim.Show(notification);
+            // Pass the in-process activation callback: legacy-WinRT toasts deliver
+            // clicks through ToastNotification.Activated, NOT through
+            // AppNotificationManager.NotificationInvoked (see LegacyToastShim).
+            LegacyToastShim.Show(notification, OnLegacyToastActivated);
             DiagLog.Write($"{source}: rendered notificationId={payload.NotificationId}; title='{payload.Title}'");
         }
         catch (Exception ex)
@@ -514,11 +524,41 @@ internal sealed class AgentHubClient : IAsyncDisposable
         }
     }
 
+    // Live click path for legacy-WinRT toasts (LegacyToastShim.ToastNotification.Activated).
+    // This is the one that actually fires for our toasts; OnNotificationInvoked below is
+    // kept for the WinAppSDK Show() path but does not fire for legacy-dispatched toasts.
+    private void OnLegacyToastActivated(string argument) => _ = HandleActivationAsync(argument);
+
     private async void OnNotificationInvoked(AppNotificationManager sender, AppNotificationActivatedEventArgs args)
+        => await HandleActivationAsync(args.Argument);
+
+    /// <summary>
+    /// Routes a toast click. <paramref name="argument"/> is a key=value;key=value string —
+    /// the same shape AppNotificationBuilder.AddArgument produced into the toast XML, surfaced
+    /// either by ToastNotification.Activated (legacy path) or AppNotificationActivatedEventArgs
+    /// (WinAppSDK path). Reports the interaction to the hub and opens the action URL if present.
+    /// </summary>
+    private async Task HandleActivationAsync(string argument)
     {
-        // args.Argument is a key=value;key=value string — same shape AppNotificationBuilder.AddArgument produced.
-        var parsed = ParseToastArguments(args.Argument);
-        DiagLog.Write($"NotificationInvoked: argument='{args.Argument}'");
+        // Collapse duplicate events for one physical click (legacy Activated + WinAppSDK
+        // NotificationInvoked can both fire). The argument string is identical across both,
+        // and hub toasts include notificationId so distinct toasts never collide.
+        if (!string.IsNullOrEmpty(argument))
+        {
+            if (_activationCache.TryGetValue(argument, out _))
+            {
+                DiagLog.Write($"Toast activation de-dup: argument='{argument}' already handled, skipping.");
+                return;
+            }
+            _activationCache.Set(argument, (byte)1, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = ActivationDedupWindow,
+                Size = 1,
+            });
+        }
+
+        var parsed = ParseToastArguments(argument);
+        DiagLog.Write($"Toast activated: argument='{argument}'");
 
         if (parsed.TryGetValue("source", out var source) && source == "hub"
             && parsed.TryGetValue("notificationId", out var idStr)

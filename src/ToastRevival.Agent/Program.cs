@@ -365,7 +365,14 @@ namespace ToastRevival.Agent
                 WarnIfAssetsMissing(template, assets);
 
                 var notification = ToastTemplateBuilder.Build(template, assets, options.OverrideTitle, options.OverrideBody);
-                LegacyToastShim.Show(notification);
+                // Legacy-WinRT toasts deliver clicks via ToastNotification.Activated, not the
+                // NotificationInvoked subscription above (which only fires for WinAppSDK Show()).
+                // Wire the in-process callback so `--template` is a server-free activation test.
+                LegacyToastShim.Show(notification, arg =>
+                {
+                    Console.WriteLine($"Notification activated: {arg}");
+                    DiagLog.Write($"DiagnosticMode activation: argument='{arg}'");
+                });
                 DiagLog.Write($"DiagnosticMode: Show() returned. Template={template.Key}");
 
                 Console.WriteLine($"Toast Notification sent. Template: {template.Key}");

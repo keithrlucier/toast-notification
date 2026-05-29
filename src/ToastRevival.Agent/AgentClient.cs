@@ -482,7 +482,10 @@ internal sealed class AgentHubClient : IAsyncDisposable
         try
         {
             var notification = ToastTemplateBuilder.BuildFromPayload(payload);
-            LegacyToastShim.Show(notification);
+            // Pass the in-process activation callback: legacy-WinRT toasts deliver
+            // clicks through ToastNotification.Activated, NOT through
+            // AppNotificationManager.NotificationInvoked (see LegacyToastShim).
+            LegacyToastShim.Show(notification, OnLegacyToastActivated);
             DiagLog.Write($"{source}: rendered notificationId={payload.NotificationId}; title='{payload.Title}'");
         }
         catch (Exception ex)
@@ -514,11 +517,24 @@ internal sealed class AgentHubClient : IAsyncDisposable
         }
     }
 
+    // Live click path for legacy-WinRT toasts (LegacyToastShim.ToastNotification.Activated).
+    // This is the one that actually fires for our toasts; OnNotificationInvoked below is
+    // kept for the WinAppSDK Show() path but does not fire for legacy-dispatched toasts.
+    private void OnLegacyToastActivated(string argument) => _ = HandleActivationAsync(argument);
+
     private async void OnNotificationInvoked(AppNotificationManager sender, AppNotificationActivatedEventArgs args)
+        => await HandleActivationAsync(args.Argument);
+
+    /// <summary>
+    /// Routes a toast click. <paramref name="argument"/> is a key=value;key=value string —
+    /// the same shape AppNotificationBuilder.AddArgument produced into the toast XML, surfaced
+    /// either by ToastNotification.Activated (legacy path) or AppNotificationActivatedEventArgs
+    /// (WinAppSDK path). Reports the interaction to the hub and opens the action URL if present.
+    /// </summary>
+    private async Task HandleActivationAsync(string argument)
     {
-        // args.Argument is a key=value;key=value string — same shape AppNotificationBuilder.AddArgument produced.
-        var parsed = ParseToastArguments(args.Argument);
-        DiagLog.Write($"NotificationInvoked: argument='{args.Argument}'");
+        var parsed = ParseToastArguments(argument);
+        DiagLog.Write($"Toast activated: argument='{argument}'");
 
         if (parsed.TryGetValue("source", out var source) && source == "hub"
             && parsed.TryGetValue("notificationId", out var idStr)

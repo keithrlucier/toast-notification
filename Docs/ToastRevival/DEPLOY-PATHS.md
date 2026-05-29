@@ -50,25 +50,36 @@ index files + the new nupkgs, `sudo chown toast:toast *`.
 
 ## 3. How the fleet actually updates (read this before promising anything)
 
-`UpdateService.cs` is explicit: **MSI-installed agents at `%ProgramFiles%` are NOT
-Velopack-managed and do NOT self-update.** `UpdateManager.IsInstalled` is false for them, so
-the 24h update loop no-ops with `"not a Velopack-managed install — update check skipped"`.
-This is intentional — MSP/RMM tools own the update lifecycle for MSI deployments.
+### M15+ — MSI self-update (0.4.28+)
 
-Therefore the two channels are:
+MSI-installed agents now poll `/api/agent/version` every 24h (`SelfUpdateService.RunMsiUpdateLoopAsync`).
+When the server reports a newer version:
+1. Agent downloads the signed MSI from the `msiDownloadUrl` in the response.
+2. Authenticode-verifies it (Toast2IT, LLC cert required).
+3. Writes a trigger file to `%ProgramData%\Toast2IT\Toast Notification\pending-action.txt`.
+4. Fires the `\Toast2IT\ToastNotificationUpdater` SYSTEM scheduled task (installed by the MSI).
+5. That task runs `msiexec /i /qn` as SYSTEM — silent over-the-top upgrade.
+6. Agent restarts via the existing logon task at next user session.
 
-- **MSI / RMM fleet (the hundreds of devices):** push the new signed MSI through the same RMM
-  (Ninja / ConnectWise / Datto / Intune) as a silent upgrade: `msiexec /i ToastNotification.msi /qn`.
-  The WiX is authored as a `MajorUpgrade AllowSameVersionUpgrades="yes"` with a stable
-  `UpgradeCode=A6F3D8F1-7B22-4E5A-9E3C-2A4F8B1C9D70` (perMachine), so installing 0.4.25 over an
-  older build is a clean in-place upgrade — one Programs-and-Features entry, old ProductCode
-  replaced, no side-by-side duplicate agent. CLIENTID/SERVERURL/ENROLLMENTKEY are preserved by
-  the existing `bootstrap.json` / registered `config.json`; they are only needed on first install.
-- **Velopack Setup.exe channel:** self-updates from the feed in §2 within 24h (delta download).
-  Not the fleet path.
+**After every signed-MSI ship:** update `Agent__LatestVersion` in `/opt/toast/.env` on TOASTWEB1
+to the new version string, then `sudo systemctl restart toast-api`. This is what gates the rollout.
+If this env var isn't updated, agents see "up to date" and never pull the new MSI.
 
-**MSP override knobs (HKLM\SOFTWARE\Toast2IT\Toast Notification):** `DisableAutoUpdate=1`
-suppresses Velopack checks; `UpdateFeedUrl` points the Velopack channel at an internal mirror.
+`DisableAutoUpdate=1` in `HKLM\SOFTWARE\Toast2IT\Toast Notification` suppresses the poll
+(for MSPs that want RMM to own updates). Remote uninstall from the admin panel is NOT affected
+by DisableAutoUpdate — it's a separate hub command path.
+
+### RMM push (always available, bypasses the self-update mechanism entirely)
+
+Push the new signed MSI through the RMM as: `msiexec /i ToastNotification.msi /qn`.
+WiX `MajorUpgrade AllowSameVersionUpgrades="yes"` + stable `UpgradeCode=A6F3D8F1-7B22-4E5A-9E3C-2A4F8B1C9D70`
+makes this a clean in-place upgrade. CLIENTID/SERVERURL/ENROLLMENTKEY are preserved by
+existing `bootstrap.json` / `config.json` — only needed on first install.
+
+### Velopack Setup.exe channel
+
+Self-updates from the feed in §2 within 24h (delta download). Only for Setup.exe-installed agents,
+not MSI/RMM fleet. `UpdateFeedUrl` in HKLM overrides the feed URL for internal mirrors.
 
 ---
 

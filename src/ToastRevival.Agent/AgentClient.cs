@@ -195,6 +195,12 @@ internal sealed class AgentHubClient : IAsyncDisposable
     private readonly HttpClient _http;
     // Bounded dedup cache. 50k entries × ~100 bytes ≈ 5MB ceiling.
     private readonly MemoryCache _renderedCache = new(new MemoryCacheOptions { SizeLimit = 50_000 });
+    // Bounded activation dedup cache. Both ToastNotification.Activated (legacy path) and
+    // AppNotificationManager.NotificationInvoked (WinAppSDK path) can fire for the SAME physical
+    // click on some OS builds (observed on Win11), so HandleActivationAsync dedups on the exact
+    // argument string within a short window to ReportInteraction / open the URL exactly once.
+    private readonly MemoryCache _activationCache = new(new MemoryCacheOptions { SizeLimit = 1_024 });
+    private static readonly TimeSpan ActivationDedupWindow = TimeSpan.FromSeconds(5);
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _pingLoop;
 
@@ -339,6 +345,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
         try { await _hub.DisposeAsync(); } catch { /* best-effort */ }
         _http.Dispose();
         _renderedCache.Dispose();
+        _activationCache.Dispose();
         _shutdown.Dispose();
     }
 
@@ -533,6 +540,23 @@ internal sealed class AgentHubClient : IAsyncDisposable
     /// </summary>
     private async Task HandleActivationAsync(string argument)
     {
+        // Collapse duplicate events for one physical click (legacy Activated + WinAppSDK
+        // NotificationInvoked can both fire). The argument string is identical across both,
+        // and hub toasts include notificationId so distinct toasts never collide.
+        if (!string.IsNullOrEmpty(argument))
+        {
+            if (_activationCache.TryGetValue(argument, out _))
+            {
+                DiagLog.Write($"Toast activation de-dup: argument='{argument}' already handled, skipping.");
+                return;
+            }
+            _activationCache.Set(argument, (byte)1, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = ActivationDedupWindow,
+                Size = 1,
+            });
+        }
+
         var parsed = ParseToastArguments(argument);
         DiagLog.Write($"Toast activated: argument='{argument}'");
 

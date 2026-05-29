@@ -50,6 +50,15 @@ interface MessagingSnapshot {
   mailjetSenderEmail: string | null;
 }
 
+interface SsoSnapshot {
+  enabled: boolean;
+  clientId: string | null;
+  hasClientSecret: boolean;
+  maskedClientSecret: string | null;
+  authority: string;
+  redirectUri: string;
+}
+
 export default function Billing() {
   const { user } = useAuth();
   const isPlatformAdmin = user?.isPlatformAdmin ?? false;
@@ -82,6 +91,15 @@ export default function Billing() {
   const [msgSaveError, setMsgSaveError]     = useState('');
   const [msgSaveOk, setMsgSaveOk]           = useState(false);
 
+  // Microsoft SSO config state (platform admin)
+  const [ssoSnap, setSsoSnap]               = useState<SsoSnapshot | null>(null);
+  const [ssoClientId, setSsoClientId]       = useState('');
+  const [ssoSecret, setSsoSecret]           = useState('');
+  const [ssoEnabled, setSsoEnabled]         = useState(false);
+  const [ssoSaveLoading, setSsoSaveLoading] = useState(false);
+  const [ssoSaveError, setSsoSaveError]     = useState('');
+  const [ssoSaveOk, setSsoSaveOk]           = useState(false);
+
   const load = useCallback(async () => {
     setError('');
     try {
@@ -89,12 +107,14 @@ export default function Billing() {
       if (isPlatformAdmin) {
         calls.push(api.get<StripeSnapshot>('/api/billing/admin/stripe-config'));
         calls.push(api.get<MessagingSnapshot>('/api/system/messaging/config'));
+        calls.push(api.get<SsoSnapshot>('/api/system/sso/config'));
       }
-      const [p, inv, snap, msg] = await Promise.all(calls);
+      const [p, inv, snap, msg, sso] = await Promise.all(calls);
       setPlan(p as BillingPlan);
       setInvoices((inv as { invoices: Invoice[] }).invoices);
       if (snap) setStripeSnap(snap as StripeSnapshot);
       if (msg) setMsgSnap(msg as MessagingSnapshot);
+      if (sso) { const s = sso as SsoSnapshot; setSsoSnap(s); setSsoEnabled(s.enabled); }
     } catch {
       setError('Failed to load billing information.');
     } finally {
@@ -173,6 +193,30 @@ export default function Billing() {
       setMsgSaveError(err instanceof ApiError ? err.message : 'Save failed.');
     } finally {
       setMsgSaveLoading(false);
+    }
+  };
+
+  const handleSsoConfigSave = async (e: FormEvent) => {
+    e.preventDefault();
+    setSsoSaveError('');
+    setSsoSaveOk(false);
+    setSsoSaveLoading(true);
+    try {
+      const snap = await api.post<SsoSnapshot>('/api/system/sso/config', {
+        enabled:      ssoEnabled,
+        clientId:     ssoClientId || null,
+        clientSecret: ssoSecret   || null,
+      });
+      setSsoSnap(snap);
+      setSsoEnabled(snap.enabled);
+      setSsoClientId('');
+      setSsoSecret('');
+      setSsoSaveOk(true);
+      setTimeout(() => setSsoSaveOk(false), 3000);
+    } catch (err) {
+      setSsoSaveError(err instanceof ApiError ? err.message : 'Save failed.');
+    } finally {
+      setSsoSaveLoading(false);
     }
   };
 
@@ -471,6 +515,96 @@ export default function Billing() {
                 style={{ minWidth: 120 }}
               >
                 {msgSaveLoading ? 'Saving...' : 'Save configuration'}
+              </button>
+            </form>
+          </div>
+        </section>
+      )}
+
+      {/* Microsoft SSO Configuration — platform admin only */}
+      {isPlatformAdmin && (
+        <section style={{ marginBottom: 32 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>
+            Single Sign-On (Microsoft)
+          </h2>
+          <div className="card">
+            {/* Status row */}
+            <div style={{ display: 'flex', gap: 24, marginBottom: 24, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Enabled',       ok: ssoSnap?.enabled,         masked: null },
+                { label: 'Client ID',     ok: !!ssoSnap?.clientId,      masked: ssoSnap?.clientId },
+                { label: 'Client secret', ok: ssoSnap?.hasClientSecret, masked: ssoSnap?.maskedClientSecret },
+              ].map(({ label, ok, masked }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: ok ? 'var(--status-success)' : 'var(--status-error)',
+                    flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{label}</span>
+                  {masked && (
+                    <code style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-dim)' }}>
+                      {masked}
+                    </code>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleSsoConfigSave}>
+              {ssoSaveError && <div className="error-banner" style={{ marginBottom: 16 }}>{ssoSaveError}</div>}
+              {ssoSaveOk    && <div className="success-banner" style={{ marginBottom: 16 }}>Saved. Config reloaded.</div>}
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                Credentials for the multitenant Microsoft Entra app. Leave a field blank to keep the
+                current value. The secret is stored encrypted on the server and never shown again —
+                changes take effect immediately without a restart.
+              </p>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <input type="checkbox" checked={ssoEnabled} onChange={e => setSsoEnabled(e.target.checked)} />
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Enable Microsoft sign-in platform-wide
+                </span>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                <div className="field">
+                  <label>Application (client) ID</label>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={ssoClientId}
+                    onChange={e => setSsoClientId(e.target.value)}
+                    placeholder={ssoSnap?.clientId ?? 'Not configured'}
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}
+                  />
+                </div>
+                <div className="field">
+                  <label>Client secret</label>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={ssoSecret}
+                    onChange={e => setSsoSecret(e.target.value)}
+                    placeholder={ssoSnap?.hasClientSecret ? ssoSnap.maskedClientSecret ?? 'Set' : 'Not configured'}
+                  />
+                </div>
+              </div>
+
+              {ssoSnap?.redirectUri && (
+                <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 16, lineHeight: 1.5 }}>
+                  Redirect URI registered in your Entra app must match:{' '}
+                  <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{ssoSnap.redirectUri}</code>
+                </p>
+              )}
+
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={ssoSaveLoading}
+                style={{ minWidth: 120 }}
+              >
+                {ssoSaveLoading ? 'Saving...' : 'Save configuration'}
               </button>
             </form>
           </div>

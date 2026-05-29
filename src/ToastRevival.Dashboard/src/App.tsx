@@ -9,6 +9,7 @@ import Register from './pages/Register';
 import SetPassword from './pages/SetPassword';
 import CheckEmail from './pages/CheckEmail';
 import VerifySms from './pages/VerifySms';
+import SsoCallback from './pages/SsoCallback';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
@@ -87,6 +88,7 @@ const router = createBrowserRouter([
   { path: '/register',      element: <Register /> },
   { path: '/set-password',    element: <SetPassword /> },
   { path: '/verify-sms',     element: <VerifySms /> },
+  { path: '/sso/callback',    element: <SsoCallback /> },
   { path: '/check-email',    element: <CheckEmail /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
   { path: '/reset-password',  element: <ResetPassword /> },

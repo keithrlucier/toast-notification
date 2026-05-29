@@ -74,6 +74,25 @@ public class Tenant
     public bool LockScreenEnabled { get; set; }
     public string? LockScreenImageUrl { get; set; }
 
+    // ─── M14 — Microsoft SSO (Entra / Azure AD) ──────────────────────────────
+    // Per-tenant federation opt-in. A tenant admin enables Microsoft sign-in by
+    // saving their Entra Directory (tenant) ID here. SSO sign-ins are gated on
+    // the incoming id_token "tid" claim matching AzureAdTenantId AND SsoEnabled
+    // — a valid Microsoft token from ANY other directory is rejected at the
+    // callback. This opt-in is the load-bearing gate that keeps the multitenant
+    // Entra app from being an open door: any work/school account on the planet
+    // can authenticate against the app, but only mapped, opted-in directories
+    // resolve to a tenant and get a session.
+    //   AzureAdTenantId: the customer's Entra Directory (tenant) GUID (lowercase).
+    //   SsoEnabled:      master switch for Microsoft sign-in on this tenant.
+    //   SsoRequireMfa:   when true, the id_token must assert MFA (amr contains
+    //                    "mfa") or the sign-in is rejected — for orgs that want
+    //                    proof Entra enforced a second factor. Off by default;
+    //                    we trust the customer's Conditional Access policy.
+    public bool SsoEnabled { get; set; }
+    public string? AzureAdTenantId { get; set; }
+    public bool SsoRequireMfa { get; set; }
+
     // Platform Admin controls. Suspension blocks login and device registration
     // without deleting tenant data — reversible. Complimentary marks the tenant
     // as free-forever (no Stripe required, no device cap, LicenseEnd ignored);

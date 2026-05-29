@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
 using ToastRevival.Api.Models;
@@ -363,6 +364,68 @@ public class TenantController : ControllerBase
         }
 
         return Ok(new { url });
+    }
+
+    // ── M14 Microsoft SSO (per-tenant directory mapping) ─────────────────────
+    // Platform owns the Entra app credentials (System SSO config). Each tenant
+    // opts in by mapping its own Entra Directory (tenant) ID here. Admin-only —
+    // the directory id is org-identifying and the toggle changes who can log in.
+
+    [HttpGet("sso")]
+    public async Task<ActionResult<TenantSsoSettingsResponse>> GetSso([FromServices] IConfiguration config)
+    {
+        if (!IsAdmin()) return Forbid();
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var t = await _db.Tenants.FindAsync(tenantId);
+        if (t is null) return NotFound();
+
+        var platformConfigured =
+            config.GetValue<bool>("Sso:Microsoft:Enabled")
+            && !string.IsNullOrWhiteSpace(config["Sso:Microsoft:ClientId"])
+            && !string.IsNullOrWhiteSpace(config["Sso:Microsoft:ClientSecret"]);
+
+        return Ok(new TenantSsoSettingsResponse(
+            Enabled:            t.SsoEnabled,
+            AzureAdTenantId:    t.AzureAdTenantId,
+            RequireMfa:         t.SsoRequireMfa,
+            PlatformConfigured: platformConfigured,
+            MicrosoftClientId:  config["Sso:Microsoft:ClientId"]));
+    }
+
+    [HttpPut("sso")]
+    public async Task<IActionResult> UpdateSso([FromBody] UpdateTenantSsoSettingsRequest req)
+    {
+        if (!IsAdmin()) return Forbid();
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var t = await _db.Tenants.FindAsync(tenantId);
+        if (t is null) return NotFound();
+
+        string? dirId = null;
+        if (!string.IsNullOrWhiteSpace(req.AzureAdTenantId))
+        {
+            if (!Guid.TryParse(req.AzureAdTenantId.Trim(), out var parsed))
+                return BadRequest(new { message = "Directory (tenant) ID must be a valid GUID." });
+            dirId = parsed.ToString();   // canonical lowercase, hyphenated form
+        }
+
+        if (req.Enabled && dirId is null)
+            return BadRequest(new { message = "A Directory (tenant) ID is required to enable Microsoft sign-in." });
+
+        // One directory maps to exactly one tenant — otherwise the SSO callback's
+        // tenant lookup is ambiguous. Refuse a directory already claimed elsewhere.
+        if (dirId is not null)
+        {
+            var clash = await _db.Tenants.IgnoreQueryFilters()
+                .AnyAsync(x => x.Id != t.Id && x.AzureAdTenantId == dirId);
+            if (clash)
+                return Conflict(new { message = "That Microsoft directory is already linked to another tenant." });
+        }
+
+        t.AzureAdTenantId = dirId;
+        t.SsoEnabled      = req.Enabled && dirId is not null;
+        t.SsoRequireMfa   = req.RequireMfa;
+        await _db.SaveChangesAsync();
+        return NoContent();
     }
 
     private static string? MaskKey(string? key)

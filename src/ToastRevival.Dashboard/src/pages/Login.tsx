@@ -1,7 +1,7 @@
 import { FormEvent, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ApiError, AUTH_MESSAGE_STORAGE_KEY } from '../api/client';
+import { api, ApiError, AUTH_MESSAGE_STORAGE_KEY } from '../api/client';
 import { authApi } from '../api/auth';
 
 function takeAuthMessage(): string {
@@ -9,6 +9,35 @@ function takeAuthMessage(): string {
   if (message) sessionStorage.removeItem(AUTH_MESSAGE_STORAGE_KEY);
   return message;
 }
+
+// Maps the opaque ?sso_error= codes the SSO callback redirects with to friendly,
+// non-enumerating messages. Anything unmapped falls back to the generic line.
+const SSO_ERRORS: Record<string, string> = {
+  not_enabled:  'Microsoft sign-in isn’t enabled for your organization. Contact your administrator.',
+  no_account:   'No account here matches that Microsoft user. Ask your administrator to invite you first.',
+  mfa_required: 'Your organization requires multi-factor authentication to sign in.',
+  suspended:    'Your organization’s access is suspended. Contact support.',
+  incomplete:   'Your account registration isn’t finished yet.',
+  link_conflict: 'That Microsoft identity is already linked to another account.',
+  denied:       'Microsoft sign-in was cancelled.',
+  unavailable:  'Microsoft sign-in isn’t available right now.',
+};
+
+function ssoErrorMessage(code: string | null): string {
+  if (!code) return '';
+  return SSO_ERRORS[code] ?? 'Microsoft sign-in could not be completed. Please try again.';
+}
+
+// Official Microsoft sign-in mark — the four-color square. Per Microsoft brand
+// guidelines: their logo + "Sign in with Microsoft", never a recolored knockoff.
+const MicrosoftLogo = (
+  <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+    <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+    <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+    <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+  </svg>
+);
 
 const LOGO = (
   <div style={{
@@ -36,8 +65,9 @@ export default function Login() {
   // Step 1 state
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
-  const [error,    setError]    = useState(takeAuthMessage);
+  const [error,    setError]    = useState(() => ssoErrorMessage(new URLSearchParams(window.location.search).get('sso_error')) || takeAuthMessage());
   const [loading,  setLoading]  = useState(false);
+  const [ssoEnabled, setSsoEnabled] = useState(false);
 
   // Step 2 state (SMS challenge)
   const [step,        setStep]        = useState<'password' | 'sms'>('password');
@@ -48,6 +78,14 @@ export default function Login() {
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => () => { if (cooldownRef.current) clearInterval(cooldownRef.current); }, []);
+
+  // Only offer the Microsoft button if the server actually has SSO configured —
+  // no dead button. Anonymous endpoint, exposes nothing but a boolean.
+  useEffect(() => {
+    api.get<{ enabled: boolean }>('/api/auth/sso/microsoft/config')
+      .then(r => setSsoEnabled(Boolean(r.enabled)))
+      .catch(() => setSsoEnabled(false));
+  }, []);
 
   const startCooldown = () => {
     setResendCooldown(60);
@@ -174,6 +212,25 @@ export default function Login() {
               >
                 {loading ? <span className="spinner" /> : 'Sign in'}
               </button>
+
+              {ssoEnabled && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
+                    <div style={{ flex: 1, height: 1, background: 'rgba(148,148,160,0.25)' }} />
+                    <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>or</span>
+                    <div style={{ flex: 1, height: 1, background: 'rgba(148,148,160,0.25)' }} />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { window.location.href = '/api/auth/sso/microsoft/start'; }}
+                    className="btn btn-secondary"
+                    style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, padding: '12px 16px' }}
+                  >
+                    {MicrosoftLogo}
+                    <span>Sign in with Microsoft</span>
+                  </button>
+                </>
+              )}
             </form>
           ) : (
             <form onSubmit={handleSmsVerify}>

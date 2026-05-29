@@ -31,5 +31,14 @@ public class AppUser : IdentityUser<Guid>
     public DateTime? SmsCodeExpiry { get; set; }
     public RegistrationStep RegistrationStep { get; set; } = RegistrationStep.Complete;
 
+    // ─── External identity (Microsoft SSO) ───────────────────────────────────
+    // Set when a user links a federated identity. Link-only model: a federated
+    // sign-in maps to an EXISTING user by verified email within the mapped
+    // tenant; on first successful federated sign-in we record the provider plus
+    // the stable subject (Entra "oid") so subsequent sign-ins match on the
+    // immutable object id, not the mutable email/UPN.
+    public string? ExternalProvider { get; set; }   // e.g. "microsoft"
+    public string? ExternalId { get; set; }          // Entra object id (oid claim)
+
     public Tenant Tenant { get; set; } = null!;
 }

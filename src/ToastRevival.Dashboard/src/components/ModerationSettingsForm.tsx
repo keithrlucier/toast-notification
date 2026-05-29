@@ -227,6 +227,66 @@ export default function ModerationSettingsForm() {
               ? <>Using the platform-default Azure Content Safety resource. Provide your own credentials below to bill scans to your subscription and isolate your tenant's content.</>
               : <>The platform default has no Azure Content Safety key configured — without your own credentials below, all content will Pass without scanning. Blocklist terms still apply.</>}
           </p>
+
+          {/* Setup guide */}
+          <div style={{
+            background: 'rgba(31,111,189,0.05)',
+            border: '1px solid rgba(31,111,189,0.18)',
+            borderRadius: 'var(--radius-md)',
+            padding: '14px 16px',
+            marginBottom: 16,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="7" stroke="#1F6FBD" strokeWidth="1.5"/>
+                <rect x="7.25" y="7" width="1.5" height="5" rx=".75" fill="#1F6FBD"/>
+                <rect x="7.25" y="4" width="1.5" height="1.5" rx=".75" fill="#1F6FBD"/>
+              </svg>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                How to get your Azure Content Safety credentials
+              </span>
+            </div>
+            <ol style={{
+              margin: 0,
+              paddingLeft: 20,
+              fontSize: 12,
+              color: 'var(--text-secondary)',
+              lineHeight: 1.65,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 3,
+            }}>
+              <li>
+                Sign in to the <strong>Azure Portal</strong> at{' '}
+                <a href="https://portal.azure.com" target="_blank" rel="noopener noreferrer"
+                  style={{ color: 'var(--accent)' }}>portal.azure.com</a>.
+              </li>
+              <li>
+                In the search bar, type <strong>Content Safety</strong> and select{' '}
+                <strong>Azure AI Content Safety</strong> from the results.
+              </li>
+              <li>
+                Click <strong>Create</strong>. Choose your subscription, resource group, and region.
+                The <strong>Free (F0)</strong> tier covers 5,000 text transactions/month at no cost.
+              </li>
+              <li>
+                Once deployment is complete, open the resource. In the left sidebar, click{' '}
+                <strong>Keys and Endpoint</strong>.
+              </li>
+              <li>
+                Copy the <strong>Endpoint</strong> — it looks like{' '}
+                <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11, background: 'rgba(31,111,189,0.08)', padding: '1px 5px', borderRadius: 3 }}>
+                  https://your-resource.cognitiveservices.azure.com/
+                </code>
+                — and paste it into the Endpoint URL field below.
+              </li>
+              <li>
+                Copy <strong>KEY 1</strong> (or KEY 2 — either works) and paste it into the API Key
+                field below. No Azure role assignment is needed; the key alone is sufficient.
+              </li>
+            </ol>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="field">
               <label>Endpoint URL</label>

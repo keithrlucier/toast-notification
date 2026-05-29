@@ -370,7 +370,7 @@ internal static class ToastTemplateBuilder
 
                 if (TryHttpUri(b.Url, out var buttonUri))
                 {
-                    button.AddArgument("url", Uri.EscapeDataString(buttonUri.AbsoluteUri));
+                    button.AddArgument("url", buttonUri.AbsoluteUri);
                 }
 
                 ApplyButtonStyle(button, b);

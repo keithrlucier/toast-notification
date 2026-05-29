@@ -298,6 +298,15 @@ namespace ToastRevival.Agent
                 return Task.FromResult(1);
             }
 
+#if !DEBUG
+            if (serverUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            {
+                DiagLog.Write($"SetupMode EXIT 1: serverUrl '{serverUrl}' uses HTTP — HTTPS is required.");
+                Console.Error.WriteLine($"ServerUrl must use HTTPS: {serverUrl}");
+                return Task.FromResult(1);
+            }
+#endif
+
             // Treat an empty string enrollment key (WiX passes empty string when
             // ENROLLMENTKEY property is not set) as absent.
             if (string.IsNullOrWhiteSpace(enrollmentKey)) enrollmentKey = null;
@@ -412,6 +421,13 @@ namespace ToastRevival.Agent
                         return 9;
                     }
                 }
+#if !DEBUG
+                else if (config.ServerUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagLog.Write($"PrimaryMode EXIT 9: stored ServerUrl '{config.ServerUrl}' uses HTTP — HTTPS is required. Agent will not connect.");
+                    return 9;
+                }
+#endif
 
                 var reregister = false;
                 try
@@ -588,6 +604,14 @@ namespace ToastRevival.Agent
                 DiagLog.Write("First-run registration: no bootstrap config (env vars or bootstrap.json).");
                 return null;
             }
+
+#if !DEBUG
+            if (bootstrap.ServerUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            {
+                DiagLog.Write($"First-run registration: ServerUrl '{bootstrap.ServerUrl}' uses HTTP — HTTPS is required. Registration aborted.");
+                return null;
+            }
+#endif
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var config = await RegistrationService.RegisterAsync(bootstrap, cts.Token);

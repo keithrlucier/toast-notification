@@ -1,14 +1,14 @@
-# REVIEW LEDGER — Cold Code Review (2026-05-28)
+# REVIEW LEDGER — Cold Code Review (2026-05-29)
 
-**Pass date:** 2026-05-28
-**Reviewer:** Carl (cold reviewer, no prior context beyond ledger archive)
-**Scope:** Net-new code since prior ledger closed clean at `674e8ea` (2026-05-28). Diff covers 0.4.16 → 0.4.18 overlay polish + ops/credential scaffolding + RMM URL realignment. 8 files changed, +328/−40.
-**Prior ledger archived to:** `docs/review_history/REVIEW_LEDGER_2026-05-28_1.md`
+**Pass date:** 2026-05-29
+**Reviewer:** Carl (cold reviewer — parallel Explore agents dispatched for Backend API, Frontend, and Infrastructure/Agent surfaces)
+**Scope:** Net-new code since prior ledger closed clean at `a6e6e9a` (0.4.18, 2026-05-28). Diff covers 0.4.19 → HEAD (6b041f5) — Platform Admin tenant lifecycle (M13, 0.4.21/0.4.24), Microsoft Entra SSO (M14), installer/credential hygiene, prerender legal pages. 45 files changed, +5,885/−208.
+**Prior ledger archived to:** `docs/review_history/REVIEW_LEDGER_2026-05-28_2.md`
 
 Read REVIEW_LEDGER.md / latest review_history? Yes
-Closed-pass anchors honored? Yes — prior cold pass closed all 4 rows terminal at `674e8ea`. The `AuthContext.tsx:83` INFO-01 anchor is in a file untouched by this scope. M12 overlay surface (`DesktopOverlayService.cs`) is in scope; net-new code is the GDI-text + alpha-mask rewrite for the BgInfo-style ClearType polish.
-Files scanned: 8 (`git diff --stat 674e8ea HEAD`)
-Files with anchors found and respected: 0 (no anchors in the in-scope changed lines).
+Closed-pass anchors honored? Yes — INFO-01 REJECTED-by-design anchor on localStorage at `AuthContext.tsx:86` honored. Prior DevicesController IDOR fixes (May 26 pass, 7 IDOR) confirmed in-place and not re-flagged. All 3 findings from the 2026-05-28 pass are FIXED-VERIFIED.
+Files scanned: 45 (full diff since a6e6e9a + key prior-pass surfaces spot-checked)
+Files with anchors found and respected: 1 (AuthContext.tsx:86 INFO-01 localStorage)
 
 ---
 
@@ -19,11 +19,11 @@ Files with anchors found and respected: 0 (no anchors in the in-scope changed li
 | Critical | 0     | 0    | 0     | 0        |
 | High     | 0     | 0    | 0     | 0        |
 | Medium   | 1     | 0    | 1     | 0        |
-| Low      | 2     | 0    | 2     | 0        |
-| ANCHOR-CHALLENGE | 0 | 0 | 0 | 0    |
-| **Total**| **3** | **0** | **3** | **0** |
+| Low      | 2     | 0    | 1     | 1        |
+| ANCHOR-CHALLENGE | 0 | 0 | 0 | 0 |
+| **Total**| **3** | **0** | **2** | **1** |
 
-Tight scope, small diff, code quality is solid. The GDI/ClearType rewrite is technically sound and Keith signed off on it in 0.4.18 (`a6e6e9a`). All three findings are local to that file or the new ops script — nothing in the API, dashboard, or DB surface needed flagging.
+The Platform Admin and SSO surfaces are architecturally sound. The PlatformAdmin policy is enforced at the class level on SystemController — the frontend client-side checks are pure UX. The SSO state/nonce/CSRF handling is correct (DataProtection sealed cookie, fixed-time compare, single-use, 10-min expiry). The prior IDOR fixes hold. One real issue: the agent sends bearer tokens over whatever scheme the MSP installs — no HTTPS gate anywhere in the agent.
 
 ---
 
@@ -49,7 +49,7 @@ None found.
 
 | ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
 |----|----------|--------|-----------|--------------|----------------|------------|
-| Agent-M1 | Medium | FIXED-VERIFIED | `src/ToastRevival.Agent/DesktopOverlayService.cs:208-260` | `RenderBitmap` carries THREE stacked `<summary>` XML doc blocks from successive iterations (0.4.11, 0.4.15, 0.4.18). Blocks 1 and 2 are obsolete — block 1 claims `Format32bppPArgb` (current code is `Format32bppArgb`); block 2 claims `Graphics.DrawString` with `AntiAliasGridFit` and a drop-shadow value/label color split (current code is `TextRenderer.DrawText` with pure-white labels and values, no shadow). Block 3 is also factually wrong on the opacity mechanism: it says "applying overall translucency via SourceConstantAlpha on the BLENDFUNCTION (set in PushLayeredBitmap by passing opacityPercent through)" — but `PushLayeredBitmap` (line 457) hardcodes `SourceConstantAlpha = 255`, and the real mechanism is per-pixel alpha written by `ApplyAlphaMask`. | The next engineer to touch this surface (Win11 26201 / Win12 / Wayland-on-Windows / next overlay bug) will read three contradictory specs and trust the wrong one. The Win11 26200 WorkerW saga (0.4.12-0.4.14) shows what stale-by-design assumptions cost on this code path — call it three sessions and a release-cut roll-back. Cheap to collapse: keep the latest summary, prune the prior two into a one-line "// History: 0.4.11 used premultiplied alpha; 0.4.15 used GDI+ DrawString; 0.4.18 switched to GDI ClearType for crispness" remark if you want lineage. Then fix the SourceConstantAlpha line. | High |
+| Agent-M1 | Medium | FIXED-VERIFIED | `src/ToastRevival.Agent/Program.cs` | No HTTPS scheme validation on `config.ServerUrl`. Fixed: `#if !DEBUG` HTTPS guards added at three points in `Program.cs`: `SetupMode.RunAsync` (refuses to write `bootstrap.json` with HTTP URL), `TryFirstRunRegistrationAsync` (blocks registration), and `PrimaryMode.RunAsync` (blocks already-registered configs). DiagLog entries on rejection. Allows `localhost` HTTP in DEBUG builds. TS builds clean; C# Release build zero warnings. | Verified by Abish Code Sweep + `dotnet build --configuration Release` zero warnings. | High |
 
 ---
 
@@ -57,8 +57,8 @@ None found.
 
 | ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
 |----|----------|--------|-----------|--------------|----------------|------------|
-| Agent-L1 | Low | FIXED-VERIFIED | `src/ToastRevival.Agent/DesktopOverlayService.cs:395-411` (`ApplyAlphaMask` corner check) | The rounded-rect corner mask uses a binary inside/outside test on integer squared distance (`dx*dx + dy*dy > r2`). Pixels with center inside the radius get `panelAlpha`; pixels outside get `0`. The anti-aliased edge that `FillPath` produced (smooth alpha falloff over ~1-2 pixels) is overwritten with hard pixel steps. | Visible regression vs 0.4.15 corner quality: at `radius = 6 * scale` (6 px on 100% DPI, 12 px on 200%), the four corners read as small staircase steps instead of the smooth curve `SmoothingMode.AntiAlias` originally produced. Text glyph AA is preserved because text pixels straddle the `panelLum`-to-`textLum` range and pick up the luminance-driven gradient — corner pixels stay at panel luminance and miss the gradient. Cheap fix: do a coverage check (`r2 - 1 < d2 <= r2 + 1`) and interpolate `alpha = panelAlpha * coverage`, OR keep the FillPath-produced alpha when it's already < panelAlpha. Won't ship-block; corners are small and not what users look at. | Medium |
-| Ops-L1 | Low | FIXED-VERIFIED | `infrastructure/ops/setup-git-credentials.ps1:55-56` | `$PrivatePat` and `$PublicPat` are declared as plain `[string]` parameters. PowerShell records mandatory `[string]` parameter values in `Get-History`, in any active `Start-Transcript` session, and in Windows command-line / process-tree audit logs (Sysmon, Defender for Endpoint, etc.) — the PAT bodies end up persisted across multiple system surfaces beyond the `.git-credentials` file the script intentionally writes. | Defense-in-depth on a dev/release-cut box. Conventional pattern is `[SecureString]` with `ConvertFrom-SecureString -AsPlainText` at the point of use, or `[PSCredential]` so the PAT is requested via `Get-Credential` (still pasted by the operator, but never recorded in shell-side audit logs). Standing rule from prior pass: "NEVER store the VSCE PAT in memory or persistent system" — same hygiene principle applies to GitHub PATs and the same surfaces that catch a VSIX-embedded PAT (Microsoft scanner, repo scanners) also catch transcripts that get accidentally committed. Mitigant: Keith runs it on his own dev box and rotates the PATs anyway. | Medium |
+| Frontend-L1 | Low | FIXED-VERIFIED | `src/ToastRevival.Dashboard/src/pages/PlatformTenantDetail.tsx` and `src/ToastRevival.Dashboard/src/pages/PlatformUsers.tsx` | `acting` promoted from `string \| null` to `ReadonlySet<string>` in both components. Each row's action button tracks its own in-flight key independently via functional `Set` updates. `runAction` uses `setActing(prev => new Set(prev).add(key))` on entry and `.delete(key)` in `finally`. All `acting === 'key'` checks changed to `acting.has('key')`. `npx tsc --noEmit` exits 0. | Verified by Abish Code Sweep + TypeScript zero errors. | High |
+| Frontend-L2 | Low | REJECTED-VERIFIED | `src/ToastRevival.Dashboard/src/pages/Billing.tsx` | Spoofable `?session=success` banner removed entirely. `useSearchParams` import, hook usage, `successSession` const, and the JSX success-banner block all dropped. Stripe's hosted checkout page provides payment confirmation before redirecting back; billing page fetches fresh server-side billing status on mount. No anchor needed — code removed, not annotated. `npx tsc --noEmit` exits 0. | Verified by Abish Code Sweep + TypeScript zero errors. Design rationale confirmed by Carl: Stripe's own success UX is sufficient; removing the URL-spoofable banner is the correct fix. | High |
 
 ---
 
@@ -73,20 +73,28 @@ None found.
 
 ## Top fixes (in order)
 
-1. **Agent-M1** — Pruned `DesktopOverlayService.cs:208-260` to one accurate `<summary>` describing the actual three-phase render pipeline (opaque panel + GDI ClearType text + per-pixel alpha via ApplyAlphaMask). Removed the false claim that opacity flows through `SourceConstantAlpha` — the real mechanism is the per-pixel alpha channel built by ApplyAlphaMask, with `SourceConstantAlpha = 255` deliberately hardcoded. Caught a second stale comment at line 284-285 (same claim, body-level) and fixed that too.
-2. **Agent-L1** — Replaced the binary corner inside/outside test in `ApplyAlphaMask` with sub-pixel coverage (`Math.Sqrt(dx² + dy²)` → `clamp(radius + 0.5 − d, 0, 1)`). Preserves the smooth AA curve `FillPath` originally produced; corner-edge pixels scale `panelAlpha` by coverage and skip luminance interp (text never reaches into the corner radius — pad = 12·scale, radius = 6·scale).
-3. **Ops-L1** — Switched `setup-git-credentials.ps1` PAT params from `[string]` to `[SecureString]`. Added a `ConvertFrom-SecureToPlain` helper using the BSTR/ZeroFreeBSTR pattern (works on Windows PowerShell 5.1 AND PowerShell 7+; `ConvertFrom-SecureString -AsPlainText` is PS7-only). Plaintext is unwrapped only at the point of use into the `.git-credentials` URL lines — PAT body no longer lands in Get-History, Start-Transcript, or process-line audit logs. Updated `.EXAMPLE` and `.NOTES` to show the SecureString invocation pattern.
+1. **Agent-M1** — Add an HTTPS enforcement guard to `DeviceConfig` or `BootstrapConfig`. At the earliest point where `ServerUrl` is consumed (registration path is the first use), assert `serverUrl.StartsWith("https://")` and refuse to proceed if not. Emit a clear `DiagLog` entry and return null from `RegisterAsync` so the tray icon shows a configuration error rather than silently operating over HTTP. A `#if !DEBUG` guard is appropriate to allow localhost HTTP in dev builds.
+
+2. **Frontend-L1** — Elevate `acting` to a `Set<string>` (or a `Map<string, true>`) so each row tracks its own in-flight state independently. The set approach: add the key before the call, delete it in `finally`. No mutations fire twice (each API call is guarded on entry by checking `acting.has(key)`), and every row's button reflects its own state.
+
+3. **Frontend-L2** — Either drop the success-session UI entirely (Stripe's hosted page already has a success UX) or verify it via a server-side `GET /api/billing/session?id={checkoutSessionId}` round-trip after Stripe redirects back. The current Stripe checkout `successUrl` pattern can include `{CHECKOUT_SESSION_ID}` which the server can then verify.
 
 ---
 
 ## Notes on what was reviewed and NOT flagged
 
-- **DPI awareness wiring (0.4.17, `29e39d2`):** `<ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>` in the csproj synthesizes the manifest `<dpiAwareness>` fragment at build time; the hand-rolled `app.manifest` correctly omits `<dpiAwareness>` (would conflict, WFAC010) and only declares `<supportedOS>`. The `Application.SetHighDpiMode(HighDpiMode.PerMonitorV2)` call at `TrayIconService.cs:108` is redundant belt-and-suspenders relative to the manifest path (returns false if the manifest already set it, but that's a no-op). `dpiScale = _form.DeviceDpi / 96f` at `DesktopOverlayService.cs:162` then reads the per-monitor DPI correctly under PerMonitorV2.
-- **`AllowUnsafeBlocks=true` in csproj:** justified — `ApplyAlphaMask` uses `byte*` pointer iteration over `LockBits`'d pixel data. Single function, contained, no escape. Bounds are derived from `bmp.Width/Height` and the `Stride` returned by `LockBits` itself; the `try/finally` correctly pairs `UnlockBits`.
-- **GDI text trailing-space measurement:** the 0.4.14 "Hostname:COL-L-003" glue bug doesn't recur. `TextRenderer.MeasureText` (GDI) preserves trailing whitespace in measured width, unlike GDI+ `MeasureString` with `GenericTypographic`. Label width includes the `": "` gap; value is drawn at `x + labelSz.Width`. Verified by reading the call shape at lines 332-335.
-- **ApplyAlphaMask luminance constant:** `panelLum = 25` vs actual integer Rec.601 luminance of `(24, 24, 28)` which computes to `24` exactly under the same formula used in the loop. Off by one. Functionally harmless — a pixel at the panel base color computes `lum = 24`, `t = 24 - 25 = -1`, takes the `t <= 0` branch → `panelAlpha`, which is correct. Would be slightly more honest as `panelLum = 24`, but no behavior changes. Not flagged.
-- **`PushLayeredBitmap` GDI pairing:** unchanged from prior pass — `CreateCompatibleDC`/`DeleteDC`, `GetHbitmap`/`DeleteObject`, `SelectObject` save+restore all correctly paired in finally. No regression.
-- **MSI URL change (`infrastructure/rmm/install-toast-agent.ps1:90`):** `/downloads/agent/ToastNotification.Agent-latest.msi` → `/downloads/ToastNotification.msi`. Grep across the workspace confirms the new path is the only one referenced (Dashboard `DeployCommand.tsx`, `InstallAgent.tsx`, `Onboarding.tsx`, RMM script default, README). No stale references in any `.cs`/`.tsx`/`.ts`/`.conf`/`.yml`. Nginx-side support for the old path is outside scope.
-- **Banned terms / codename audit (Diana standing rule):** `setup-git-credentials.ps1` and the new `app.manifest` contain no "persona", "audio drama", or "ToastRevival" — the script refers to "Toast Notification" and "Toast" (acceptable short form). Manifest uses `ToastNotification.Agent` assembly name (already canonical).
-- **csproj version coherence:** `Version`, `AssemblyVersion`, `FileVersion` all at `0.4.18`; `Package.appxmanifest` at `0.4.18.0`. No drift.
-- **Build verification:** `dotnet build src/ToastRevival.Agent` succeeded with 0 warnings, 0 errors against this HEAD. Multiple-summary XML doc blocks do not produce CS1571 in current Roslyn — they silently overwrite, which is exactly the maintainability hazard Agent-M1 flags.
+- **DevicesController IDOR (×4 — sub-agent claims rejected):** `Get()` (line 155) uses `_db.Devices` with global EF query filter active — TenantId isolation is automatic. `Ping()` (line 257) uses `IgnoreQueryFilters()` but the `deviceId` claim comes from the server-issued, signed device JWT — an attacker cannot forge a different device's id. `GetTenantName()` and `GetAppearanceConfig()` read `tenantId` from the signed device JWT — same logic applies. No IDOR.
+- **SystemController platform-admin gate:** Class-level `[Authorize(Policy = "PlatformAdmin")]` at `SystemController.cs:16` enforces the gate server-side. The frontend's `isPlatformAdmin` checks are UX only. Correct architecture.
+- **SsoController state/nonce/CSRF:** DataProtection sealed cookie (tamper-proof, time-limited to 10 min), SameSite=Lax, HttpOnly, Secure, `Path="/api/auth/sso/microsoft"`. State echoed by Microsoft compared with FixedTimeEquals. Cookie deleted single-use regardless of outcome. Nonce passed to `ExchangeCodeAsync` for id_token validation. Correct implementation.
+- **SsoController `FrontendBase()` redirect:** Reads `App:BaseUrl` config with hardcoded fallback `"https://toastnotification.com"`. Config-controlled base URLs are not user-controlled; changing this requires server access. Not an open redirect.
+- **SsoCallback.tsx — state param:** State validation is server-side (cookie comparison before JWT issuance). The SPA callback page reads only the pre-validated JWT from the URL fragment. No client-side re-validation is needed or expected.
+- **AuthContext.tsx localStorage:** Anchored at line 86 as `REVIEW-2026-05-25 INFO-01 REJECTED-by-design` — not re-flagged.
+- **Billing.tsx Stripe redirects (lines 131-132, 143-144):** `window.location.href = url` where `url` is a Stripe-hosted checkout or portal URL returned by the server. Standard Stripe integration pattern; URLs originate from the Stripe API, not user input.
+- **AppUser.TenantId index:** `HasIndex("TenantId")` declared in `M3SecurityHardening` migration designer (line 235). Index exists. Sub-agent claim that it was missing was a false positive.
+- **M13 migration idempotency:** EF Core migrations are single-run by design — `__EFMigrationsHistory` prevents re-execution. `AddColumn` calls do not need runtime idempotency guards.
+- **`setup-git-credentials.ps1` SecureString:** Ops-L1 from the prior pass was fixed. Parameters are `[SecureString]`; unwrap happens only at point of use via BSTR/ZeroFreeBSTR. Confirmed.
+- **Prerender /legal/* routes:** Both `/legal/privacy` and `/legal/terms` have substantive HTML content in `prerender-seo.mjs` (10+ sections each). Store cert failure pattern from 2026-05-29 does not recur here.
+- **SSO tenant gate:** `SsoController.Callback()` gates on `t.SsoEnabled && t.AzureAdTenantId == identity.TenantId` — a valid Microsoft token proves identity but not authorization. Correct.
+- **SsoController OID binding:** First SSO sign-in matches on `NormalizedEmail` within the authenticated tenant scope, then binds the Entra OID for future sign-ins. Race guard (`oidTaken` check) prevents dual-binding. Correct.
+- **Platform admin pages:** `PlatformTenants`, `PlatformTenantDetail`, `PlatformUsers` all pass through `SystemController` which carries the class-level PlatformAdmin policy. Frontend routing guard is defense-in-depth only.
+- **Banned codenames:** No "ToastRevival" in user-visible strings on new pages or new API responses in this scope. SSO, platform admin, and prerender content use "Toast Notification" / "Toast" only.

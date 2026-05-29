@@ -63,7 +63,7 @@ export default function PlatformTenantDetail() {
   const [data, setData] = useState<TenantDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [acting, setActing] = useState<string | null>(null);
+  const [acting, setActing] = useState<ReadonlySet<string>>(() => new Set());
 
   const load = useCallback(async () => {
     if (!isPlatformAdmin || !id) return;
@@ -82,7 +82,8 @@ export default function PlatformTenantDetail() {
   useEffect(() => { void load(); }, [load]);
 
   const runAction = async (key: string, fn: () => Promise<void>) => {
-    setActing(key);
+    if (acting.has(key)) return;
+    setActing(prev => new Set(prev).add(key));
     setError('');
     try {
       await fn();
@@ -90,7 +91,7 @@ export default function PlatformTenantDetail() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Action failed.');
     } finally {
-      setActing(null);
+      setActing(prev => { const n = new Set(prev); n.delete(key); return n; });
     }
   };
 
@@ -217,33 +218,33 @@ export default function PlatformTenantDetail() {
         <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700 }}>Tenant controls</h3>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           {!suspended ? (
-            <button className="btn btn-secondary" onClick={onSuspend} disabled={acting === 'suspend'}>
-              {acting === 'suspend' ? 'Suspending…' : 'Suspend tenant'}
+            <button className="btn btn-secondary" onClick={onSuspend} disabled={acting.has('suspend')}>
+              {acting.has('suspend') ? 'Suspending…' : 'Suspend tenant'}
             </button>
           ) : (
-            <button className="btn btn-primary" onClick={onResume} disabled={acting === 'resume'}>
-              {acting === 'resume' ? 'Resuming…' : 'Resume tenant'}
+            <button className="btn btn-primary" onClick={onResume} disabled={acting.has('resume')}>
+              {acting.has('resume') ? 'Resuming…' : 'Resume tenant'}
             </button>
           )}
-          <button className="btn btn-secondary" onClick={onExtend} disabled={acting === 'extend' || comp}>
-            {acting === 'extend' ? 'Extending…' : 'Extend license'}
+          <button className="btn btn-secondary" onClick={onExtend} disabled={acting.has('extend') || comp}>
+            {acting.has('extend') ? 'Extending…' : 'Extend license'}
           </button>
           {!comp ? (
-            <button className="btn btn-secondary" onClick={onGrantComp} disabled={acting === 'grant-comp'}>
-              {acting === 'grant-comp' ? 'Granting…' : 'Grant complimentary'}
+            <button className="btn btn-secondary" onClick={onGrantComp} disabled={acting.has('grant-comp')}>
+              {acting.has('grant-comp') ? 'Granting…' : 'Grant complimentary'}
             </button>
           ) : (
-            <button className="btn btn-secondary" onClick={onRevokeComp} disabled={acting === 'revoke-comp'}>
-              {acting === 'revoke-comp' ? 'Revoking…' : 'Revoke complimentary'}
+            <button className="btn btn-secondary" onClick={onRevokeComp} disabled={acting.has('revoke-comp')}>
+              {acting.has('revoke-comp') ? 'Revoking…' : 'Revoke complimentary'}
             </button>
           )}
           <button
             className="btn btn-ghost"
             onClick={onDeleteTenant}
-            disabled={acting === 'delete-tenant'}
+            disabled={acting.has('delete-tenant')}
             style={{ color: 'var(--status-error)', marginLeft: 'auto' }}
           >
-            {acting === 'delete-tenant' ? 'Deleting…' : 'Delete tenant'}
+            {acting.has('delete-tenant') ? 'Deleting…' : 'Delete tenant'}
           </button>
         </div>
         {comp && (
@@ -322,19 +323,19 @@ export default function PlatformTenantDetail() {
                         <button
                           className="btn btn-ghost"
                           style={{ fontSize: 12, padding: '4px 10px', height: 30 }}
-                          disabled={acting === `reset-${u.id}`}
+                          disabled={acting.has(`reset-${u.id}`)}
                           onClick={() => onResetUserPassword(u)}
                         >
-                          {acting === `reset-${u.id}` ? '…' : 'Reset password'}
+                          {acting.has(`reset-${u.id}`) ? '…' : 'Reset password'}
                         </button>
                         <button
                           className="btn btn-ghost"
                           style={{ fontSize: 12, padding: '4px 10px', height: 30, color: 'var(--status-error)' }}
-                          disabled={acting === `delete-user-${u.id}` || isMe}
+                          disabled={acting.has(`delete-user-${u.id}`) || isMe}
                           onClick={() => onDeleteUser(u)}
                           title={isMe ? 'You cannot delete your own account.' : undefined}
                         >
-                          {acting === `delete-user-${u.id}` ? '…' : 'Delete'}
+                          {acting.has(`delete-user-${u.id}`) ? '…' : 'Delete'}
                         </button>
                       </div>
                     </td>

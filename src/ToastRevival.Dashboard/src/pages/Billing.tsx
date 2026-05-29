@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, FormEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { billingApi, type BillingPlan, type Invoice } from '../api/billing';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -69,7 +68,6 @@ export default function Billing() {
   const [error, setError] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
-  const [searchParams] = useSearchParams();
 
   // Stripe config state
   const [stripeSnap, setStripeSnap]   = useState<StripeSnapshot | null>(null);
@@ -220,8 +218,6 @@ export default function Billing() {
     }
   };
 
-  const successSession = searchParams.get('session') === 'success';
-
   if (loading) {
     return (
       <div className="page-header">
@@ -251,12 +247,6 @@ export default function Billing() {
           </button>
         )}
       </div>
-
-      {successSession && (
-        <div className="success-banner" style={{ marginBottom: 24 }}>
-          Subscription activated. Billing will update after Stripe confirms the subscription.
-        </div>
-      )}
 
       {error && <div className="error-banner" style={{ marginBottom: 24 }}>{error}</div>}
 

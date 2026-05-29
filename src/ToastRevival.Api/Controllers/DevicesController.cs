@@ -245,11 +245,14 @@ public class DevicesController : ControllerBase
         return Ok(new AppearanceConfigResponse(overlay, lockScreen));
     }
 
-    // Called by agent to confirm it's still alive (heartbeat)
+    // Called by agent to confirm it's still alive (heartbeat).
+    // Optional body: { "agentVersion": "0.4.26" } — written to Device.AgentVersion so
+    // the dashboard reflects the installed version after an MSI upgrade (which reuses
+    // the existing config.json and never re-registers).
     [Authorize]
     [HttpPost("ping")]
     [EnableRateLimiting("device-per-hour")]
-    public async Task<IActionResult> Ping()
+    public async Task<IActionResult> Ping([FromBody] PingRequest? body = null)
     {
         var deviceIdClaim = User.FindFirstValue("deviceId");
         if (!Guid.TryParse(deviceIdClaim, out var deviceId)) return Unauthorized();
@@ -259,6 +262,8 @@ public class DevicesController : ControllerBase
         if (device is null) return NotFound();
 
         device.LastPing = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(body?.AgentVersion))
+            device.AgentVersion = body.AgentVersion;
         await _db.SaveChangesAsync();
         return NoContent();
     }

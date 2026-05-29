@@ -291,6 +291,10 @@ internal sealed class AgentHubClient : IAsyncDisposable
         DiagLog.Write($"Hub started: state={_hub.State}; connectionId={_hub.ConnectionId}");
         ConnectionStateChanged?.Invoke(this, AgentConnectionState.Connected);
 
+        // Report version on every connect so the dashboard reflects it after an MSI
+        // upgrade (which reuses existing config.json and never re-registers).
+        _ = ReportVersionAsync(ct);
+
         _pingLoop = Task.Run(() => RunPingLoopAsync(_shutdown.Token));
 
         // Cold-start catch-up: cover anything dispatched while the agent was
@@ -580,6 +584,19 @@ internal sealed class AgentHubClient : IAsyncDisposable
         }
     }
 
+    private async Task ReportVersionAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await _http.PostAsJsonAsync("/api/devices/ping", new { agentVersion = ThisAssembly.Version }, ct);
+            DiagLog.Write($"ReportVersion: {ThisAssembly.Version} -> {(int)resp.StatusCode}");
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"ReportVersion failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
     private async Task RunPingLoopAsync(CancellationToken ct)
     {
         // Hub OnConnectedAsync already updates Device.LastPing on every reconnect.
@@ -597,7 +614,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
 
             try
             {
-                using var resp = await _http.PostAsync("/api/devices/ping", content: null, ct);
+                using var resp = await _http.PostAsJsonAsync("/api/devices/ping", new { agentVersion = ThisAssembly.Version }, ct);
                 DiagLog.Write($"Ping: {(int)resp.StatusCode}");
             }
             catch (Exception ex)

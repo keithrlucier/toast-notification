@@ -37,3 +37,6 @@ public record InteractionRequest(
 // every Windows toast). Optional with a default so an old 0.4.5 agent that
 // only reads TenantName continues to deserialize cleanly.
 public record TenantAttributionResponse(string TenantName, string? LogoUrl = null);
+
+// Body for POST /api/devices/ping. Optional — agents before 0.4.26 send no body.
+public record PingRequest(string? AgentVersion = null);

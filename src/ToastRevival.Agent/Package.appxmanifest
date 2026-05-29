@@ -11,7 +11,7 @@
   <Identity
       Name="FileUnityCloud.ToastNotification"
       Publisher="CN=A6ED11E0-AF8D-4915-9F9C-DC58C9005BEE"
-      Version="0.4.26.0"
+      Version="0.4.27.0"
       ProcessorArchitecture="x64" />
 
   <Properties>

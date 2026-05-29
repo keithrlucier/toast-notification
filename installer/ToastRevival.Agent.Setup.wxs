@@ -67,6 +67,48 @@
       </Component>
     </ComponentGroup>
 
+    <ComponentGroup Id="UpdaterTaskAssets" Directory="INSTALLFOLDER">
+      <!--
+        The SYSTEM-level updater task XML. The task action uses PowerShell to read
+        InstallPath from the registry, resolving the exe path at run-time rather than
+        hard-coding it here — survives reinstalls to different directories.
+      -->
+      <Component Id="UpdaterTaskXml" Guid="A3F9E1B2-C748-4D5A-B031-6E2F8D9A1C47">
+        <File Id="ToastNotificationUpdaterXml"
+              Source="$(var.UpdaterTaskXmlPath)"
+              Name="ToastNotificationUpdater.xml"
+              KeyPath="yes" />
+      </Component>
+
+      <!--
+        InstallPath registry value: used by the updater task's PowerShell command to
+        locate ToastNotification.Agent.exe at run-time as SYSTEM.
+      -->
+      <Component Id="InstallPathRegistry" Guid="B5D2A7F3-E091-4C86-A142-7F3E9B0D2A58">
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\Toast2IT\Toast Notification"
+                       Name="InstallPath"
+                       Type="string"
+                       Value="[INSTALLFOLDER]"
+                       KeyPath="yes" />
+      </Component>
+
+      <!--
+        InstalledProductCode registry value: written at install time so the agent can
+        later pass the exact ProductCode to msiexec /x for a silent uninstall.
+        WiX generates a fresh ProductCode on every build; [ProductCode] resolves to
+        the current build's GUID at install time.
+      -->
+      <Component Id="InstalledProductCodeRegistry" Guid="C6E3B8A4-F102-4D97-B253-8A4F0C1E3B69">
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\Toast2IT\Toast Notification"
+                       Name="InstalledProductCode"
+                       Type="string"
+                       Value="[ProductCode]"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
     <ComponentGroup Id="Shortcuts">
       <Component Id="StartMenuShortcut" Directory="AppStartMenuFolder" Guid="2D1A8E37-B7F0-4F4B-AE5C-71E2A9D6CA42">
         <Shortcut Id="StartMenuAgentShortcut"
@@ -152,6 +194,7 @@
     <Feature Id="Main" Title="Toast Notification Agent" Level="1">
       <ComponentGroupRef Id="AgentFiles" />
       <ComponentGroupRef Id="LogonTaskAssets" />
+      <ComponentGroupRef Id="UpdaterTaskAssets" />
       <ComponentGroupRef Id="Shortcuts" />
       <ComponentGroupRef Id="DisableAutoUpdateReg" />
     </Feature>
@@ -215,6 +258,25 @@
                   Return="ignore" />
 
     <!--
+      M15: SYSTEM updater task for MSI self-update and remote uninstall.
+      Install: register the task so the agent can fire it via schtasks /Run.
+      Uninstall: remove it (Return="ignore" if the task was already deleted by msiexec).
+    -->
+    <CustomAction Id="InstallUpdaterTask"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationUpdater&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationUpdater.xml&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <CustomAction Id="UninstallUpdaterTask"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Delete /TN &quot;\Toast2IT\ToastNotificationUpdater&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
       D9: Write bootstrap.json next to the exe using the agent's own setup-bootstrap
       mode (XML comments cannot contain the literal CLI double-dash; the actual flag
       is on the ExeCommand attribute below). Runs before InstallScheduledTask so the
@@ -260,13 +322,17 @@
 
     <InstallExecuteSequence>
       <!-- Write bootstrap.json first; schedule task fires into a configured agent. -->
-      <Custom Action="WriteBootstrapJson"     After="InstallFiles"          Condition="NOT REMOVE AND CLIENTID &lt;&gt; &quot;&quot; AND SERVERURL &lt;&gt; &quot;&quot;" />
-      <Custom Action="InstallScheduledTask"   After="WriteBootstrapJson"    Condition="NOT REMOVE" />
-      <Custom Action="StartAgentNow"          After="InstallScheduledTask"  Condition="NOT REMOVE" />
-      <Custom Action="KillAgent"              Before="InstallValidate"        Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="WriteBootstrapJson"     After="InstallFiles"           Condition="NOT REMOVE AND CLIENTID &lt;&gt; &quot;&quot; AND SERVERURL &lt;&gt; &quot;&quot;" />
+      <Custom Action="InstallScheduledTask"   After="WriteBootstrapJson"     Condition="NOT REMOVE" />
+      <!-- M15: install the SYSTEM updater task after the logon task -->
+      <Custom Action="InstallUpdaterTask"     After="InstallScheduledTask"   Condition="NOT REMOVE" />
+      <Custom Action="StartAgentNow"          After="InstallUpdaterTask"     Condition="NOT REMOVE" />
+      <Custom Action="KillAgent"              Before="InstallValidate"       Condition="REMOVE=&quot;ALL&quot;" />
       <Custom Action="UninstallScheduledTask" Before="DeleteUserConfig"      Condition="REMOVE=&quot;ALL&quot;" />
-      <Custom Action="DeleteUserConfig"       Before="DeleteBootstrapJson"  Condition="REMOVE=&quot;ALL&quot;" />
-      <Custom Action="DeleteBootstrapJson"    Before="RemoveFiles"          Condition="REMOVE=&quot;ALL&quot;" />
+      <!-- M15: remove the SYSTEM updater task alongside the logon task -->
+      <Custom Action="UninstallUpdaterTask"   After="UninstallScheduledTask" Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="DeleteUserConfig"       Before="DeleteBootstrapJson"   Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="DeleteBootstrapJson"    Before="RemoveFiles"           Condition="REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>
 
   </Package>

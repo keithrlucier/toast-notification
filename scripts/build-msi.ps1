@@ -10,12 +10,14 @@ $repoRoot       = Split-Path -Parent $PSScriptRoot
 $projectPath    = Join-Path $repoRoot "src\ToastRevival.Agent\ToastRevival.Agent.csproj"
 $agentSrcDir    = Join-Path $repoRoot "src\ToastRevival.Agent"
 $publishDir     = Join-Path $repoRoot "artifacts\ToastRevival.Agent\$RuntimeIdentifier-self-contained"
-$installerSrc   = Join-Path $repoRoot "installer\ToastRevival.Agent.Setup.wxs"
-$logonTaskXml   = Join-Path $repoRoot "installer\ToastNotificationLogon.xml"
+$installerSrc    = Join-Path $repoRoot "installer\ToastRevival.Agent.Setup.wxs"
+$logonTaskXml    = Join-Path $repoRoot "installer\ToastNotificationLogon.xml"
+$updaterTaskXml  = Join-Path $repoRoot "installer\ToastNotificationUpdater.xml"
 $installerOut   = Join-Path $repoRoot "artifacts\installer"
 $msiPath        = Join-Path $installerOut "ToastNotification.Agent-$Version.msi"
 
-if (-not (Test-Path $logonTaskXml)) { throw "Logon task XML not found: $logonTaskXml" }
+if (-not (Test-Path $logonTaskXml))    { throw "Logon task XML not found: $logonTaskXml" }
+if (-not (Test-Path $updaterTaskXml)) { throw "Updater task XML not found: $updaterTaskXml" }
 
 Write-Host "==> Publishing self-contained agent ($RuntimeIdentifier)..."
 dotnet publish $projectPath `
@@ -54,6 +56,7 @@ Write-Host "==> Building MSI ($Version) -> $msiPath"
     -d "PublishDir=$publishDir" `
     -d "ProductVersion=$Version" `
     -d "LogonTaskXmlPath=$logonTaskXml" `
+    -d "UpdaterTaskXmlPath=$updaterTaskXml" `
     -d "LicenseRtf=$licenseRtf" `
     -d "AgentSrcDir=$agentSrcDir" `
     -o $msiPath

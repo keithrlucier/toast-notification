@@ -189,6 +189,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
 
     public event EventHandler<AgentConnectionState>? ConnectionStateChanged;
     public event Action? OnDecommissioned;
+    public event Action? OnUninstallRequested;
 
     private readonly DeviceConfig _config;
     private readonly HubConnection _hub;
@@ -250,6 +251,22 @@ internal sealed class AgentHubClient : IAsyncDisposable
             DiagLog.Write("DeviceDecommissioned: clearing config for immediate re-registration.");
             try { File.Delete(ConfigStore.GetConfigPath()); } catch { /* best-effort */ }
             OnDecommissioned?.Invoke();
+            _shutdown.Cancel();
+        });
+        _hub.On("UninstallAgent", () =>
+        {
+            DiagLog.Write("UninstallAgent: remote uninstall command received.");
+            // Fire-and-forget: restore lock screen, write trigger file, fire SYSTEM task.
+            // Cancel shutdown so PrimaryMode exits its wait loop while the async work runs.
+            _ = Task.Run(async () =>
+            {
+                try { await SelfUpdateService.RequestUninstallAsync(CancellationToken.None); }
+                catch (Exception ex)
+                {
+                    DiagLog.Write($"UninstallAgent: RequestUninstallAsync failed: {ex.GetType().Name}: {ex.Message}");
+                }
+            });
+            OnUninstallRequested?.Invoke();
             _shutdown.Cancel();
         });
         _hub.Reconnecting += ex =>

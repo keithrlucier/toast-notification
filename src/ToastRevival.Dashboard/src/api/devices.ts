@@ -90,6 +90,7 @@ export const devicesApi = {
     return normalizeDevice(device);
   },
   decommission: (id: string) => api.delete(`/api/devices/${id}`),
+  uninstall: (id: string) => api.post(`/api/devices/${id}/uninstall`, {}),
   listGroups: () => api.get<DeviceGroup[]>('/api/devicegroups'),
   createGroup: (req: SaveDeviceGroupRequest) =>
     api.post<DeviceGroup>('/api/devicegroups', req),

@@ -4,9 +4,11 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Hubs;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
 
@@ -19,22 +21,30 @@ public class DevicesController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ITokenService _tokens;
     private readonly IAuditService _audit;
-
     private readonly ILicenseService _license;
     private readonly IStripeBillingSyncService _billingSync;
+    private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly IConfiguration _config;
+    private readonly ILogger<DevicesController> _logger;
 
     public DevicesController(
         AppDbContext db,
         ITokenService tokens,
         IAuditService audit,
         ILicenseService license,
-        IStripeBillingSyncService billingSync)
+        IStripeBillingSyncService billingSync,
+        IHubContext<NotificationHub> hubContext,
+        IConfiguration config,
+        ILogger<DevicesController> logger)
     {
         _db = db;
         _tokens = tokens;
         _audit = audit;
         _license = license;
         _billingSync = billingSync;
+        _hubContext = hubContext;
+        _config = config;
+        _logger = logger;
     }
 
     /// <summary>
@@ -266,6 +276,84 @@ public class DevicesController : ControllerBase
             device.AgentVersion = body.AgentVersion;
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    /// <summary>
+    /// Returns the current latest agent version and MSI download URL. Anonymous —
+    /// the agent polls this without a token so it works before the device is online.
+    /// Values are configured via Agent:LatestVersion + Agent:MsiDownloadUrl in
+    /// appsettings (env-var overridden in production).
+    /// </summary>
+    [HttpGet("/api/agent/version")]
+    [AllowAnonymous]
+    public IActionResult GetAgentVersion()
+    {
+        var version     = _config["Agent:LatestVersion"];
+        var downloadUrl = _config["Agent:MsiDownloadUrl"];
+
+        if (string.IsNullOrWhiteSpace(version) || string.IsNullOrWhiteSpace(downloadUrl))
+            return NotFound("Agent version info not configured.");
+
+        return Ok(new { version, msiDownloadUrl = downloadUrl });
+    }
+
+    /// <summary>
+    /// Decommissions a device AND pushes "UninstallAgent" to it via the SignalR hub
+    /// if it is currently connected. The agent restores the lock screen, writes the
+    /// uninstall trigger file, and fires the SYSTEM updater task which runs
+    /// msiexec /x. Requires admin role (more destructive than plain decommission).
+    ///
+    /// If the device is offline the decommission still happens; the agent software
+    /// will not be removed but the device won't be able to reconnect.
+    /// </summary>
+    [Authorize]
+    [HttpPost("{id:guid}/uninstall")]
+    [EnableRateLimiting("tenant-per-minute")]
+    public async Task<IActionResult> RequestUninstall(Guid id)
+    {
+        if (!IsAdmin()) return Forbid();
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var device = await _db.Devices.FindAsync(id);
+        if (device is null) return NotFound();
+        if (device.TenantId != tenantId) return NotFound();
+
+        device.Status = DeviceStatus.Decommissioned;
+        await _db.SaveChangesAsync();
+
+        var tenant = await _db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == device.TenantId);
+        if (tenant is not null)
+        {
+            await _license.DecrementConsumedAsync(tenant);
+            await _billingSync.SyncSubscriptionQuantityAsync(tenant);
+        }
+
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        await _audit.LogAsync(tenantId, userId, "device.uninstall", "Device", id.ToString());
+
+        // Push to the device if it's currently connected on the hub.
+        if (NotificationHub.ConnectedDevices.TryGetValue(id, out var connectionId))
+        {
+            try
+            {
+                await _hubContext.Clients.Client(connectionId).SendAsync("UninstallAgent");
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal — device is decommissioned regardless. Agent will
+                // handle DeviceDecommissioned on next reconnect.
+                _logger?.LogWarning(ex, "UninstallAgent hub push failed for device {DeviceId}", id);
+            }
+        }
+
+        return NoContent();
+    }
+
+    private bool IsAdmin()
+    {
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role") ?? "";
+        return role is "Admin" or "SuperAdmin" || User.HasClaim("platformAdmin", "true");
     }
 
     private static DeviceResponse ToResponse(Device d) =>

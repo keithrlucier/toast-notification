@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  ToastNotificationUpdater — on-demand SYSTEM scheduled task.
+
+  This task is installed by the MSI and run by the agent to execute privileged
+  operations that require SYSTEM rights: over-the-top MSI upgrades and silent
+  MSI uninstalls.
+
+  Trigger: on-demand only (no time triggers). The agent writes a trigger file at
+    %ProgramData%\Toast2IT\Toast Notification\pending-action.txt
+  and fires this task via:
+    schtasks.exe /Run /TN "\Toast2IT\ToastNotificationUpdater"
+
+  The task reads the trigger file and launches msiexec. Running as SYSTEM
+  allows per-machine MSI operations without UAC prompts.
+
+  The PowerShell action reads InstallPath from the registry so this task
+  survives reinstalls to different directories without needing recreation.
+-->
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Toast Notification on-demand updater. Runs as SYSTEM to apply agent updates and uninstalls triggered remotely via the admin panel.</Description>
+    <URI>\Toast2IT\ToastNotificationUpdater</URI>
+  </RegistrationInfo>
+  <Principals>
+    <Principal id="SYSTEM">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT30M</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+    <Hidden>true</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+  </Settings>
+  <Triggers>
+    <!-- No triggers — on-demand only. Fired via schtasks /Run. -->
+  </Triggers>
+  <Actions Context="SYSTEM">
+    <Exec>
+      <Command>%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe</Command>
+      <Arguments>-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $p = (Get-ItemProperty 'HKLM:\SOFTWARE\Toast2IT\Toast Notification' -Name InstallPath -ErrorAction Stop).InstallPath.TrimEnd('\'); $e = Join-Path $p 'ToastNotification.Agent.exe'; if (Test-Path $e) { Start-Process $e '--run-updater' -Wait } else { exit 2 } } catch { exit 1 }"</Arguments>
+    </Exec>
+  </Actions>
+</Task>

@@ -84,6 +84,16 @@ namespace ToastRevival.Agent
                 return DiagMode.Run();
             }
 
+            // Updater task mode — launched by the ToastNotificationUpdater SYSTEM scheduled
+            // task. Reads the pending-action.txt trigger file and executes msiexec for
+            // over-the-top updates or uninstalls. Short-lived, exits after launching msiexec.
+            // Runs as SYSTEM — must be dispatched before the elevation note.
+            if (HasFlag(args, "--run-updater"))
+            {
+                DiagLog.Write("==> --run-updater: SYSTEM updater task mode.");
+                return SelfUpdateService.RunUpdaterMode();
+            }
+
             // Elevation note (no longer fatal). The historical "elevated processes can't show
             // toasts" rule was a UWP/Windows.UI.Notifications limitation. WinAppSDK 1.7 supports
             // elevated callers when the AUMID + COM activator are properly registered (we do
@@ -551,11 +561,18 @@ namespace ToastRevival.Agent
                         catch (Exception ex) { DiagLog.Write($"PrimaryMode: ApplyUpdate failed: {ex.GetType().Name}: {ex.Message}"); }
                     };
 
-                    var updateTask = Task.Run(() => UpdateService.RunUpdateLoopAsync(shutdown.Token));
+                    var updateTask    = Task.Run(() => UpdateService.RunUpdateLoopAsync(shutdown.Token));
+                    var msiUpdateTask = Task.Run(() => SelfUpdateService.RunMsiUpdateLoopAsync(config, shutdown.Token));
 
                     client.OnDecommissioned += () =>
                     {
                         reregister = true;
+                        shutdown.Cancel();
+                    };
+
+                    client.OnUninstallRequested += () =>
+                    {
+                        DiagLog.Write("PrimaryMode: uninstall requested — cancelling primary loop.");
                         shutdown.Cancel();
                     };
 

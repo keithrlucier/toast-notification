@@ -142,6 +142,42 @@ function Set-LockScreenPolicy {
     }
 }
 
+function Write-BootstrapFallback {
+    # The MSI's WriteBootstrapJson custom action runs the freshly-dropped agent
+    # exe as SYSTEM and is frequently blocked by AV/EDR on hardened endpoints
+    # (msiexec logs "1721 ... a program required for this install could not be
+    # run"). When that happens the MSI never writes bootstrap.json and the agent
+    # has no tenant to register with. This fallback writes it directly.
+    #
+    # CRITICAL: keys are camelCase (tenantId/serverUrl/enrollmentKey). The agent
+    # deserializes bootstrap.json case-SENSITIVELY; PascalCase silently yields an
+    # empty TenantId and the device never checks in.
+    $installDir    = Join-Path $env:ProgramFiles 'Toast Notification'
+    $bootstrapPath = Join-Path $installDir 'bootstrap.json'
+    if (-not (Test-Path -LiteralPath $installDir)) {
+        Write-Log "Install dir not present — skipping bootstrap fallback." 'WARN'; return
+    }
+    if (Test-Path -LiteralPath $bootstrapPath) {
+        Write-Log "bootstrap.json already present (MSI wrote it) — no fallback needed."; return
+    }
+    Write-Log "bootstrap.json missing (MSI custom action likely AV-blocked) — writing camelCase fallback."
+    try {
+        $obj = [ordered]@{ tenantId = $TenantId; serverUrl = $ServerUrl }
+        if ($EnrollmentKey) { $obj.enrollmentKey = $EnrollmentKey }
+        $json = ($obj | ConvertTo-Json -Compress)
+        [System.IO.File]::WriteAllText($bootstrapPath, $json, [System.Text.Encoding]::UTF8)
+        Write-Log "Wrote $bootstrapPath"
+        # Restart the agent so it reads the bootstrap we just wrote (the MSI's
+        # StartAgentNow already launched an instance that found no config).
+        Get-Process -Name 'ToastNotification.Agent' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+        & "$env:windir\System32\schtasks.exe" /Run /TN "\Toast2IT\ToastNotificationAgentLogon" | Out-Null
+        Write-Log "Restarted agent via logon task to pick up bootstrap."
+    } catch {
+        Write-Log "Bootstrap fallback failed: $($_.Exception.Message)" 'WARN'
+    }
+}
+
 # ── Step 1: validate parameters ────────────────────────────────────────────
 
 try {
@@ -302,9 +338,12 @@ $exitCode = $proc.ExitCode
 
 # ── Step 8: report ────────────────────────────────────────────────────────
 
-if (($exitCode -eq 0 -or $exitCode -eq 3010) -and $PinLockScreen) {
-    Write-Log "PinLockScreen set — applying lock screen Spotlight policy."
-    Set-LockScreenPolicy
+if ($exitCode -eq 0 -or $exitCode -eq 3010) {
+    Write-BootstrapFallback
+    if ($PinLockScreen) {
+        Write-Log "PinLockScreen set — applying lock screen Spotlight policy."
+        Set-LockScreenPolicy
+    }
 }
 
 switch ($exitCode) {

@@ -55,3 +55,6 @@ Thumbs.db
 
 # Playwright MCP browser cache
 .playwright-mcp/
+
+# Pasted diagnostic logs — may contain tenant enrollment keys; never commit/mirror.
+Docs/Troubleshooting/

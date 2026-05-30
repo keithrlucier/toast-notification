@@ -199,12 +199,53 @@
       </Component>
     </ComponentGroup>
 
+    <!--
+      Bootstrap-via-registry (0.4.33). Writes the tenant config the agent needs to
+      self-register as NATIVE registry values, straight from the MSI properties.
+      This is the reliable replacement for WriteBootstrapJson: that custom action
+      runs the freshly-dropped agent exe as SYSTEM and is routinely blocked by
+      AV/EDR on hardened endpoints (msiexec error 1721), which forced a fragile
+      text-file fallback. Native RegistryValue rows are written by Windows Installer
+      itself — nothing executes, so AV has nothing to block. The agent reads
+      HKLM\SOFTWARE\Toast2IT\Toast Notification (TenantId/ServerUrl/EnrollmentKey)
+      ahead of bootstrap.json. KeyPath rows are removed on uninstall automatically.
+    -->
+    <ComponentGroup Id="BootstrapRegistry" Directory="INSTALLFOLDER">
+      <Component Id="BootstrapTenantReg"
+                 Guid="D7A4F2C9-1E83-4B6A-9C50-3F8E2A1D7B64"
+                 Condition="CLIENTID &lt;&gt; &quot;&quot; AND SERVERURL &lt;&gt; &quot;&quot;">
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\Toast2IT\Toast Notification"
+                       Name="TenantId"
+                       Type="string"
+                       Value="[CLIENTID]"
+                       KeyPath="yes" />
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\Toast2IT\Toast Notification"
+                       Name="ServerUrl"
+                       Type="string"
+                       Value="[SERVERURL]" />
+      </Component>
+
+      <Component Id="BootstrapEnrollReg"
+                 Guid="E8B5A3DA-2F94-4C7B-AD61-4A9F3B2E8C75"
+                 Condition="ENROLLMENTKEY &lt;&gt; &quot;&quot;">
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\Toast2IT\Toast Notification"
+                       Name="EnrollmentKey"
+                       Type="string"
+                       Value="[ENROLLMENTKEY]"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
     <Feature Id="Main" Title="Toast Notification Agent" Level="1">
       <ComponentGroupRef Id="AgentFiles" />
       <ComponentGroupRef Id="LogonTaskAssets" />
       <ComponentGroupRef Id="UpdaterTaskAssets" />
       <ComponentGroupRef Id="Shortcuts" />
       <ComponentGroupRef Id="DisableAutoUpdateReg" />
+      <ComponentGroupRef Id="BootstrapRegistry" />
     </Feature>
 
     <!--
@@ -375,7 +416,12 @@
       <Custom Action="InstallScheduledTask"   After="WriteBootstrapJson"     Condition="NOT REMOVE" />
       <!-- M15: install the SYSTEM updater task after the logon task -->
       <Custom Action="InstallUpdaterTask"     After="InstallScheduledTask"   Condition="NOT REMOVE" />
-      <Custom Action="StartAgentNow"          After="InstallUpdaterTask"     Condition="NOT REMOVE" />
+      <!-- Start the agent AFTER WriteRegistryValues so the HKLM bootstrap
+           (TenantId/ServerUrl/EnrollmentKey) is already committed when the agent
+           first runs and reads it. The install-time CAs above land in the
+           InstallFiles window (before WriteRegistryValues), so anchoring here is
+           what guarantees the agent sees its tenant config on the very first launch. -->
+      <Custom Action="StartAgentNow"          After="WriteRegistryValues"    Condition="NOT REMOVE" />
       <!-- Kill agent on uninstall AND on upgrade (Installed = prior version present).
            Runs before InstallValidate so no files are locked when new binaries land,
            eliminating the reboot requirement on upgrade. -->

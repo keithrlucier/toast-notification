@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Win32;
 
 namespace ToastRevival.Agent;
 
@@ -103,11 +104,25 @@ internal static class ConfigStore
         return Encoding.UTF8.GetString(plaintext);
     }
 
+    private const string BootstrapRegistryKey = @"SOFTWARE\Toast2IT\Toast Notification";
+
+    // Case-insensitive so a bootstrap.json written by ANY source (the MSI's own
+    // writer, an RMM script, a hand edit) registers regardless of key casing.
+    // The agent deserialized case-sensitively before 0.4.33, so a PascalCase
+    // fallback file silently produced an empty TenantId and the device never
+    // checked in. This makes the casing irrelevant.
+    private static readonly JsonSerializerOptions BootstrapJsonOptions =
+        new() { PropertyNameCaseInsensitive = true };
+
     public static BootstrapConfig? TryLoadBootstrap()
     {
-        // Walk a few candidate locations. The MSI/MSIX installer (D9) will write
-        // bootstrap.json next to the exe at install time using MSI properties
-        // CLIENTID + SERVERURL. For dev/diagnostic launches, env vars override.
+        // Resolution order, most-trusted / most-reliable first:
+        //   1. Env vars            — dev / diagnostic override.
+        //   2. HKLM registry       — written NATIVELY by the MSI (no exe run), so
+        //                            AV/EDR can't block it the way it blocks the
+        //                            WriteBootstrapJson custom action (MSI 1721).
+        //                            This is the reliable path on hardened fleets.
+        //   3. bootstrap.json      — legacy / Velopack / manual placement.
         var envTenant = Environment.GetEnvironmentVariable("TOAST_TENANT_ID");
         var envServer = Environment.GetEnvironmentVariable("TOAST_SERVER_URL");
         if (Guid.TryParse(envTenant, out var envTenantId) && !string.IsNullOrWhiteSpace(envServer))
@@ -115,13 +130,16 @@ internal static class ConfigStore
             return new BootstrapConfig(envTenantId, envServer);
         }
 
+        var fromRegistry = TryLoadBootstrapFromRegistry();
+        if (fromRegistry is not null) return fromRegistry;
+
         var beside = Path.Combine(AppContext.BaseDirectory, "bootstrap.json");
         if (File.Exists(beside))
         {
             try
             {
                 var json = File.ReadAllText(beside);
-                return JsonSerializer.Deserialize<BootstrapConfig>(json);
+                return JsonSerializer.Deserialize<BootstrapConfig>(json, BootstrapJsonOptions);
             }
             catch (Exception ex)
             {
@@ -130,5 +148,38 @@ internal static class ConfigStore
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Reads bootstrap config from HKLM\SOFTWARE\Toast2IT\Toast Notification —
+    /// TenantId + ServerUrl (+ optional EnrollmentKey). The MSI writes these as
+    /// native RegistryValue rows at install time from its CLIENTID/SERVERURL/
+    /// ENROLLMENTKEY properties, so this path never depends on executing the
+    /// agent binary during install (the AV-blocked WriteBootstrapJson failure
+    /// mode). Returns null if the values aren't present or aren't valid.
+    /// </summary>
+    private static BootstrapConfig? TryLoadBootstrapFromRegistry()
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(BootstrapRegistryKey);
+            if (key is null) return null;
+
+            var tenant = key.GetValue("TenantId") as string;
+            var server = key.GetValue("ServerUrl") as string;
+            if (!Guid.TryParse(tenant, out var tenantId) || string.IsNullOrWhiteSpace(server))
+                return null;
+
+            var enroll = key.GetValue("EnrollmentKey") as string;
+            if (string.IsNullOrWhiteSpace(enroll)) enroll = null;
+
+            DiagLog.Write("ConfigStore: bootstrap loaded from HKLM registry.");
+            return new BootstrapConfig(tenantId, server, enroll);
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"ConfigStore.TryLoadBootstrapFromRegistry failed: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
     }
 }

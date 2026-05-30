@@ -105,7 +105,7 @@ $AppxLike = '*ToastNotification*'   # MSIX Package.Identity.Name is FileUnityClo
 $productCodes = @()
 try {
     $arpMatches = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -like $NameLike }
+        Where-Object { $_.DisplayName -like $NameLike -and $_.Publisher -like '*Toast2IT*' }
     foreach ($m in $arpMatches) { $productCodes += $m.PSChildName; Write-Log "MSI match by name: '$($m.DisplayName)' $($m.DisplayVersion) -> $($m.PSChildName)" }
 } catch {
     Write-Log "Could not query Add/Remove Programs: $($_.Exception.Message)" 'WARN'
@@ -287,6 +287,24 @@ try {
             try { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null } catch { }
         }
 } catch { Write-Log "Get-AppxProvisionedPackage sweep raised (non-fatal): $($_.Exception.Message)" 'WARN' }
+
+# ── Step 5c: purge SYSTEM-side residuals (scheduled tasks, HKLM bootstrap) ──
+
+# MSI custom actions clean these for MSI-channel uninstalls. On a Store/MSIX-only
+# endpoint those actions never run, leaving orphaned tasks and the bootstrap key.
+# Run unconditionally and best-effort so both channels are fully reversed.
+Write-Log "Purging Toast2IT scheduled tasks and HKLM bootstrap key."
+try {
+    Get-ScheduledTask -TaskPath '\Toast2IT\*' -ErrorAction SilentlyContinue |
+        Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Log "Scheduled tasks under \Toast2IT unregistered (or were not present)."
+} catch { Write-Log "Scheduled task cleanup raised (non-fatal): $($_.Exception.Message)" 'WARN' }
+try {
+    if (Test-Path 'HKLM:\SOFTWARE\Toast2IT') {
+        Remove-Item -Path 'HKLM:\SOFTWARE\Toast2IT' -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Log "HKLM:\SOFTWARE\Toast2IT removed."
+    }
+} catch { Write-Log "HKLM bootstrap key cleanup raised (non-fatal): $($_.Exception.Message)" 'WARN' }
 
 # ── Step 6: purge per-user config from every profile ───────────────────────
 

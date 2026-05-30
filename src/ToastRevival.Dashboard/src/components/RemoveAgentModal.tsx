@@ -89,7 +89,7 @@ export default function RemoveAgentModal({ machineName, isOnline, onRemoteUninst
         {/* Primary: downloadable fleet clean-removal script */}
         <div
           style={{
-            border: '1px solid var(--border, #D7DEE8)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-sm)',
             padding: '14px 16px',
             marginBottom: 14,

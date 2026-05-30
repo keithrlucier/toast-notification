@@ -1,14 +1,14 @@
-# REVIEW LEDGER — Cold Code Review (2026-05-29)
+# REVIEW LEDGER — Cold Code Review (2026-05-30)
 
-**Pass date:** 2026-05-29
-**Reviewer:** Carl (cold reviewer — parallel Explore agents dispatched for Backend API, Frontend, and Infrastructure/Agent surfaces)
-**Scope:** Net-new code since prior ledger closed clean at `a6e6e9a` (0.4.18, 2026-05-28). Diff covers 0.4.19 → HEAD (6b041f5) — Platform Admin tenant lifecycle (M13, 0.4.21/0.4.24), Microsoft Entra SSO (M14), installer/credential hygiene, prerender legal pages. 45 files changed, +5,885/−208.
-**Prior ledger archived to:** `docs/review_history/REVIEW_LEDGER_2026-05-28_2.md`
+**Pass date:** 2026-05-30
+**Reviewer:** Carl (cold reviewer — 4 parallel read-only review agents dispatched across Agent self-update, Backend API, Installer/RMM, and Frontend surfaces; all Critical/High claims personally verified against source by Carl before entry).
+**Scope:** Net-new code since prior ledger closed clean at `6b041f5` (0.4.19, 2026-05-29). Diff `6b041f5..HEAD (ac322a4)` — M15 MSI self-update + remote uninstall (0.4.28), installer survival fixes (0.4.29–0.4.31), registry-native bootstrap (0.4.33), name-driven multi-channel RMM removal, downloadable clean-removal script. 30 files changed, +2,190 / −189.
+**Prior ledger archived to:** `docs/review_history/REVIEW_LEDGER_2026-05-30_1.md`
 
 Read REVIEW_LEDGER.md / latest review_history? Yes
-Closed-pass anchors honored? Yes — INFO-01 REJECTED-by-design anchor on localStorage at `AuthContext.tsx:86` honored. Prior DevicesController IDOR fixes (May 26 pass, 7 IDOR) confirmed in-place and not re-flagged. All 3 findings from the 2026-05-28 pass are FIXED-VERIFIED.
-Files scanned: 45 (full diff since a6e6e9a + key prior-pass surfaces spot-checked)
-Files with anchors found and respected: 1 (AuthContext.tsx:86 INFO-01 localStorage)
+Closed-pass anchors honored? Yes — Agent-M1 (HTTPS guard) confirmed PRESENT at `Program.cs:330-337/460-466/685-691` and verified to also cover the new registry-bootstrap path (not bypassed, not re-flagged). Frontend-L1/L2 (prior pass) are terminal and out of this scope. The prior 4 DevicesController IDOR rejections were re-confirmed correct and not re-opened.
+Files scanned: 30 (full diff) + 8 adjacent files pulled for claim tracing (NotificationHub, TokenService, AppDbContext, HttpContextTenantProvider, UpdateService, Package.appxmanifest, DeviceDtos, index.css)
+Files with anchors found and respected: 1 (Agent-M1 HTTPS guard in `Program.cs`)
 
 ---
 
@@ -16,14 +16,12 @@ Files with anchors found and respected: 1 (AuthContext.tsx:86 INFO-01 localStora
 
 | Severity | Count | Open | Fixed | Rejected |
 |----------|-------|------|-------|----------|
-| Critical | 0     | 0    | 0     | 0        |
-| High     | 0     | 0    | 0     | 0        |
+| Critical | 1     | 0    | 1     | 0        |
+| High     | 1     | 0    | 1     | 0        |
 | Medium   | 1     | 0    | 1     | 0        |
-| Low      | 2     | 0    | 1     | 1        |
+| Low      | 4     | 0    | 4     | 0        |
 | ANCHOR-CHALLENGE | 0 | 0 | 0 | 0 |
-| **Total**| **3** | **0** | **2** | **1** |
-
-The Platform Admin and SSO surfaces are architecturally sound. The PlatformAdmin policy is enforced at the class level on SystemController — the frontend client-side checks are pure UX. The SSO state/nonce/CSRF handling is correct (DataProtection sealed cookie, fixed-time compare, single-use, 10-min expiry). The prior IDOR fixes hold. One real issue: the agent sends bearer tokens over whatever scheme the MSP installs — no HTTPS gate anywhere in the agent.
+| **Total**| **7** | **0** | **7** | **0** |
 
 ---
 
@@ -31,8 +29,9 @@ The Platform Admin and SSO surfaces are architecturally sound. The PlatformAdmin
 
 | ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
 |----|----------|--------|-----------|--------------|----------------|------------|
+| Agent-C1 | Critical | FIXED-VERIFIED | `src/ToastRevival.Agent/SelfUpdateService.cs:199-264` | The SYSTEM-level `RunUpdaterMode` read `pending-action.txt` and ran `msiexec` with no Authenticode re-verification in SYSTEM context; the only signature check ran in the user-context download process. Uninstall trigger accepted arbitrary path strings. | Local privilege escalation to SYSTEM via TOCTOU swap of staged MSI or path injection in uninstall trigger. | High |
 
-None found.
+**Disposition:** FIXED. `RunUpdaterMode` switch arms now call `ExecuteVerifiedMsiUpdate` and `ExecuteVerifiedMsiUninstall`. `ExecuteVerifiedMsiUpdate` re-runs `IsSignedByToast2IT` (X509 + WinVerifyTrust) in SYSTEM context on the exact path immediately before msiexec — closes TOCTOU. `ExecuteVerifiedMsiUninstall` validates the trigger arg matches `^\{[0-9A-Fa-f]{8}-...\}$` — closes path injection. Note: directory ACL hardening (belt-and-suspenders) requires a WiX installer change to set `DirectorySecurity` at installation time; deferred to next WiX pass since the SYSTEM-side re-verification provides the security guarantee. Verified: build clean 0W/0E; Code Sweep 5-perspective PASS.
 
 ---
 
@@ -40,8 +39,9 @@ None found.
 
 | ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
 |----|----------|--------|-----------|--------------|----------------|------------|
+| Agent-H1 | High | FIXED-VERIFIED | `src/ToastRevival.Agent/AgentClient.cs:262-271` + `SelfUpdateService.cs:125-152` | Remote uninstall fired `WriteTrigger`/`FireUpdaterTask` after an awaited best-effort `LockScreenService.RevertAsync` — process exit could occur before the trigger was written. | Remote uninstall silently no-ops; device stays enrolled despite admin removing it. | Medium |
 
-None found.
+**Disposition:** FIXED. `RequestUninstallAsync` reordered: `ReadInstalledProductCode` → `WriteTrigger` → `FireUpdaterTask` → `DiagLog` — all synchronous/non-awaited — then `LockScreenService.RevertAsync` as best-effort. The must-succeed action now commits before any await that could be interrupted by process exit. Verified: Code Sweep PASS; logic reviewed against AgentClient.cs shutdown sequence — `OnUninstallRequested`/`_shutdown.Cancel()` are called from outside the Task.Run, unaffected.
 
 ---
 
@@ -49,7 +49,9 @@ None found.
 
 | ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
 |----|----------|--------|-----------|--------------|----------------|------------|
-| Agent-M1 | Medium | FIXED-VERIFIED | `src/ToastRevival.Agent/Program.cs` | No HTTPS scheme validation on `config.ServerUrl`. Fixed: `#if !DEBUG` HTTPS guards added at three points in `Program.cs`: `SetupMode.RunAsync` (refuses to write `bootstrap.json` with HTTP URL), `TryFirstRunRegistrationAsync` (blocks registration), and `PrimaryMode.RunAsync` (blocks already-registered configs). DiagLog entries on rejection. Allows `localhost` HTTP in DEBUG builds. TS builds clean; C# Release build zero warnings. | Verified by Abish Code Sweep + `dotnet build --configuration Release` zero warnings. | High |
+| Agent-M2 | Medium | FIXED-VERIFIED | `src/ToastRevival.Agent/SelfUpdateService.cs:292-302` | `DownloadAndVerifyMsiAsync` accepted `http://` download URLs; `MsiDownloadUrl` is a server-supplied field separate from the HTTPS-guarded `config.ServerUrl`. | Contradicts Agent-M1 HTTPS posture; weakens defense-in-depth on the binary fetch. | High |
+
+**Disposition:** FIXED. `DownloadAndVerifyMsiAsync` now rejects non-`https` URLs in `#if !DEBUG` builds, matching the Agent-M1 pattern in `Program.cs`. DEBUG builds retain `http` for localhost testing. Log message updated to note `(https required)`. Verified: build clean 0W/0E.
 
 ---
 
@@ -57,8 +59,16 @@ None found.
 
 | ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
 |----|----------|--------|-----------|--------------|----------------|------------|
-| Frontend-L1 | Low | FIXED-VERIFIED | `src/ToastRevival.Dashboard/src/pages/PlatformTenantDetail.tsx` and `src/ToastRevival.Dashboard/src/pages/PlatformUsers.tsx` | `acting` promoted from `string \| null` to `ReadonlySet<string>` in both components. Each row's action button tracks its own in-flight key independently via functional `Set` updates. `runAction` uses `setActing(prev => new Set(prev).add(key))` on entry and `.delete(key)` in `finally`. All `acting === 'key'` checks changed to `acting.has('key')`. `npx tsc --noEmit` exits 0. | Verified by Abish Code Sweep + TypeScript zero errors. | High |
-| Frontend-L2 | Low | REJECTED-VERIFIED | `src/ToastRevival.Dashboard/src/pages/Billing.tsx` | Spoofable `?session=success` banner removed entirely. `useSearchParams` import, hook usage, `successSession` const, and the JSX success-banner block all dropped. Stripe's hosted checkout page provides payment confirmation before redirecting back; billing page fetches fresh server-side billing status on mount. No anchor needed — code removed, not annotated. `npx tsc --noEmit` exits 0. | Verified by Abish Code Sweep + TypeScript zero errors. Design rationale confirmed by Carl: Stripe's own success UX is sufficient; removing the URL-spoofable banner is the correct fix. | High |
+| Agent-L1 | Low | FIXED-VERIFIED | `src/ToastRevival.Agent/SelfUpdateService.cs:55-70` | `RunMsiUpdateLoopAsync` constructed `new Velopack.UpdateManager(string.Empty)` before any try/catch; a ctor/`IsInstalled` throw faulted the unobserved `Task.Run` silently, killing the MSI self-update channel for the session. | MSI/RMM-deployed agents could stop self-updating with no DiagLog line. | Medium |
+| Rmm-L1 | Low | FIXED-VERIFIED | `infrastructure/rmm/uninstall-toast-agent.ps1:108` | ARP removal matched `DisplayName -like 'Toast Notification*'` with no Publisher cross-check. | Third-party product with a matching display name would be removed; `Publisher -like '*Toast2IT*'` guard is cheap belt-and-suspenders. | High |
+| Rmm-L2 | Low | FIXED-VERIFIED | `infrastructure/rmm/uninstall-toast-agent.ps1` (Store/MSIX path, step 5b) | On a Store/MSIX-only endpoint, `\Toast2IT\*` scheduled tasks and the `HKLM:\SOFTWARE\Toast2IT` bootstrap key were not cleaned up — those are cleaned only by MSI custom actions. | Incomplete "do no harm" reversal on the Store channel — orphaned tasks and registry bootstrap left behind. | High |
+| Frontend-L1 | Low | FIXED-VERIFIED | `src/ToastRevival.Dashboard/src/components/RemoveAgentModal.tsx:92` | Inline style referenced `var(--border, #D7DEE8)` — `--border` does not exist (project token is `--border-subtle`); fallback value also one digit off. | Off-convention token reference and subtly inconsistent border color. | High |
+
+**Dispositions:**
+- **Agent-L1:** FIXED. Velopack detection moved into a dedicated try/catch; exceptions log to DiagLog and assume MSI-deployed (safe: `CheckAndTriggerAsync` exits early if version is current).
+- **Rmm-L1:** FIXED. `Where-Object` filter now includes `-and $_.Publisher -like '*Toast2IT*'` — belt-and-suspenders against false ARP name matches.
+- **Rmm-L2:** FIXED. Added step 5c after MSIX block: `Get-ScheduledTask -TaskPath '\Toast2IT\*' | Unregister-ScheduledTask -Confirm:$false` and `Remove-Item 'HKLM:\SOFTWARE\Toast2IT' -Recurse -Force` (guarded by `Test-Path`). Idempotent, best-effort, consistent with rest of script.
+- **Frontend-L1:** FIXED. Inline style changed to `var(--border-subtle)` — matches actual project token in `index.css`.
 
 ---
 
@@ -71,30 +81,22 @@ None found.
 
 ---
 
-## Top fixes (in order)
+## Notes on what was reviewed and NOT flagged (verified clean)
 
-1. **Agent-M1** — Add an HTTPS enforcement guard to `DeviceConfig` or `BootstrapConfig`. At the earliest point where `ServerUrl` is consumed (registration path is the first use), assert `serverUrl.StartsWith("https://")` and refuse to proceed if not. Emit a clear `DiagLog` entry and return null from `RegisterAsync` so the tray icon shows a configuration error rather than silently operating over HTTP. A `#if !DEBUG` guard is appropriate to allow localhost HTTP in dev builds.
+- **Agent-M1 HTTPS guard (prior pass, FIXED) — confirmed present and complete.** `#if !DEBUG` HTTP rejection exists at `Program.cs:330-337` (SetupMode), `:460-466` (PrimaryMode stored config), `:685-691` (TryFirstRunRegistrationAsync). The registry-native bootstrap (`DeviceConfig.cs:161-184`) flows through `TryFirstRunRegistrationAsync` then the PrimaryMode guard on every launch — the registry path does NOT bypass the guard. Not re-flagged.
+- **Remote uninstall authz (`DevicesController.cs:347-386`) — SAFE.** `[Authorize]` + `IsAdmin()` (role ∈ {Admin, SuperAdmin} or platformAdmin) + `if (device.TenantId != tenantId) return NotFound()` where `tenantId` is the signed JWT claim. `FindAsync(id)` bypasses the query filter but the explicit TenantId guard is the compensating control — same hardened pattern as `Decommission`. Device JWTs (`TokenService.cs:38-50`) carry no `role`/`platformAdmin`, so a stolen agent token cannot reach the uninstall command. No IDOR.
+- **Clean-removal script endpoint (`DevicesController.cs:306-333`) — SAFE.** Filename is a hardcoded literal; `root` is config-sourced; no request input reaches `Path.Combine` (no path traversal). Returns metadata only (`url`, `lastModifiedUtc`, `sizeBytes`) — never streams the body, never interpolates request data into a script. `.ps1` is fully static and server-owned. `[AllowAnonymous]` exposes only a public download URL + mtime/size, no secret.
+- **Prior 4 DevicesController IDOR rejections — re-confirmed.** `Get()` uses the global EF query filter; `Ping()`/`GetTenantName()`/`GetAppearanceConfig()` use `IgnoreQueryFilters()` but read ids from the signed device JWT. Honored, not re-opened.
+- **RMM MSIX removal (Rmm-M3 candidate) — RESOLVED, not a bug.** `Package.appxmanifest` `Identity Name="FileUnityCloud.ToastNotification"` (line 12) contains the substring matched by `$AppxLike = '*ToastNotification*'` (script line 101). Store-channel removal matches correctly.
+- **WiX installer standing rules — all hold.** KillAgent condition `REMOVE="ALL" OR Installed` present (`Setup.wxs:428`) — fires on upgrades, the production-verified fix. `MajorUpgrade Schedule="afterInstallFinalize"` correct (0.4.29). No `VersionNT64` launch condition (intentional per documented compat-shim behavior); runtime floor `IsWindowsVersionAtLeast(10,0,19041)` (`Program.cs:57`) agrees exactly with manifest `MinVersion="10.0.19041.0"` — no gate divergence.
+- **Banned codename — clean.** No user-visible "ToastRevival": WiX Package/install dir/Start Menu/shortcut all "Toast Notification"; RMM script user-facing strings and the served `.ps1` say "Toast Notification"; new API responses and the remove modal say "Toast Notification". "ToastRevival" remains only in internal namespaces / `Jwt:Issuer`/`Audience` / source paths (not user-visible).
+- **Frontend remove-agent modal — clean.** Backdrop dismiss uses the SAFE guarded pattern (mousedown-target ref + `e.target === e.currentTarget`), and the backdrop only calls `onClose`, never the destructive `onRemoteUninstall`. `UninstallScriptInfo` TS type matches the controller's anonymous return (camelCase default). No `btn-danger-ghost`/`form-label`/`form-input`/`form-select`/`--accent-primary`. No emojis. Download via plain `<a download>` (not a blob); `formatDate` guards null + NaN.
+- **Toast activation — clean.** 5s `_activationCache` keyed on full argument string collapses legacy + WinAppSDK double-fire to one; distinct buttons carry distinct args so they don't collide; the double-encoding fix (`ToastTemplates.cs:373`) pairs correctly with a single `UnescapeDataString` on read.
+- **Registry bootstrap parsing (`DeviceConfig.cs:161-184`)** — correct hive (HKLM), null-safe (`key is null`, `Guid.TryParse`, `IsNullOrWhiteSpace`), exceptions caught. camelCase bootstrap.json fallback consistent with `DeviceConfig` JsonPropertyName + case-insensitive loader. No secret values written to DiagLog.
+- **Resource/async** — HttpClient/HttpResponseMessage/FileStream in `using`/`await using`; RegistryKey/Mutex disposed; WinVerifyTrust AllocHGlobal freed in `finally`. `_lastCatchupSince` is nullable + omit-on-first-call (standing rule honored). No unsafe `nullable?.ToString()[..n]` slices.
 
-2. **Frontend-L1** — Elevate `acting` to a `Set<string>` (or a `Map<string, true>`) so each row tracks its own in-flight state independently. The set approach: add the key before the call, delete it in `finally`. No mutations fire twice (each API call is guarded on entry by checking `acting.has(key)`), and every row's button reflects its own state.
-
-3. **Frontend-L2** — Either drop the success-session UI entirely (Stripe's hosted page already has a success UX) or verify it via a server-side `GET /api/billing/session?id={checkoutSessionId}` round-trip after Stripe redirects back. The current Stripe checkout `successUrl` pattern can include `{CHECKOUT_SESSION_ID}` which the server can then verify.
-
----
-
-## Notes on what was reviewed and NOT flagged
-
-- **DevicesController IDOR (×4 — sub-agent claims rejected):** `Get()` (line 155) uses `_db.Devices` with global EF query filter active — TenantId isolation is automatic. `Ping()` (line 257) uses `IgnoreQueryFilters()` but the `deviceId` claim comes from the server-issued, signed device JWT — an attacker cannot forge a different device's id. `GetTenantName()` and `GetAppearanceConfig()` read `tenantId` from the signed device JWT — same logic applies. No IDOR.
-- **SystemController platform-admin gate:** Class-level `[Authorize(Policy = "PlatformAdmin")]` at `SystemController.cs:16` enforces the gate server-side. The frontend's `isPlatformAdmin` checks are UX only. Correct architecture.
-- **SsoController state/nonce/CSRF:** DataProtection sealed cookie (tamper-proof, time-limited to 10 min), SameSite=Lax, HttpOnly, Secure, `Path="/api/auth/sso/microsoft"`. State echoed by Microsoft compared with FixedTimeEquals. Cookie deleted single-use regardless of outcome. Nonce passed to `ExchangeCodeAsync` for id_token validation. Correct implementation.
-- **SsoController `FrontendBase()` redirect:** Reads `App:BaseUrl` config with hardcoded fallback `"https://toastnotification.com"`. Config-controlled base URLs are not user-controlled; changing this requires server access. Not an open redirect.
-- **SsoCallback.tsx — state param:** State validation is server-side (cookie comparison before JWT issuance). The SPA callback page reads only the pre-validated JWT from the URL fragment. No client-side re-validation is needed or expected.
-- **AuthContext.tsx localStorage:** Anchored at line 86 as `REVIEW-2026-05-25 INFO-01 REJECTED-by-design` — not re-flagged.
-- **Billing.tsx Stripe redirects (lines 131-132, 143-144):** `window.location.href = url` where `url` is a Stripe-hosted checkout or portal URL returned by the server. Standard Stripe integration pattern; URLs originate from the Stripe API, not user input.
-- **AppUser.TenantId index:** `HasIndex("TenantId")` declared in `M3SecurityHardening` migration designer (line 235). Index exists. Sub-agent claim that it was missing was a false positive.
-- **M13 migration idempotency:** EF Core migrations are single-run by design — `__EFMigrationsHistory` prevents re-execution. `AddColumn` calls do not need runtime idempotency guards.
-- **`setup-git-credentials.ps1` SecureString:** Ops-L1 from the prior pass was fixed. Parameters are `[SecureString]`; unwrap happens only at point of use via BSTR/ZeroFreeBSTR. Confirmed.
-- **Prerender /legal/* routes:** Both `/legal/privacy` and `/legal/terms` have substantive HTML content in `prerender-seo.mjs` (10+ sections each). Store cert failure pattern from 2026-05-29 does not recur here.
-- **SSO tenant gate:** `SsoController.Callback()` gates on `t.SsoEnabled && t.AzureAdTenantId == identity.TenantId` — a valid Microsoft token proves identity but not authorization. Correct.
-- **SsoController OID binding:** First SSO sign-in matches on `NormalizedEmail` within the authenticated tenant scope, then binds the Entra OID for future sign-ins. Race guard (`oidTaken` check) prevents dual-binding. Correct.
-- **Platform admin pages:** `PlatformTenants`, `PlatformTenantDetail`, `PlatformUsers` all pass through `SystemController` which carries the class-level PlatformAdmin policy. Frontend routing guard is defense-in-depth only.
-- **Banned codenames:** No "ToastRevival" in user-visible strings on new pages or new API responses in this scope. SSO, platform admin, and prerender content use "Toast Notification" / "Toast" only.
+### Out-of-scope awareness (not flagged this pass — pre-existing or accepted-by-design)
+- **`Devices.tsx:692` `DeviceGroupModal`** uses the naive `onClick={onClose}` backdrop pattern (loses unsaved edits on a stray drag-release). Pre-existing, outside this diff, non-destructive. The new `RemoveAgentModal` correctly does NOT copy it. Candidate for a future cleanup pass.
+- **Enrollment key at rest** — `install-toast-agent.ps1` writes `bootstrap.json` (and HKLM) with the enrollment key in cleartext under world-readable `%ProgramFiles%`/HKLM SOFTWARE. Inherent to the per-machine bootstrap model; the key is a one-time registration gate forwarded once and discarded. Accepted risk unless Keith wants it elevated.
+- **`uninstall-toast-agent.ps1` revert task 8s fixed sleep + msiexec timeout last-writer exit code** — minor best-effort/cosmetic robustness items; non-fatal.
+- **Agent-C1 directory ACL hardening** — The SYSTEM-side re-verification closes the TOCTOU; full `%ProgramData%\Toast2IT\Toast Notification` ACL lockdown (Admins+SYSTEM only) would break the user-context write path. Deferred to a WiX installer change where the directory ACL can be set at install time before the user-context agent first runs.

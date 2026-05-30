@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
 namespace ToastRevival.Agent;
@@ -51,8 +52,18 @@ internal static class SelfUpdateService
     public static async Task RunMsiUpdateLoopAsync(DeviceConfig config, CancellationToken ct)
     {
         // Velopack owns this install — don't double-update.
-        var mgr = new Velopack.UpdateManager(string.Empty);
-        if (mgr.IsInstalled)
+        bool isVelopackManaged;
+        try
+        {
+            var mgr = new Velopack.UpdateManager(string.Empty);
+            isVelopackManaged = mgr.IsInstalled;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"SelfUpdateService: Velopack detection faulted ({ex.GetType().Name}: {ex.Message}) — assuming MSI-deployed, continuing.");
+            isVelopackManaged = false;
+        }
+        if (isVelopackManaged)
         {
             DiagLog.Write("SelfUpdateService: Velopack-managed install — MSI update loop skipped.");
             return;
@@ -115,7 +126,20 @@ internal static class SelfUpdateService
     {
         DiagLog.Write("SelfUpdateService: remote uninstall requested.");
 
-        // Restore the original lock screen before the product is removed.
+        var productCode = ReadInstalledProductCode();
+        if (string.IsNullOrWhiteSpace(productCode))
+        {
+            DiagLog.Write("SelfUpdateService: no InstalledProductCode in registry — cannot trigger MSI uninstall. Agent will exit without removing software.");
+            return;
+        }
+
+        // Write trigger and fire SYSTEM task first — must succeed before process exits.
+        // Lock screen revert is best-effort and runs after the trigger is committed so
+        // a slow revert or an early process exit cannot silently drop the uninstall.
+        WriteTrigger($"uninstall|{productCode}");
+        FireUpdaterTask();
+        DiagLog.Write($"SelfUpdateService: uninstall trigger written for product {productCode}; SYSTEM task fired.");
+
         try
         {
             await LockScreenService.RevertAsync(ct);
@@ -125,17 +149,6 @@ internal static class SelfUpdateService
         {
             DiagLog.Write($"SelfUpdateService: lock screen restore failed (non-fatal): {ex.GetType().Name}: {ex.Message}");
         }
-
-        var productCode = ReadInstalledProductCode();
-        if (string.IsNullOrWhiteSpace(productCode))
-        {
-            DiagLog.Write("SelfUpdateService: no InstalledProductCode in registry — cannot trigger MSI uninstall. Agent will exit without removing software.");
-            return;
-        }
-
-        WriteTrigger($"uninstall|{productCode}");
-        FireUpdaterTask();
-        DiagLog.Write($"SelfUpdateService: uninstall trigger written for product {productCode}; SYSTEM task fired.");
     }
 
     // ─── Updater task mode (--run-updater, runs as SYSTEM) ──────────────────
@@ -183,8 +196,8 @@ internal static class SelfUpdateService
 
         return action switch
         {
-            "update"    => ExecuteMsiexec($"/i \"{arg}\" /qn /norestart"),
-            "uninstall" => ExecuteMsiexec($"/x \"{arg}\" /qn /norestart"),
+            "update"    => ExecuteVerifiedMsiUpdate(arg),
+            "uninstall" => ExecuteVerifiedMsiUninstall(arg),
             _           => LogAndReturn($"UpdaterMode: unknown action '{action}'.", 1),
         };
     }
@@ -215,6 +228,41 @@ internal static class SelfUpdateService
         }
     }
 
+    // Re-verifies Authenticode in SYSTEM context on the exact path to be executed
+    // so a user-side TOCTOU swap of the staged MSI is caught before msiexec runs.
+    private static int ExecuteVerifiedMsiUpdate(string msiPath)
+    {
+        if (!File.Exists(msiPath))
+        {
+            DiagLog.Write($"UpdaterMode: MSI path not found: '{msiPath}'.");
+            return 1;
+        }
+        if (!IsSignedByToast2IT(msiPath))
+        {
+            DiagLog.Write("UpdaterMode: SYSTEM-side Authenticode re-verification failed — msiexec aborted.");
+            try { File.Delete(msiPath); } catch { /* best-effort */ }
+            return 1;
+        }
+        DiagLog.Write("UpdaterMode: SYSTEM-side Authenticode verified.");
+        return ExecuteMsiexec($"/i \"{msiPath}\" /qn /norestart");
+    }
+
+    // ProductCode must be a well-formed GUID so the trigger arg cannot be an
+    // arbitrary executable path injected via a tampered trigger file.
+    private static readonly Regex s_productCodeRx = new(
+        @"^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$",
+        RegexOptions.Compiled);
+
+    private static int ExecuteVerifiedMsiUninstall(string productCode)
+    {
+        if (!s_productCodeRx.IsMatch(productCode))
+        {
+            DiagLog.Write($"UpdaterMode: uninstall arg is not a valid ProductCode GUID — msiexec aborted.");
+            return 1;
+        }
+        return ExecuteMsiexec($"/x \"{productCode}\" /qn /norestart");
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────
 
     private static async Task<AgentVersionResponse?> FetchServerVersionAsync(DeviceConfig config, CancellationToken ct)
@@ -241,10 +289,15 @@ internal static class SelfUpdateService
 
     private static async Task<string?> DownloadAndVerifyMsiAsync(string downloadUrl, CancellationToken ct)
     {
+#if !DEBUG
+        if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri)
+            || uri.Scheme != "https")
+#else
         if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri)
             || uri.Scheme is not ("https" or "http"))
+#endif
         {
-            DiagLog.Write($"SelfUpdateService: invalid MSI download URL '{downloadUrl}'.");
+            DiagLog.Write($"SelfUpdateService: invalid MSI download URL '{downloadUrl}' (https required).");
             return null;
         }
 

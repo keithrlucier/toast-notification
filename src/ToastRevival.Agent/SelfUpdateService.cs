@@ -4,6 +4,8 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Microsoft.Win32;
 
 namespace ToastRevival.Agent;
@@ -37,7 +39,8 @@ internal static class SelfUpdateService
     private const string RegistryKeyPath = @"SOFTWARE\Toast2IT\Toast Notification";
     private const string UpdaterTaskName = @"\Toast2IT\ToastNotificationUpdater";
     private const string TriggerFileName = "pending-action.txt";
-    private const string UpdateSubDir    = "update";
+    private const string UpdateSubDir    = "update";    // user-writable staging (download lands here)
+    private const string VerifiedSubDir  = "verified";  // SYSTEM/Admin-only; verify+install happen here
     private const string UpdatedMsiName  = "ToastNotification.Agent.msi";
     private const string ExpectedSubject = "Toast2IT, LLC";
     private const long   MaxMsiBytes     = 200 * 1024 * 1024; // 200 MB ceiling
@@ -228,23 +231,101 @@ internal static class SelfUpdateService
         }
     }
 
-    // Re-verifies Authenticode in SYSTEM context on the exact path to be executed
-    // so a user-side TOCTOU swap of the staged MSI is caught before msiexec runs.
-    private static int ExecuteVerifiedMsiUpdate(string msiPath)
+    // FIX-Agent-H1 (2026-05-30): Closes the verify->use TOCTOU on the staged MSI.
+    // The user-context agent stages the MSI under %ProgramData%\...\update\, a
+    // directory the interactive user owns and can overwrite. Re-verifying that
+    // user-writable path and then launching msiexec against it is two separate
+    // opens — a local non-admin can swap the file in between and gain SYSTEM
+    // execution. The SYSTEM updater therefore COPIES the staged MSI into a
+    // SYSTEM/Administrators-only directory FIRST, then verifies Authenticode and
+    // runs msiexec on that protected copy. Once the bytes live where the
+    // unprivileged user cannot touch them, verify-time and use-time content are
+    // provably identical and the race is eliminated, not merely narrowed.
+    private static int ExecuteVerifiedMsiUpdate(string stagedMsiPath)
     {
-        if (!File.Exists(msiPath))
+        if (!File.Exists(stagedMsiPath))
         {
-            DiagLog.Write($"UpdaterMode: MSI path not found: '{msiPath}'.");
+            DiagLog.Write($"UpdaterMode: MSI path not found: '{stagedMsiPath}'.");
             return 1;
         }
-        if (!IsSignedByToast2IT(msiPath))
+
+        string verifiedMsiPath;
+        try
+        {
+            verifiedMsiPath = CopyToProtectedDir(stagedMsiPath);
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"UpdaterMode: could not stage MSI into protected dir: {ex.GetType().Name}: {ex.Message} — msiexec aborted.");
+            return 1;
+        }
+
+        // Verify the PROTECTED copy, then install the SAME path. The user cannot
+        // write into the protected dir, so nothing can swap it between these calls.
+        if (!IsSignedByToast2IT(verifiedMsiPath))
         {
             DiagLog.Write("UpdaterMode: SYSTEM-side Authenticode re-verification failed — msiexec aborted.");
-            try { File.Delete(msiPath); } catch { /* best-effort */ }
+            try { File.Delete(verifiedMsiPath); } catch { /* best-effort */ }
+            try { File.Delete(stagedMsiPath); } catch { /* best-effort */ }
             return 1;
         }
-        DiagLog.Write("UpdaterMode: SYSTEM-side Authenticode verified.");
-        return ExecuteMsiexec($"/i \"{msiPath}\" /qn /norestart");
+        DiagLog.Write("UpdaterMode: SYSTEM-side Authenticode verified on protected copy.");
+        return ExecuteMsiexec($"/i \"{verifiedMsiPath}\" /qn /norestart");
+    }
+
+    // Copies the staged MSI into a SYSTEM/Administrators-only subdirectory and
+    // returns the protected path. The directory ACL is reset to grant Full Control
+    // only to SYSTEM and the local Administrators group (inheritance disabled), so
+    // the interactive user cannot modify the file after this copy. Runs as SYSTEM.
+    private static string CopyToProtectedDir(string stagedMsiPath)
+    {
+        var verifiedDir = Path.Combine(GetProgramDataDir(), VerifiedSubDir);
+
+        // The parent dir is user-writable (the user-context agent stages downloads
+        // there). Before our first run a non-admin could pre-create `verified` as a
+        // junction/symlink to redirect SYSTEM's ACL write and File.Copy to an
+        // arbitrary location. Refuse to operate through any reparse point; recreate
+        // it fresh so the directory is SYSTEM-owned, then lock its ACL.
+        var existing = new DirectoryInfo(verifiedDir);
+        if (existing.Exists && (existing.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            existing.Delete(recursive: false); // removes the link, never its target
+        }
+        Directory.CreateDirectory(verifiedDir);
+        LockDownToSystemAndAdmins(verifiedDir);
+
+        // Post-lockdown re-check: confirm we hold a real directory, not a reparse
+        // point that slipped in before the ACL was applied.
+        var locked = new DirectoryInfo(verifiedDir);
+        if ((locked.Attributes & FileAttributes.ReparsePoint) != 0)
+            throw new IOException($"Refusing to stage MSI through reparse-point dir '{verifiedDir}'.");
+
+        var verifiedMsiPath = Path.Combine(verifiedDir, UpdatedMsiName);
+        File.Copy(stagedMsiPath, verifiedMsiPath, overwrite: true);
+        // The user-staged copy has served its purpose; remove it best-effort.
+        try { File.Delete(stagedMsiPath); } catch { /* best-effort */ }
+        return verifiedMsiPath;
+    }
+
+    private static void LockDownToSystemAndAdmins(string dir)
+    {
+        var di  = new DirectoryInfo(dir);
+        var sec = new DirectorySecurity();
+        // Disable inheritance and drop any inherited ACEs — start from a clean slate.
+        sec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        foreach (var sid in new[] { system, admins })
+        {
+            sec.AddAccessRule(new FileSystemAccessRule(
+                sid,
+                FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags.None,
+                AccessControlType.Allow));
+        }
+        di.SetAccessControl(sec);
     }
 
     // ProductCode must be a well-formed GUID so the trigger arg cannot be an

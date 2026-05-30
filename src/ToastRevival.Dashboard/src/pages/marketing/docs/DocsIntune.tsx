@@ -131,16 +131,23 @@ export default function DocsIntune() {
 
       <h3 id="win32-detection">Step 5 — Detection rule</h3>
       <p>
-        Use a registry detection rule. No custom script is needed.
+        In the <strong>Detection rules</strong> step, choose <strong>Manually configure detection rules</strong>,
+        then click <strong>+ Add</strong> and fill in:
       </p>
       <CodeBlock
         language="text"
-        label="detection rule"
-        code={`Rule type:    Registry
-Key path:     HKLM\\SOFTWARE\\Toast2IT\\Toast Notification
-Value name:   InstallPath
-Detection:    Key or value exists`}
+        label="detection rule fields"
+        code={`Rule type:                          Registry
+Key path:                           HKLM\\SOFTWARE\\Toast2IT\\Toast Notification
+Value name:                         (leave blank)
+Detection method:                   Key exists
+Associated with a 32-bit app:       No`}
       />
+      <p>
+        Leave <strong>Value name</strong> empty and set <strong>Detection method</strong> to{' '}
+        <strong>Key exists</strong>. Intune checks for the presence of the registry key itself — no value name
+        is required. Click <strong>OK</strong>, then <strong>Next</strong>.
+      </p>
 
       <h3 id="win32-assign">Step 6 — Assign to a group</h3>
       <ol>

@@ -296,12 +296,18 @@
       phase when the install script is built — deferred CAs see the expanded values
       in the ExeCommand string at execution time.
     -->
+    <!--
+      Return="ignore": AV/EDR products on hardened endpoints block execution of
+      a freshly-installed binary before the first scan completes. If the CA
+      fails, the install still succeeds — the RMM script writes bootstrap.json
+      directly as a fallback, so the agent registers on first run regardless.
+    -->
     <CustomAction Id="WriteBootstrapJson"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[INSTALLFOLDER]ToastNotification.Agent.exe&quot; --setup-bootstrap [CLIENTID] &quot;[SERVERURL]&quot; [ENROLLMENTKEY]"
                   Execute="deferred"
                   Impersonate="no"
-                  Return="check" />
+                  Return="ignore" />
 
     <!--
       D9 uninstall: delete bootstrap.json. Return="ignore" — a missing file

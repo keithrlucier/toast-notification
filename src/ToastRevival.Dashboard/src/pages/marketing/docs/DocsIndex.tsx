@@ -14,8 +14,8 @@ const HUB_LINKS = [
   },
   {
     to: '/docs/deploy/intune',
-    title: 'Intune (LOB)',
-    body: 'Upload the signed MSIX as a Line-of-Business app. The MDM-managed corporate path with assignment groups and silent install.',
+    title: 'Intune deployment',
+    body: 'Deploy the signed MSI as a Win32 app (recommended for MSPs) or the MSIX as a Line-of-Business app. Covers IntuneWinAppUtil wrapping, install commands, detection rules, and tenant ID delivery.',
   },
   {
     to: '/docs/deploy/rmm',

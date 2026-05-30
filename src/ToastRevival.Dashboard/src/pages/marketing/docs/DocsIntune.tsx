@@ -6,32 +6,173 @@ export default function DocsIntune() {
   useSeo({
     title: 'Intune deployment',
     description:
-      'Deploy the Toast Notification agent through Microsoft Intune as a Line-of-Business app. Includes assignment groups, detection rules, and tenant-ID delivery.',
+      'Deploy the Toast Notification agent through Microsoft Intune as a Win32 app or MSIX Line-of-Business app. Covers wrapping the MSI with IntuneWinAppUtil, install commands, detection rules, and tenant ID delivery.',
     path: '/docs/deploy/intune',
     jsonLd: [
       techArticleLd({
-        headline: 'Intune (LOB) deployment',
+        headline: 'Intune deployment',
         description:
-          'Deploy the signed MSIX through Microsoft Intune as a Line-of-Business app for MDM-managed corporate endpoints.',
+          'Deploy the Toast Notification agent through Microsoft Intune as a Win32 app (recommended for MSPs) or MSIX Line-of-Business app.',
         path: '/docs/deploy/intune',
       }),
       breadcrumbLd([
         { name: 'Home', path: '/' },
         { name: 'Docs', path: '/docs' },
-        { name: 'Intune (LOB)', path: '/docs/deploy/intune' },
+        { name: 'Intune', path: '/docs/deploy/intune' },
       ]),
     ],
   });
 
   return (
     <article>
-      <h1>Intune (LOB)</h1>
+      <h1>Intune</h1>
       <p>
-        Deploy the Toast Notification agent through Microsoft Intune as a Line-of-Business app. The MSIX is signed
-        with our Sectigo OV certificate and works under default AppLocker and WDAC policies.
+        Two deployment paths are available. <strong>Win32 app</strong> wraps the signed MSI and is the recommended
+        path for MSPs and IT admins — it runs under the SYSTEM context, passes tenant properties directly in the
+        install command, and has no code-signing enforcement requirements. <strong>MSIX Line-of-Business</strong> is
+        the MSIX-native path for organizations already on a Store / MSIX deployment model.
       </p>
 
-      <h2 id="prerequisites">Prerequisites</h2>
+      <h2 id="win32">Win32 app (recommended)</h2>
+      <p>
+        Use this path when deploying to client tenants from an MSP Intune console, or in any environment where
+        SYSTEM-context install and inline tenant ID delivery are preferred.
+      </p>
+
+      <h3 id="win32-prereqs">Prerequisites</h3>
+      <ul>
+        <li>Microsoft Intune license with Application Management permissions.</li>
+        <li>Target endpoints enrolled in Intune and running Windows 10 build 19041 or Windows 11 (64-bit).</li>
+        <li>The latest signed MSI downloaded from the admin dashboard — Devices → Install agent tab.</li>
+        <li>
+          <a
+            href="https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            IntuneWinAppUtil.exe
+          </a>{' '}
+          from the Microsoft Win32 Content Prep Tool.
+        </li>
+        <li>Your tenant GUID and enrollment key from Settings → Tenant on the admin dashboard.</li>
+      </ul>
+
+      <h3 id="win32-wrap">Step 1 — Wrap the MSI</h3>
+      <p>
+        Run IntuneWinAppUtil to package the MSI as a <code>.intunewin</code> file. Place the MSI in a dedicated
+        folder (e.g. <code>C:\IntuneSource</code>) and point the output to a separate folder.
+      </p>
+      <CodeBlock
+        language="powershell"
+        label="wrap the MSI"
+        code={`IntuneWinAppUtil.exe \`
+  -c "C:\\IntuneSource" \`
+  -s "ToastNotification.Agent-X.Y.Z.0.msi" \`
+  -o "C:\\IntuneOutput"`}
+      />
+
+      <h3 id="win32-add">Step 2 — Add the app in Intune</h3>
+      <ol>
+        <li>
+          In the Intune portal, navigate to <strong>Apps → Windows → Add</strong> and select{' '}
+          <strong>Windows app (Win32)</strong> as the app type.
+        </li>
+        <li>
+          Upload the <code>.intunewin</code> file produced in step 1.
+        </li>
+        <li>
+          On the <strong>App information</strong> tab, set:
+          <ul>
+            <li><strong>Name:</strong> Toast Notification</li>
+            <li><strong>Publisher:</strong> Toast2IT, LLC</li>
+            <li><strong>Description:</strong> Managed Windows toast notifications for MSPs.</li>
+            <li><strong>Category:</strong> Productivity</li>
+          </ul>
+        </li>
+      </ol>
+
+      <h3 id="win32-program">Step 3 — Configure install and uninstall</h3>
+      <p>
+        On the <strong>Program</strong> tab, replace the tenant GUID and enrollment key with the values from your
+        tenant portal.
+      </p>
+      <CodeBlock
+        language="text"
+        label="install command"
+        code={`msiexec /i "ToastNotification.Agent-X.Y.Z.0.msi" /qn /norestart CLIENTID=00000000-0000-0000-0000-000000000000 SERVERURL=https://toastnotification.com ENROLLMENTKEY=<your-enrollment-key>`}
+      />
+      <CodeBlock
+        language="powershell"
+        label="uninstall command"
+        code={`powershell.exe -ExecutionPolicy Bypass -Command "$c=(Get-ItemProperty 'HKLM:\\SOFTWARE\\Toast2IT\\Toast Notification' -EA SilentlyContinue).InstalledProductCode; if($c){Start-Process msiexec -ArgumentList @('/x',$c,'/qn','/norestart') -Wait}"`}
+      />
+      <ul>
+        <li><strong>Install behavior:</strong> System</li>
+        <li><strong>Device restart behavior:</strong> No specific action</li>
+      </ul>
+
+      <Callout title="CLIENTID, SERVERURL, and ENROLLMENTKEY">
+        <p>
+          These three properties are written to{' '}
+          <code>HKLM\SOFTWARE\Toast2IT\Toast Notification</code> by a Windows Installer custom action during
+          install. The agent reads them on first launch, registers the device, and connects to the notification hub.
+          The enrollment key limits new device registration — rotate it from Tenant Settings if an install command
+          is exposed. Both the tenant GUID and server URL are non-secret; only the enrollment key has a
+          registration gate.
+        </p>
+      </Callout>
+
+      <h3 id="win32-requirements">Step 4 — Requirements</h3>
+      <ul>
+        <li><strong>OS:</strong> Windows 10 build 19041 or later / Windows 11</li>
+        <li><strong>Architecture:</strong> 64-bit</li>
+        <li><strong>Disk space:</strong> 80 MB</li>
+      </ul>
+
+      <h3 id="win32-detection">Step 5 — Detection rule</h3>
+      <p>
+        Use a registry detection rule. No custom script is needed.
+      </p>
+      <CodeBlock
+        language="text"
+        label="detection rule"
+        code={`Rule type:    Registry
+Key path:     HKLM\\SOFTWARE\\Toast2IT\\Toast Notification
+Value name:   InstallPath
+Detection:    Key or value exists`}
+      />
+
+      <h3 id="win32-assign">Step 6 — Assign to a group</h3>
+      <ol>
+        <li>
+          On the app's <strong>Assignments</strong> tab, add the target Azure AD group under{' '}
+          <strong>Required</strong> for forced install.
+        </li>
+        <li>
+          Save. Intune distributes the package on the next endpoint check-in. Install status appears in the
+          per-endpoint device record under <strong>Apps → All apps → Toast Notification → Device install status</strong>.
+        </li>
+      </ol>
+
+      <h3 id="win32-update">Auto-update</h3>
+      <p>
+        The MSI installs the Velopack in-process auto-updater. Once a day the agent checks the release feed at{' '}
+        <code>https://releases.toastnotification.com/agent/win-x64</code>; new versions download in the background
+        and apply on next agent restart. To pin a version and control updates through Intune instead, set{' '}
+        <code>HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate = 1</code> via a configuration profile,
+        then push new MSI versions as app updates.
+      </p>
+
+      <hr style={{ margin: '40px 0', borderColor: 'rgba(15,23,42,0.1)' }} />
+
+      <h2 id="msix-lob">MSIX Line-of-Business</h2>
+      <p>
+        Use this path for organizations that manage applications as MSIX packages or want Intune's built-in
+        package family detection. The MSIX is signed with our Sectigo OV certificate — publicly trusted by
+        Windows, no org certificate enrollment needed.
+      </p>
+
+      <h3 id="msix-prereqs">Prerequisites</h3>
       <ul>
         <li>Microsoft Intune license with Application Management permissions.</li>
         <li>Target endpoints enrolled in Intune and running Windows 10 build 19041 or Windows 11.</li>
@@ -39,45 +180,35 @@ export default function DocsIntune() {
         <li>Your tenant GUID (Settings → Tenant on the admin dashboard).</li>
       </ul>
 
-      <h2 id="upload-msix">Upload the MSIX</h2>
+      <h3 id="msix-upload">Upload the MSIX</h3>
       <ol>
         <li>
           In the Intune portal, navigate to <strong>Apps → Windows → Add</strong> and select{' '}
           <strong>Line-of-business app</strong> as the app type.
         </li>
         <li>
-          Select the signed MSIX file <code>ToastNotification.Agent-X.Y.Z.msix</code>. Intune extracts the publisher,
-          version, and dependencies automatically from the manifest.
+          Select the signed MSIX file <code>ToastNotification.Agent-X.Y.Z.msix</code>. Intune extracts the
+          publisher, version, and dependencies automatically from the manifest.
         </li>
         <li>
           On the <strong>App information</strong> tab, set:
           <ul>
-            <li>
-              <strong>Name:</strong> Toast Notification
-            </li>
-            <li>
-              <strong>Publisher:</strong> Toast2IT, LLC
-            </li>
-            <li>
-              <strong>Description:</strong> Managed Windows toast notifications for MSPs.
-            </li>
-            <li>
-              <strong>Category:</strong> Productivity
-            </li>
+            <li><strong>Name:</strong> Toast Notification</li>
+            <li><strong>Publisher:</strong> Toast2IT, LLC</li>
+            <li><strong>Description:</strong> Managed Windows toast notifications for MSPs.</li>
+            <li><strong>Category:</strong> Productivity</li>
           </ul>
         </li>
-        <li>
-          Save the app to the Intune apps library.
-        </li>
+        <li>Save the app to the Intune apps library.</li>
       </ol>
 
-      <h2 id="deliver-tenant-id">Deliver the tenant ID</h2>
+      <h3 id="msix-tenant-id">Deliver the tenant ID</h3>
       <p>
-        The MSIX itself does not embed a tenant GUID — every endpoint shares the same package. Configure the tenant ID
-        per-endpoint with one of three options.
+        The MSIX itself does not embed a tenant GUID — every endpoint shares the same package. Configure the
+        tenant ID per-endpoint with one of three options.
       </p>
 
-      <h3>Option A — Intune environment variables policy (recommended)</h3>
+      <h4>Option A — Intune environment variables policy (recommended)</h4>
       <p>
         Use a configuration profile to push <code>TOAST_TENANT_ID</code> and <code>TOAST_SERVER_URL</code> as user
         environment variables to all assigned endpoints.
@@ -94,23 +225,24 @@ Value:       TOAST_TENANT_ID=00000000-0000-0000-0000-000000000000
              TOAST_SERVER_URL=https://toastnotification.com`}
       />
 
-      <h3>Option B — Per-user bootstrap.json via Win32 wrapper</h3>
+      <h4>Option B — Per-user bootstrap.json via Win32 wrapper</h4>
       <p>
         For environments where the OMA-URI approach is not available, package a small Win32 app that writes a
-        per-user <code>bootstrap.json</code> into the package LocalState directory and assign it as a dependency of
-        the MSIX.
+        per-user <code>bootstrap.json</code> into the package LocalState directory and assign it as a dependency
+        of the MSIX.
       </p>
 
-      <h3>Option C — Provision through self-service</h3>
+      <h4>Option C — Provision through self-service</h4>
       <p>
-        Push the MSIX without a tenant binding. Users enter their tenant ID in the agent's tray menu on first launch.
-        Best for environments where tenant assignment varies per user.
+        Push the MSIX without a tenant binding. Users enter their tenant ID in the agent's tray menu on first
+        launch. Best for environments where tenant assignment varies per user.
       </p>
 
-      <h2 id="assign">Assign to a group</h2>
+      <h3 id="msix-assign">Assign to a group</h3>
       <ol>
         <li>
-          On the app's <strong>Properties</strong> page, click <strong>Edit</strong> next to <strong>Assignments</strong>.
+          On the app's <strong>Properties</strong> page, click <strong>Edit</strong> next to{' '}
+          <strong>Assignments</strong>.
         </li>
         <li>
           Add the target Azure AD group under <strong>Required</strong> for forced install or{' '}
@@ -118,14 +250,15 @@ Value:       TOAST_TENANT_ID=00000000-0000-0000-0000-000000000000
         </li>
         <li>
           Save. Intune begins distributing the MSIX to assigned endpoints. Install confirmation appears in the
-          per-endpoint device record under <strong>Apps → All apps → Toast Notification → Device install status</strong>.
+          per-endpoint device record under{' '}
+          <strong>Apps → All apps → Toast Notification → Device install status</strong>.
         </li>
       </ol>
 
-      <h2 id="detection">Detection rule</h2>
+      <h3 id="msix-detection">Detection rule</h3>
       <p>
-        Intune detects the MSIX by package family name automatically — no custom detection rule is required. If you
-        need explicit detection (for example to report version skew), use:
+        Intune detects the MSIX by package family name automatically — no custom detection rule is required. If
+        you need explicit detection (for example to report version skew), use:
       </p>
       <CodeBlock
         language="powershell"
@@ -137,23 +270,29 @@ exit 0`}
 
       <Callout title="WDAC and AppLocker">
         <p>
-          The agent MSIX is signed with a Sectigo OV certificate. Under default WDAC and AppLocker policies the
-          package installs and runs without further configuration. Custom WDAC policies that whitelist publishers
-          should include <code>O=Toast2IT, LLC, L=Tallahassee, S=Florida, C=US</code>.
+          The agent MSIX is signed with a publicly trusted Sectigo OV certificate — Windows endpoints trust it
+          by default through the Windows root certificate store. No org certificate enrollment or re-signing is
+          required for hosted deployments.
+        </p>
+        <p style={{ marginTop: 8 }}>
+          If your org uses custom WDAC or AppLocker policies that allow applications by publisher, add a rule
+          for <code>O=Toast2IT, LLC, L=Tallahassee, S=Florida, C=US</code>. This is a policy configuration
+          entry — not a re-signing step. If your security policy requires packages signed by an org-controlled
+          CA, use the Win32 app path above instead.
         </p>
       </Callout>
 
-      <h2 id="auto-update">Auto-update</h2>
+      <h3 id="msix-update">Auto-update</h3>
       <p>
-        Intune-managed MSIX installs receive updates through Intune's app update mechanism. Push a new app version to
-        replace the existing one — endpoints update on the next sync. The Velopack in-process auto-updater is no-op for
-        Intune-managed installs.
+        Intune-managed MSIX installs receive updates through Intune's app update mechanism. Push a new app
+        version to replace the existing one — endpoints update on the next sync. The Velopack in-process
+        auto-updater is no-op for Intune-managed installs.
       </p>
 
-      <h2 id="uninstall">Uninstall</h2>
+      <h3 id="msix-uninstall">Uninstall</h3>
       <p>
-        Reassign the app to <strong>Uninstall</strong> for the target group, or remove the user / device from the
-        assignment group. The MSIX uninstalls cleanly on the next Intune sync.
+        Reassign the app to <strong>Uninstall</strong> for the target group, or remove the user / device from
+        the assignment group. The MSIX uninstalls cleanly on the next Intune sync.
       </p>
 
       <div className="m-docs-next">

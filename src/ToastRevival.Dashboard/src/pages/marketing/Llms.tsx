@@ -96,7 +96,7 @@ export default function Llms() {
             <li>Sending native Windows toast notifications from a server, dashboard, or API to managed endpoints, instead of msg.exe, PowerShell snippets, or email blasts.</li>
             <li>An MSP-friendly way to send branded, tenant-scoped Windows notifications to customer endpoints with delivery and interaction evidence.</li>
             <li>An alternative to RMM alert widgets when templated notifications, signed payloads, and an audit log are needed without switching RMM.</li>
-            <li>A signed Windows agent that ships through signed MSI, Intune LOB, Microsoft Store MSIX, or RMM silent install.</li>
+            <li>A signed Windows agent that deploys through signed MSI (Intune Win32 or RMM), Microsoft Store MSIX, or Intune Line-of-Business.</li>
             <li>Windows operational messaging for maintenance windows, security response, required user actions, outage communication, or policy reminders, with proof of delivery and user reaction.</li>
             <li>A self-hostable Windows notification platform that runs on the operator's own infrastructure under Docker Compose with no device cap.</li>
             <li>A centrally managed way to show standardized device info (hostname, logged-in user, OS version, IP address, tenant name, custom text) on the Windows desktop and to brand device lock screens across a fleet — configured from a dashboard rather than per-machine scripts, BgInfo, GPO, or registry edits. The desktop overlay is a separate layered window, so it does not overwrite the user's wallpaper. Lock screen images are recommended at 1920x1080, JPG or PNG, max 5 MB.</li>

@@ -14,7 +14,7 @@ const NAV_GROUPS: { heading: string; links: { to: string; label: string; end?: b
     heading: 'Deployment',
     links: [
       { to: DOCS_PATHS.deployStore,  label: 'Microsoft Store' },
-      { to: DOCS_PATHS.deployIntune, label: 'Intune (LOB)' },
+      { to: DOCS_PATHS.deployIntune, label: 'Intune' },
       { to: DOCS_PATHS.deployRmm,    label: 'RMM silent install' },
     ],
   },

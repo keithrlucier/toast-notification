@@ -105,7 +105,7 @@ export default function DocsStore() {
       <Callout kind="warning" title="Store-managed updates">
         <p>
           Disabling automatic updates in the Microsoft Store will pause Toast Notification agent updates as well. For
-          centrally-controlled update policy, deploy via Intune LOB or RMM silent install instead.
+          centrally-controlled update policy, deploy via Intune or RMM silent install instead.
         </p>
       </Callout>
 
@@ -119,7 +119,7 @@ export default function DocsStore() {
       <div className="m-docs-next">
         <Link to="/docs/deploy/intune">
           <span className="m-docs-next-label">Next</span>
-          <span className="m-docs-next-title">Intune (LOB) →</span>
+          <span className="m-docs-next-title">Intune →</span>
         </Link>
         <Link to="/docs/deploy/rmm">
           <span className="m-docs-next-label">Or</span>

@@ -73,7 +73,7 @@ const INCLUSIONS = [
     items: [
       'Signed MSI with embedded scheduled task',
       'MSIX through the Microsoft Store',
-      'Intune LOB compatible',
+      'Intune Win32 and MSIX LOB compatible',
       'RMM silent install with CLIENTID, SERVERURL, and ENROLLMENTKEY properties',
       'Velopack auto-update with enterprise opt-out registry toggle',
     ],

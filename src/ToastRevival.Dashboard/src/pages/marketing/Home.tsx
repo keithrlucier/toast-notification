@@ -170,7 +170,7 @@ WS-014: payload unsigned`}
             </div>
             <h3>Flexible Deployment Paths</h3>
             <p>
-              Deploy the MSI with an embedded scheduled task via Intune LOB, Microsoft Store, or RMM silent install. The agent uses DPAPI to protect local endpoint configuration.
+              Deploy the signed MSI via Intune Win32 app or RMM silent install, or install from the Microsoft Store. The agent uses DPAPI to protect local endpoint configuration.
             </p>
           </div>
 

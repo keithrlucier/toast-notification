@@ -276,13 +276,13 @@ const routes = [
     path: '/docs/deploy/intune',
     title: 'Intune deployment',
     description:
-      'Deploy the Toast Notification Windows agent to managed endpoints with Microsoft Intune.',
+      'Deploy the Toast Notification Windows agent through Microsoft Intune as a Win32 app (recommended for MSPs) or MSIX Line-of-Business app. Covers IntuneWinAppUtil wrapping, install commands, detection rules, and tenant ID delivery.',
     priority: '0.7',
     changefreq: 'monthly',
     body: `
       <h1>Intune deployment</h1>
-      <p>Intune deployment lets IT teams push the Windows agent to managed endpoints and set tenant registration values centrally.</p>
-      <p>This path is suited for corporate Windows fleets managed through Microsoft Endpoint Manager.</p>
+      <p>Two deployment paths are available for Microsoft Intune. The Win32 app path wraps the signed MSI using IntuneWinAppUtil and is recommended for MSPs — it runs under the SYSTEM context and passes tenant ID, server URL, and enrollment key directly in the msiexec install command. The MSIX Line-of-Business path suits organizations already on a Store or MSIX deployment model.</p>
+      <p>The signed MSI is available from the admin dashboard under Devices, Install agent. No org certificate enrollment or re-signing is required for hosted deployments.</p>
     `,
   },
   {
@@ -368,7 +368,7 @@ const routes = [
         <li>Sending native Windows toast notifications to managed endpoints from a server, dashboard, or API, instead of msg.exe, PowerShell snippets, or email blasts.</li>
         <li>MSP-friendly tenant-scoped Windows notifications with delivery and interaction evidence.</li>
         <li>An alternative to RMM alert widgets that adds templated notifications, signed payloads, and an audit log without switching RMM.</li>
-        <li>A signed Windows agent that deploys through signed MSI, Intune LOB, Microsoft Store MSIX, or RMM silent install.</li>
+        <li>A signed Windows agent that deploys through signed MSI (Intune Win32 or RMM), Microsoft Store MSIX, or Intune Line-of-Business.</li>
         <li>Windows operational messaging for maintenance windows, security response, required user actions, outage communication, or policy reminders, with audit-ready proof of delivery.</li>
         <li>A self-hostable Windows notification platform that runs on the operator's own infrastructure under Docker Compose with no device cap.</li>
       </ul>

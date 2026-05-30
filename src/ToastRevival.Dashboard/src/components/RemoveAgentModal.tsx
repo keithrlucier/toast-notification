@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { devicesApi, type UninstallScriptInfo } from '../api/devices';
 
 interface Props {
   machineName: string;
@@ -10,25 +11,43 @@ interface Props {
   onClose: () => void;
 }
 
-// Self-contained, copy-paste removal command. Reads the ProductCode the MSI
-// stored at install time and runs a silent uninstall. The MSI's uninstall
-// custom actions revert the branded lock screen and strip the Spotlight policy,
-// so this single command is a full clean removal. Must run as administrator.
-const REMOVAL_COMMAND =
+// Quick single-machine removal. Reads the ProductCode the MSI stored at install
+// (name-agnostic) and runs a silent uninstall; the MSI's uninstall actions revert
+// the lock screen + strip the Spotlight policy. For a fleet, use the downloadable
+// script instead — it also covers Microsoft Store / MSIX installs and purges config.
+const QUICK_COMMAND =
   `$pc = (Get-ItemProperty 'HKLM:\\SOFTWARE\\Toast2IT\\Toast Notification' -Name InstalledProductCode -ErrorAction Stop).InstalledProductCode\n` +
   `Start-Process msiexec.exe -ArgumentList "/x $pc /qn /norestart" -Wait`;
+
+function formatDate(iso: string | null): string {
+  if (!iso) return 'unknown';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'unknown';
+  return d.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  });
+}
 
 export default function RemoveAgentModal({ machineName, isOnline, onRemoteUninstall, onClose }: Props) {
   const [copied, setCopied] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState('');
+  const [info, setInfo] = useState<UninstallScriptInfo | null>(null);
   // Dismiss on backdrop click only when BOTH mousedown and click land on the
   // backdrop — a drag that starts inside the modal must not close it.
   const downOnBackdrop = useRef(false);
 
+  useEffect(() => {
+    let active = true;
+    devicesApi.uninstallScriptInfo()
+      .then(i => { if (active) setInfo(i); })
+      .catch(() => { /* download still works via the static path even if meta fails */ });
+    return () => { active = false; };
+  }, []);
+
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(REMOVAL_COMMAND);
+      await navigator.clipboard.writeText(QUICK_COMMAND);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -43,11 +62,13 @@ export default function RemoveAgentModal({ machineName, isOnline, onRemoteUninst
       await onRemoteUninstall();
       onClose();
     } catch {
-      setError('Remote removal request failed. Use the command above on the device instead.');
+      setError('Remote removal request failed. Use the script or command below on the device instead.');
     } finally {
       setRemoving(false);
     }
   };
+
+  const scriptUrl = info?.url ?? '/downloads/uninstall-toast-agent.ps1';
 
   return (
     <div
@@ -60,15 +81,50 @@ export default function RemoveAgentModal({ machineName, isOnline, onRemoteUninst
 
         <p style={{ color: 'var(--text-secondary)' }}>
           The Toast Notification agent runs inside each user&rsquo;s Windows session
-          without administrator rights, so the dashboard cannot force-remove it from{' '}
+          without administrator rights, so the dashboard can&rsquo;t force-remove it from{' '}
           <strong>{machineName}</strong>. Removing the software takes an administrator —
-          run the command below on the device (or push it through your RMM).
+          deploy the clean-removal script below through your RMM (or run it on the device).
         </p>
 
+        {/* Primary: downloadable fleet clean-removal script */}
+        <div
+          style={{
+            border: '1px solid var(--border, #D7DEE8)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '14px 16px',
+            marginBottom: 14,
+            background: '#F7FAFC',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 14 }}>
+                Clean-removal script (.ps1)
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
+                Removes MSI <em>and</em> Microsoft Store installs by name, reverts the lock screen &amp;
+                policy, and purges config. Run as SYSTEM/admin or push fleet-wide via RMM.
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, fontFamily: 'var(--font-mono)' }}>
+                Last modified: {info ? formatDate(info.lastModifiedUtc) : '…'}
+              </div>
+            </div>
+            <a
+              className="btn btn-primary"
+              href={scriptUrl}
+              download="uninstall-toast-agent.ps1"
+              style={{ fontSize: 13, whiteSpace: 'nowrap', textDecoration: 'none' }}
+            >
+              Download script
+            </a>
+          </div>
+        </div>
+
+        {/* Secondary: quick one-box single-machine command */}
         <div style={{ marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>
-              Run as administrator (PowerShell)
+              Or, quick single-machine command (PowerShell, as admin)
             </label>
             <button
               className="btn btn-ghost"
@@ -93,15 +149,9 @@ export default function RemoveAgentModal({ machineName, isOnline, onRemoteUninst
               overflowX: 'auto',
             }}
           >
-            {REMOVAL_COMMAND}
+            {QUICK_COMMAND}
           </pre>
         </div>
-
-        <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 8 }}>
-          This reverts the branded lock screen to the device&rsquo;s original image and
-          clears the lock screen policy as part of the uninstall. For fleet removal, the
-          same steps are scripted in <span style={{ fontFamily: 'var(--font-mono)' }}>uninstall-toast-agent.ps1</span>.
-        </p>
 
         {error && <div className="error-banner" style={{ marginTop: 12 }}>{error}</div>}
 
@@ -113,7 +163,7 @@ export default function RemoveAgentModal({ machineName, isOnline, onRemoteUninst
             disabled={!isOnline || removing}
             title={isOnline
               ? 'Decommission this device and push the removal to the agent (best-effort; needs agent v0.4.32+ online)'
-              : 'Device is offline — use the command above on the device'}
+              : 'Device is offline — use the script or command on the device'}
           >
             {removing ? <span className="spinner" /> : null}
             Attempt remote removal

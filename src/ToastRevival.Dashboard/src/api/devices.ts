@@ -30,6 +30,12 @@ interface DeviceApiResponse {
   groupIds?: string[];
 }
 
+export interface UninstallScriptInfo {
+  url: string;
+  lastModifiedUtc: string | null;
+  sizeBytes: number;
+}
+
 export interface DeviceGroup {
   id: string;
   name: string;
@@ -91,6 +97,7 @@ export const devicesApi = {
   },
   decommission: (id: string) => api.delete(`/api/devices/${id}`),
   uninstall: (id: string) => api.post(`/api/devices/${id}/uninstall`, {}),
+  uninstallScriptInfo: () => api.get<UninstallScriptInfo>('/api/agent/uninstall-script-info'),
   listGroups: () => api.get<DeviceGroup[]>('/api/devicegroups'),
   createGroup: (req: SaveDeviceGroupRequest) =>
     api.post<DeviceGroup>('/api/devicegroups', req),

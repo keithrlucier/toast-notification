@@ -31,6 +31,23 @@ immediately, no cache purge required.
 Deploy = `scp` to `/tmp`, then `sudo cp` to both the canonical and versioned names,
 `sudo chown toast:toast`. Always back up the current `ToastNotification.msi` first.
 
+### Clean-removal script (served alongside the MSI, 0.4.33.2+)
+
+| | |
+|---|---|
+| **Disk path** | `/opt/toast/downloads/uninstall-toast-agent.ps1` (same nginx static `alias`) |
+| **Public URL** | `https://toastnotification.com/downloads/uninstall-toast-agent.ps1` |
+| **Admin panel** | Devices → Uninstall → "Remove agent" modal: **Download script** button + last-modified date |
+| **Date source** | `GET /api/agent/uninstall-script-info` → `{ url, lastModifiedUtc, sizeBytes }` (stats the file on disk; `Downloads:RootPath` config, default `/opt/toast/downloads`) |
+
+The served copy is the canonical `infrastructure/rmm/uninstall-toast-agent.ps1`
+(name-driven, removes MSI **and** Store/MSIX by name, no hardcoded GUIDs).
+**Standing rule:** when that script changes, re-`scp` it to
+`/opt/toast/downloads/uninstall-toast-agent.ps1` (`sudo chown toast:toast`) — the
+admin panel's last-modified date is the file's real mtime, so the deploy IS the
+"published" timestamp. (The script file is `.publicignore`d, so it ships to the
+fleet via this download path, not the public mirror.)
+
 ---
 
 ## 2. Velopack auto-update feed (Setup.exe-channel installs ONLY)

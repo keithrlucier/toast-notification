@@ -144,7 +144,14 @@ export default function DocsRmm() {
       />
       <p>
         The MSI's product code is published in the latest release notes on the admin dashboard. Uninstall removes the
-        scheduled task, deletes <code>bootstrap.json</code>, and unregisters the device from the API.
+        scheduled tasks, deletes <code>bootstrap.json</code>, restores the device's original lock screen, strips the
+        lock screen policy, and unregisters the device from the API.
+      </p>
+      <p>
+        For fleet removal that also clears the per-user lock screen image from a SYSTEM/RMM context and purges every
+        user profile's config, push the bundled <code>uninstall-toast-agent.ps1</code> instead of a bare
+        <code>msiexec</code> line — it is the inverse of <code>install-toast-agent.ps1</code> and is safe to run on
+        endpoints where the agent is already gone.
       </p>
 
       <h2 id="auto-update">Auto-update</h2>

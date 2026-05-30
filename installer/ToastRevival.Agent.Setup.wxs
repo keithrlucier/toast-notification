@@ -322,6 +322,41 @@
                   Return="ignore" />
 
     <!--
+      Uninstall do-no-harm step 1: restore the lock screen BEFORE the per-user
+      config (and its lockscreen_original.jpg snapshot) is wiped. Runs the agent's
+      short-lived revert-appearance mode (see ExeCommand) impersonated (user
+      context) because the WinRT LockScreen API is per-user and never works as
+      SYSTEM. The CLI flag is on the ExeCommand attribute below. Must be sequenced
+      before DeleteUserConfig (snapshot still on disk) and before RemoveFiles (the
+      agent exe still exists). On a silent SYSTEM-initiated uninstall with no
+      interactive user, the WinRT call fails cleanly (Return="ignore") and the
+      uninstall script's Spotlight-policy revert is what un-brands the device.
+    -->
+    <CustomAction Id="RevertAppearance"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]ToastNotification.Agent.exe&quot; --revert-appearance"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <!--
+      Uninstall do-no-harm step 2: revert the machine-wide lock screen policy
+      values that the RMM install script pins (HideSpotlightWindowsSpotlight,
+      NoLockScreenCamera, LockScreenOverlaysDisabled, NoCloudApplicationNotification).
+      These persist forever after the product is gone otherwise. Runs as SYSTEM
+      (Impersonate="no") because the keys live under HKLM\SOFTWARE\Policies.
+      Deletes only the named values — never the parent keys, which may hold
+      unrelated GPO settings. Return="ignore": a missing value is success here.
+      On GPO-managed endpoints a real GPO reasserts at next gpupdate; that's fine.
+    -->
+    <CustomAction Id="RevertLockScreenPolicy"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]cmd.exe&quot; /c reg delete &quot;HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Lock Screen&quot; /v HideSpotlightWindowsSpotlight /f &amp; reg delete &quot;HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization&quot; /v NoLockScreenCamera /f &amp; reg delete &quot;HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization&quot; /v LockScreenOverlaysDisabled /f &amp; reg delete &quot;HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications&quot; /v NoCloudApplicationNotification /f"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
       Uninstall: wipe the per-user config directory so a reinstall triggers
       fresh device registration instead of reusing a stale/decommissioned deviceId.
       Runs impersonated (user context) so %LOCALAPPDATA% resolves to the correct
@@ -348,6 +383,11 @@
       <Custom Action="UninstallScheduledTask" Before="DeleteUserConfig"      Condition="REMOVE=&quot;ALL&quot;" />
       <!-- M15: remove the SYSTEM updater task alongside the logon task -->
       <Custom Action="UninstallUpdaterTask"   After="UninstallScheduledTask" Condition="REMOVE=&quot;ALL&quot;" />
+      <!-- Do-no-harm reversal: restore the lock screen (user context) and strip the
+           machine-wide Spotlight policy (SYSTEM) BEFORE the snapshot/config is wiped
+           and BEFORE the agent exe is removed. -->
+      <Custom Action="RevertAppearance"       Before="DeleteUserConfig"      Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="RevertLockScreenPolicy" After="RevertAppearance"       Condition="REMOVE=&quot;ALL&quot;" />
       <Custom Action="DeleteUserConfig"       Before="DeleteBootstrapJson"   Condition="REMOVE=&quot;ALL&quot;" />
       <Custom Action="DeleteBootstrapJson"    Before="RemoveFiles"           Condition="REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>

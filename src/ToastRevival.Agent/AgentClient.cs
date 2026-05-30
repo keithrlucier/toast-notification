@@ -190,6 +190,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
     public event EventHandler<AgentConnectionState>? ConnectionStateChanged;
     public event Action? OnDecommissioned;
     public event Action? OnUninstallRequested;
+    public event Action? OnAppearanceUpdated;
 
     private readonly DeviceConfig _config;
     private readonly HubConnection _hub;
@@ -268,6 +269,14 @@ internal sealed class AgentHubClient : IAsyncDisposable
             });
             OnUninstallRequested?.Invoke();
             _shutdown.Cancel();
+        });
+        // M12.B — admin changed the overlay / lock screen config. Re-fetch + re-apply
+        // appearance live instead of waiting for the next agent restart. The handler
+        // in PrimaryMode is fire-and-forget and self-serializing.
+        _hub.On("AppearanceUpdated", () =>
+        {
+            DiagLog.Write("AppearanceUpdated: live appearance refresh requested.");
+            OnAppearanceUpdated?.Invoke();
         });
         _hub.Reconnecting += ex =>
         {

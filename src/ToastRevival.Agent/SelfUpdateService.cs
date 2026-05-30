@@ -118,7 +118,7 @@ internal static class SelfUpdateService
         // Restore the original lock screen before the product is removed.
         try
         {
-            await LockScreenService.ApplyAsync(null, ct);
+            await LockScreenService.RevertAsync(ct);
             DiagLog.Write("SelfUpdateService: lock screen restored.");
         }
         catch (Exception ex)

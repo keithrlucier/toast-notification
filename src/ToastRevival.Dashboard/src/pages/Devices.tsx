@@ -4,6 +4,7 @@ import { devicesApi, type Device, type DeviceGroup } from '../api/devices';
 import { DeviceStatus } from '../components/StatusBadge';
 import { ApiError } from '../api/client';
 import DeployCommand from '../components/DeployCommand';
+import RemoveAgentModal from '../components/RemoveAgentModal';
 
 type StatusFilter = 'all' | 'online' | 'offline';
 type GroupFilter = 'all' | 'ungrouped' | string;
@@ -94,9 +95,9 @@ export default function Devices() {
   const [sortDir, setSortDir]       = useState<SortDir>('asc');
   const [removing, setRemoving]     = useState<string | null>(null);
   const [uninstalling, setUninstalling] = useState<string | null>(null);
-  // Two-step inline confirm: first click arms the button (stores id), second fires.
-  // onBlur / doc-click clears armed state so it doesn't stay dangerous.
-  const [uninstallArmed, setUninstallArmed] = useState<string | null>(null);
+  // The agent runs unprivileged and can't reliably self-remove, so the button
+  // opens a modal with the manual removal command + a best-effort remote attempt.
+  const [removeTarget, setRemoveTarget] = useState<Device | null>(null);
   const [selected, setSelected]     = useState<Set<string>>(new Set());
   const [bulkGroupId, setBulkGroupId] = useState('');
   const [groupModal, setGroupModal] = useState<GroupModalState | null>(null);
@@ -171,18 +172,15 @@ export default function Devices() {
     }
   };
 
-  const handleUninstallArm = (id: string) => {
-    setUninstallArmed(id);
-  };
-
-  const handleUninstallConfirm = async (id: string) => {
-    setUninstallArmed(null);
+  // Best-effort remote removal, invoked from the modal's "Attempt remote removal"
+  // button. Decommissions the device (frees the license) and pushes the uninstall
+  // command to the agent if it's online and on a build that supports it. Throws on
+  // failure so the modal can surface the fallback guidance.
+  const handleRemoteUninstall = async (id: string) => {
     setUninstalling(id);
     try {
       await devicesApi.uninstall(id);
       await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to send uninstall command.');
     } finally {
       setUninstalling(null);
     }
@@ -588,34 +586,15 @@ export default function Devices() {
                         >
                           {removing === d.id ? <span className="spinner" /> : 'Remove'}
                         </button>
-                        {uninstalling === d.id ? (
-                          <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }} disabled>
-                            <span className="spinner" />
-                          </button>
-                        ) : uninstallArmed === d.id ? (
-                          <button
-                            className="btn btn-ghost"
-                            style={{ fontSize: 12, padding: '6px 10px', color: 'var(--status-error)', fontWeight: 700, border: '1px solid var(--status-error)' }}
-                            onClick={() => void handleUninstallConfirm(d.id)}
-                            onBlur={() => setUninstallArmed(null)}
-                            autoFocus
-                            title="Click again to confirm remote uninstall + remove software"
-                          >
-                            Confirm?
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn-ghost"
-                            style={{ fontSize: 12, padding: '6px 10px', color: 'var(--status-warning)' }}
-                            onClick={() => handleUninstallArm(d.id)}
-                            disabled={removing === d.id}
-                            title={d.isOnline
-                              ? 'Uninstall the agent software remotely, then remove this device'
-                              : 'Device is offline — software will not be removed, but device will be decommissioned'}
-                          >
-                            Uninstall
-                          </button>
-                        )}
+                        <button
+                          className="btn btn-ghost"
+                          style={{ fontSize: 12, padding: '6px 10px', color: 'var(--status-warning)' }}
+                          onClick={() => setRemoveTarget(d)}
+                          disabled={removing === d.id || uninstalling === d.id}
+                          title="Show how to uninstall the agent software from this device"
+                        >
+                          {uninstalling === d.id ? <span className="spinner" /> : 'Uninstall'}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -641,6 +620,15 @@ export default function Devices() {
           saving={savingGroup}
           onSave={args => void handleSaveGroup(args)}
           onClose={() => setGroupModal(null)}
+        />
+      )}
+
+      {removeTarget && (
+        <RemoveAgentModal
+          machineName={removeTarget.machineName}
+          isOnline={removeTarget.isOnline}
+          onRemoteUninstall={() => handleRemoteUninstall(removeTarget.id)}
+          onClose={() => setRemoveTarget(null)}
         />
       )}
     </div>

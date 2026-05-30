@@ -23,9 +23,18 @@
       4. Clears the per-user Spotlight toggles (ContentDeliveryManager) from
          every loaded user hive AND the SYSTEM hive — older install scripts ran
          as SYSTEM and wrote HKCU into the wrong profile, so we sweep both.
-      5. Runs msiexec /x /qn /norestart against the discovered ProductCode.
+      5a. Removes every MSI install matched BY NAME in Add/Remove Programs
+          (DisplayName -like 'Toast Notification*'). msiexec /x needs a
+          ProductCode, so it's read off the matched ARP key — discovered from the
+          name, never hardcoded, so it works for any build/version on the fleet.
+      5b. Removes the Microsoft Store / MSIX install BY NAME
+          (Get-AppxPackage Name -like '*ToastNotification*'), for all users, plus
+          the provisioned copy so it doesn't reinstall for new profiles.
       6. Purges the per-user config (%LocalAppData%\Toast2IT\Toast Notification)
          from every user profile so a future reinstall registers fresh.
+
+    Handles both deployment channels (MSI/RMM and Store/MSIX) in one pass, by
+    name — no per-build ProductCode GUIDs anywhere.
 
     Idempotent and best-effort throughout: a missing value, absent task, or
     already-uninstalled product is treated as success. The only failure that
@@ -82,36 +91,24 @@ Write-Log "Toast Notification agent uninstaller started. WorkDir=$WorkDir"
 
 # ── Find the installed product code + install path ─────────────────────────
 
-$productCode = $null
+# Name-driven removal — no hardcoded GUIDs. We match our product BY NAME in both
+# channels and remove every match:
+#   MSI   : Add/Remove Programs DisplayName -like $NameLike. msiexec /x needs the
+#           ProductCode, so we read it off the matched ARP key (PSChildName) — the
+#           code is DISCOVERED from the name, never hardcoded, so any build works.
+#   MSIX  : the Store/sideload package, Name -like $AppxLike (Remove-AppxPackage).
+$NameLike = 'Toast Notification*'   # ARP entry is "Toast Notification Agent"
+$AppxLike = '*ToastNotification*'   # MSIX Package.Identity.Name is FileUnityCloud.ToastNotification
 
-# Primary, authoritative source: the ProductCode the MSI deliberately stashes at
-# install time so removal never has to guess. Name-agnostic and exact.
+# Collect every MSI ProductCode whose Add/Remove Programs name matches (handles
+# multiple/side-by-side installs and any version — all by name).
+$productCodes = @()
 try {
-    $productCode = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Toast2IT\Toast Notification' `
-        -Name 'InstalledProductCode' -ErrorAction Stop).InstalledProductCode
-    if ($productCode) { Write-Log "ProductCode from registry (InstalledProductCode): $productCode" }
-} catch { }
-
-# Fallback: scan Add/Remove Programs. The MSI ProductName is "Toast Notification
-# Agent", so match on the prefix — an exact 'Toast Notification' match finds
-# nothing and silently skips the uninstall (the bug this replaces).
-if (-not $productCode) {
-    try {
-        $uninstallKeys = @(
-            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
-        )
-        $found = Get-ItemProperty -Path $uninstallKeys -ErrorAction SilentlyContinue |
-            Where-Object { $_.DisplayName -like 'Toast Notification*' } |
-            Select-Object -First 1
-        if ($found) {
-            # PSChildName on the registry key is the {ProductCode} GUID
-            $productCode = $found.PSChildName
-            Write-Log "ProductCode from ARP ($($found.DisplayName), $($found.DisplayVersion)): $productCode"
-        }
-    } catch {
-        Write-Log "Could not query uninstall registry: $($_.Exception.Message)" 'WARN'
-    }
+    $arpMatches = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -like $NameLike }
+    foreach ($m in $arpMatches) { $productCodes += $m.PSChildName; Write-Log "MSI match by name: '$($m.DisplayName)' $($m.DisplayVersion) -> $($m.PSChildName)" }
+} catch {
+    Write-Log "Could not query Add/Remove Programs: $($_.Exception.Message)" 'WARN'
 }
 
 # Resolve the agent exe path from the MSI-written InstallPath, falling back to
@@ -245,35 +242,51 @@ foreach ($root in $hiveRoots) {
     }
 }
 
-# ── Step 5: msiexec /x ─────────────────────────────────────────────────────
+# ── Step 5a: remove every MSI install matched BY NAME ──────────────────────
 
-if (-not $productCode) {
-    Write-Log "Toast Notification is not installed via MSI — software removal skipped (appearance already reverted)."
+$msiFailure = $null
+if (-not $productCodes) {
+    Write-Log "No MSI install matched by name — MSI removal skipped (may be a Store/MSIX install; see step 5b)."
 } else {
-    $msiLog = Join-Path $WorkDir 'msiexec-uninstall.log'
-    $arguments = @(
-        '/x'; $productCode
-        '/qn'; '/norestart'
-        '/l*v'; "`"$msiLog`""
-    )
-    Write-Log "Running: msiexec.exe $($arguments -join ' ')"
-    $proc = Start-Process -FilePath 'msiexec.exe' -ArgumentList $arguments `
-        -NoNewWindow -PassThru
-    if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
-        Write-Log "msiexec did not exit within $TimeoutSeconds seconds — killing." 'ERROR'
-        try { $proc | Stop-Process -Force } catch { }
-        exit 124
-    }
-    $exitCode = $proc.ExitCode
-    switch ($exitCode) {
-        0     { Write-Log "msiexec succeeded (exit 0). Uninstall complete." }
-        3010  { Write-Log "msiexec succeeded but flagged a reboot pending (exit 3010). Treating as success." }
-        1605  { Write-Log "msiexec reports the product is not installed (exit 1605). Treating as success." }
-        1602  { Write-Log "msiexec was canceled (exit 1602)." 'ERROR'; exit $exitCode }
-        1603  { Write-Log "msiexec fatal error (exit 1603). See $msiLog for verbose log." 'ERROR'; exit $exitCode }
-        default { Write-Log "msiexec exit code $exitCode. See $msiLog for verbose log." 'ERROR'; exit $exitCode }
+    foreach ($pc in ($productCodes | Select-Object -Unique)) {
+        $msiLog = Join-Path $WorkDir "msiexec-uninstall-$($pc -replace '[^0-9A-Fa-f]','').log"
+        Write-Log "Running: msiexec.exe /x $pc /qn /norestart"
+        $proc = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/x', $pc, '/qn', '/norestart', '/l*v', "`"$msiLog`"") -NoNewWindow -PassThru
+        if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
+            Write-Log "msiexec did not exit within $TimeoutSeconds seconds for $pc — killing." 'ERROR'
+            try { $proc | Stop-Process -Force } catch { }
+            $msiFailure = 124; continue
+        }
+        switch ($proc.ExitCode) {
+            0     { Write-Log "msiexec $pc succeeded (exit 0)." }
+            3010  { Write-Log "msiexec $pc succeeded; reboot pending (3010)." }
+            1605  { Write-Log "msiexec $pc reports not installed (1605) — treating as success." }
+            default { Write-Log "msiexec $pc exit $($proc.ExitCode) (see $msiLog)." 'ERROR'; $msiFailure = $proc.ExitCode }
+        }
     }
 }
+
+# ── Step 5b: remove the Microsoft Store / MSIX package BY NAME ──────────────
+
+# Store and Intune-LOB installs are MSIX, not MSI — msiexec can't touch them.
+# Remove the per-user package for all users, then the provisioned copy so it
+# doesn't reinstall for new profiles. All matched by package Name, no GUID.
+try {
+    $pkgs = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { $_.Name -like $AppxLike }
+    foreach ($pkg in $pkgs) {
+        Write-Log "Removing MSIX package (all users): $($pkg.PackageFullName)"
+        try { Remove-AppxPackage -Package $pkg.PackageFullName -AllUsers -ErrorAction Stop }
+        catch { try { Remove-AppxPackage -Package $pkg.PackageFullName -ErrorAction SilentlyContinue } catch { } }
+    }
+} catch { Write-Log "Get-AppxPackage sweep raised (non-fatal): $($_.Exception.Message)" 'WARN' }
+try {
+    Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -like $AppxLike -or $_.PackageName -like $AppxLike } |
+        ForEach-Object {
+            Write-Log "Removing provisioned MSIX package: $($_.PackageName)"
+            try { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null } catch { }
+        }
+} catch { Write-Log "Get-AppxProvisionedPackage sweep raised (non-fatal): $($_.Exception.Message)" 'WARN' }
 
 # ── Step 6: purge per-user config from every profile ───────────────────────
 
@@ -291,5 +304,9 @@ if (-not $KeepUserConfig) {
     } catch { Write-Log "Config purge raised (non-fatal): $($_.Exception.Message)" 'WARN' }
 }
 
+if ($msiFailure) {
+    Write-Log "Toast Notification removal finished WITH a msiexec failure (exit $msiFailure). Appearance/config/MSIX steps still ran." 'ERROR'
+    exit $msiFailure
+}
 Write-Log "Toast Notification removal complete."
 exit 0

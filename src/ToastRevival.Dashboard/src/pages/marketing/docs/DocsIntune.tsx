@@ -137,16 +137,16 @@ export default function DocsIntune() {
       <CodeBlock
         language="text"
         label="detection rule fields"
-        code={`Rule type:                          Registry
-Key path:                           HKLM\\SOFTWARE\\Toast2IT\\Toast Notification
-Value name:                         (leave blank)
-Detection method:                   Key exists
-Associated with a 32-bit app:       No`}
+        code={`Rule type:             File
+Path:                  C:\\Program Files\\Toast Notification
+File or folder name:   ToastNotification.Agent.exe
+Detection method:      File or folder exists
+Associated with 32-bit app on 64-bit clients:  No`}
       />
       <p>
-        Leave <strong>Value name</strong> empty and set <strong>Detection method</strong> to{' '}
-        <strong>Key exists</strong>. Intune checks for the presence of the registry key itself — no value name
-        is required. Click <strong>OK</strong>, then <strong>Next</strong>.
+        Click <strong>OK</strong>, then <strong>Next</strong>. The file{' '}
+        <code>ToastNotification.Agent.exe</code> is present if and only if the MSI installed
+        successfully — no registry parsing required.
       </p>
 
       <h3 id="win32-assign">Step 6 — Assign to a group</h3>

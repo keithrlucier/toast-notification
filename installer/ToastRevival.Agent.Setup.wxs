@@ -335,7 +335,10 @@
       <!-- M15: install the SYSTEM updater task after the logon task -->
       <Custom Action="InstallUpdaterTask"     After="InstallScheduledTask"   Condition="NOT REMOVE" />
       <Custom Action="StartAgentNow"          After="InstallUpdaterTask"     Condition="NOT REMOVE" />
-      <Custom Action="KillAgent"              Before="InstallValidate"       Condition="REMOVE=&quot;ALL&quot;" />
+      <!-- Kill agent on uninstall AND on upgrade (Installed = prior version present).
+           Runs before InstallValidate so no files are locked when new binaries land,
+           eliminating the reboot requirement on upgrade. -->
+      <Custom Action="KillAgent"              Before="InstallValidate"       Condition="REMOVE=&quot;ALL&quot; OR Installed" />
       <Custom Action="UninstallScheduledTask" Before="DeleteUserConfig"      Condition="REMOVE=&quot;ALL&quot;" />
       <!-- M15: remove the SYSTEM updater task alongside the logon task -->
       <Custom Action="UninstallUpdaterTask"   After="UninstallScheduledTask" Condition="REMOVE=&quot;ALL&quot;" />

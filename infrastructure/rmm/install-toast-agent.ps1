@@ -215,8 +215,10 @@ try {
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
         'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
     )
+    # MSI ProductName is "Toast Notification Agent" — match the prefix, not an
+    # exact 'Toast Notification' (which finds nothing and breaks the same-version skip).
     $found = Get-ItemProperty -Path $uninstallKeys -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -eq 'Toast Notification' } |
+        Where-Object { $_.DisplayName -like 'Toast Notification*' } |
         Select-Object -First 1
     if ($found) {
         $installedVersion = [Version] $found.DisplayVersion

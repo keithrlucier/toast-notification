@@ -83,21 +83,35 @@ Write-Log "Toast Notification agent uninstaller started. WorkDir=$WorkDir"
 # ── Find the installed product code + install path ─────────────────────────
 
 $productCode = $null
+
+# Primary, authoritative source: the ProductCode the MSI deliberately stashes at
+# install time so removal never has to guess. Name-agnostic and exact.
 try {
-    $uninstallKeys = @(
-        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
-    )
-    $found = Get-ItemProperty -Path $uninstallKeys -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -eq 'Toast Notification' } |
-        Select-Object -First 1
-    if ($found) {
-        # PSChildName on the registry key is the {ProductCode} GUID
-        $productCode = $found.PSChildName
-        Write-Log "Found installed product. DisplayVersion=$($found.DisplayVersion) ProductCode=$productCode"
+    $productCode = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Toast2IT\Toast Notification' `
+        -Name 'InstalledProductCode' -ErrorAction Stop).InstalledProductCode
+    if ($productCode) { Write-Log "ProductCode from registry (InstalledProductCode): $productCode" }
+} catch { }
+
+# Fallback: scan Add/Remove Programs. The MSI ProductName is "Toast Notification
+# Agent", so match on the prefix — an exact 'Toast Notification' match finds
+# nothing and silently skips the uninstall (the bug this replaces).
+if (-not $productCode) {
+    try {
+        $uninstallKeys = @(
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+        )
+        $found = Get-ItemProperty -Path $uninstallKeys -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like 'Toast Notification*' } |
+            Select-Object -First 1
+        if ($found) {
+            # PSChildName on the registry key is the {ProductCode} GUID
+            $productCode = $found.PSChildName
+            Write-Log "ProductCode from ARP ($($found.DisplayName), $($found.DisplayVersion)): $productCode"
+        }
+    } catch {
+        Write-Log "Could not query uninstall registry: $($_.Exception.Message)" 'WARN'
     }
-} catch {
-    Write-Log "Could not query uninstall registry: $($_.Exception.Message)" 'WARN'
 }
 
 # Resolve the agent exe path from the MSI-written InstallPath, falling back to

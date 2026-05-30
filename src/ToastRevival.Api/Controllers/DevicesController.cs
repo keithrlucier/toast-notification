@@ -298,6 +298,41 @@ public class DevicesController : ControllerBase
     }
 
     /// <summary>
+    /// Metadata for the canonical clean-removal script served statically at
+    /// /downloads/ (alongside the MSI). The admin "Remove agent" modal shows the
+    /// download link plus the script's real last-modified date. Anonymous and
+    /// read-only — the script contains no secrets (it removes by name, not key).
+    /// </summary>
+    [HttpGet("/api/agent/uninstall-script-info")]
+    [AllowAnonymous]
+    public IActionResult GetUninstallScriptInfo()
+    {
+        // Relative URL by default so the download is same-origin (works with the
+        // browser's download attribute on any deployment host).
+        var url  = _config["Agent:UninstallScriptUrl"] ?? "/downloads/uninstall-toast-agent.ps1";
+        var root = _config["Downloads:RootPath"]       ?? "/opt/toast/downloads";
+        var path = System.IO.Path.Combine(root, "uninstall-toast-agent.ps1");
+
+        DateTime? lastModifiedUtc = null;
+        long sizeBytes = 0;
+        try
+        {
+            if (System.IO.File.Exists(path))
+            {
+                var fi = new System.IO.FileInfo(path);
+                lastModifiedUtc = fi.LastWriteTimeUtc;
+                sizeBytes       = fi.Length;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "uninstall-script-info: could not stat {Path}", path);
+        }
+
+        return Ok(new { url, lastModifiedUtc, sizeBytes });
+    }
+
+    /// <summary>
     /// Decommissions a device AND pushes "UninstallAgent" to it via the SignalR hub
     /// if it is currently connected. The agent restores the lock screen, writes the
     /// uninstall trigger file, and fires the SYSTEM updater task which runs

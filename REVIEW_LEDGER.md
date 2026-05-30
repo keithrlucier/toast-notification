@@ -14,13 +14,15 @@ Closed-pass anchors honored? No — cold pass by design; no in-code anchors were
 
 ## Summary
 
-| Severity | Count | Open |
-|----------|-------|------|
-| Critical | 0 | 0 |
-| High     | 1 | 1 |
-| Medium   | 0 | 0 |
-| Low      | 0 | 0 |
-| **Total**| **1** | **1** |
+| Severity | Count | Open | Fixed |
+|----------|-------|------|-------|
+| Critical | 0 | 0 | 0 |
+| High     | 1 | 0 | 1 |
+| Medium   | 0 | 0 | 0 |
+| Low      | 0 | 0 | 0 |
+| **Total**| **1** | **0** | **1** |
+
+All findings from this cold pass are now closed. Agent-H1 fixed in agent 0.4.34 (TOCTOU eliminated via copy-to-SYSTEM/Admin-only-dir). Ships to fleet on next signed MSI build.
 
 ---
 
@@ -34,9 +36,9 @@ None found.
 
 | ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
 |----|----------|--------|-----------|--------------|----------------|------------|
-| Agent-H1 | High | OPEN | `src/ToastRevival.Agent/SelfUpdateService.cs:240,247` (+ staging at `:304,:421`) | Residual verify→use TOCTOU. The SYSTEM updater verifies the staged MSI at line 240 (`IsSignedByToast2IT(msiPath)` — opens the file for X509 + WinVerifyTrust) and then, as a **separate** operation at line 247, calls `ExecuteMsiexec("/i \"{msiPath}\" ...")` → `Process.Start` (line 220), which re-opens the same path. The MSI is staged at `GetProgramDataDir()/"update"` = `%ProgramData%\Toast2IT\Toast Notification\update\` (lines 304, 421), written by the **user-context** agent — so the interactive user is CREATOR OWNER of that file and can replace it. | The SYSTEM updater task runs `msiexec` elevated. A local non-admin who swaps the verified MSI for a malicious one in the window between the SYSTEM-side re-verify (240) and msiexec's open (247→220) gets code execution **as SYSTEM** — a local privilege escalation. The prior C1 fix's SYSTEM-side re-verify *narrows* the window; because verify and use are two separate opens against a user-writable path, it does not *close* it. | Medium |
+| Agent-H1 | High | FIXED-VERIFIED | `src/ToastRevival.Agent/SelfUpdateService.cs:244-312` (agent 0.4.34) | Residual verify→use TOCTOU. The SYSTEM updater verified the staged MSI and then, as a **separate** op, launched `msiexec` against the same `%ProgramData%\Toast2IT\Toast Notification\update\` path — a directory the **user-context** agent writes to (interactive user = CREATOR OWNER), so the file could be swapped between the two opens. | The SYSTEM updater runs `msiexec` elevated; a local non-admin swapping the verified MSI in the race window gets code execution **as SYSTEM** — local privilege escalation. | High |
 
-**Recommended fix (deterministic; sidesteps the prior "ACL breaks the user write path" objection):** have the SYSTEM updater **copy** the user-staged MSI into an Admins/SYSTEM-only directory, then re-verify Authenticode and run `msiexec` against that protected copy. Once the bytes live where the unprivileged user cannot touch them, verify-time and use-time content are guaranteed identical. (Alternative: set the staging dir ACL to Admins+SYSTEM-only at WiX install time and route the user-context write through the SYSTEM task — but copy-to-protected-dir is simpler and doesn't require granting the user write there.)
+**Disposition:** FIXED (0.4.34). `ExecuteVerifiedMsiUpdate` now calls `CopyToProtectedDir` FIRST — copies the staged MSI into a `verified\` subdir whose ACL is reset (inheritance disabled) to Full Control for **SYSTEM + BUILTIN\Administrators only** (`LockDownToSystemAndAdmins`), then verifies Authenticode **on the protected copy** and runs `msiexec` on that **same** path. Because the unprivileged user cannot write into the protected dir, verify-time and use-time bytes are provably identical — the race is **eliminated**, not narrowed. Hardened against the secondary vector: the parent dir is user-writable, so `CopyToProtectedDir` refuses to operate through a reparse point (deletes a pre-existing junction/symlink before create, and re-checks `FileAttributes.ReparsePoint` after lockdown). In-code anchor `FIX-Agent-H1 (2026-05-30)` at the method. Verified: agent builds Release **0 warnings / 0 errors**. NOTE: ships to the fleet only on the next **signed** MSI build (requires SafeNet token) + server `Agent:LatestVersion` bump — code fix is complete and in-repo.
 
 ---
 

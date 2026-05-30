@@ -94,6 +94,25 @@ namespace ToastRevival.Agent
                 return SelfUpdateService.RunUpdaterMode();
             }
 
+            // Revert-appearance mode — short-lived removal helper. Restores the per-user
+            // lock screen to its original (or the Windows default if the snapshot was
+            // lost) and exits. Invoked by the MSI uninstall (impersonated, user context)
+            // and by the canonical uninstall script BEFORE the product is removed, so the
+            // device is never left stuck on the branded lock screen. WinRT LockScreen is
+            // a user-context API; this runs as the logged-on user, never as SYSTEM. Skips
+            // the primary mutex so it can run while (or just after) the primary worker is
+            // being torn down.
+            if (HasFlag(args, "--revert-appearance"))
+            {
+                DiagLog.Write("==> --revert-appearance: restoring lock screen before removal.");
+                try { await LockScreenService.RevertAsync(CancellationToken.None); }
+                catch (Exception ex)
+                {
+                    DiagLog.Write($"--revert-appearance failed (non-fatal): {ex.GetType().Name}: {ex.Message}");
+                }
+                return 0;
+            }
+
             // Elevation note (no longer fatal). The historical "elevated processes can't show
             // toasts" rule was a UWP/Windows.UI.Notifications limitation. WinAppSDK 1.7 supports
             // elevated callers when the AUMID + COM activator are properly registered (we do
@@ -524,6 +543,11 @@ namespace ToastRevival.Agent
                     // so a disabled overlay never realizes a window.
                     using var overlay = new DesktopOverlayService(tray.Post);
 
+                    // Serializes appearance applies so a burst of AppearanceUpdated
+                    // pushes (or a push landing during the startup apply) can't run the
+                    // overlay/lock-screen apply concurrently. WaitAsync(0) → skip if busy.
+                    using var appearanceGate = new SemaphoreSlim(1, 1);
+
                     using var shutdown = new CancellationTokenSource();
                     Console.CancelKeyPress += (_, e) =>
                     {
@@ -576,30 +600,59 @@ namespace ToastRevival.Agent
                         shutdown.Cancel();
                     };
 
+                    // M12.B — live appearance push. When an admin saves the overlay or
+                    // lock screen config (or disables it), the API pushes AppearanceUpdated
+                    // to the tenant; the agent re-fetches and re-applies immediately,
+                    // including the revert-on-disable path. Fire-and-forget so the hub
+                    // callback returns fast; the gate inside ApplyAppearanceAsync serializes.
+                    // async void via Action is intentional: ApplyAppearanceAsync is fully
+                    // guarded (try/catch/finally, never throws), so there is nothing for an
+                    // async-void to surface. The PrimaryMode args parameter is named '_',
+                    // so a '_ = ...' discard isn't available in this scope.
+                    client.OnAppearanceUpdated += async () =>
+                    {
+                        DiagLog.Write("PrimaryMode: AppearanceUpdated push received — re-applying.");
+                        await ApplyAppearanceAsync("hub push");
+                    };
+
                     await client.StartAsync(shutdown.Token);
                     DiagLog.Write($"PrimaryMode: agent online (deviceId={config.DeviceId})");
 
-                    // M12 — apply device appearance (desktop overlay + lock screen)
-                    // AFTER going online so the device-online signal isn't delayed by
-                    // image download/apply. Best-effort and non-fatal: any failure
-                    // leaves whatever was last applied. MVP cadence is startup-only —
-                    // admin changes take effect at next agent restart (live hub push
-                    // is M12.B). Bounded at 30s so a slow image fetch can't hang here.
-                    try
+                    // M12 — apply device appearance (desktop overlay + lock screen) AFTER
+                    // going online so the device-online signal isn't delayed by image
+                    // download/apply. Best-effort and non-fatal. Live admin changes arrive
+                    // via the AppearanceUpdated push above; offline devices catch up here
+                    // at next startup.
+                    await ApplyAppearanceAsync("startup");
+
+                    // Local helper — shared by the startup apply and the live hub push.
+                    // Serialized by appearanceGate; bounded at 30s so a slow image fetch
+                    // can't hang. Captures overlay/config/shutdown from the enclosing scope.
+                    async Task ApplyAppearanceAsync(string reason)
                     {
-                        using var apCts = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
-                        apCts.CancelAfter(TimeSpan.FromSeconds(30));
-                        var appearance = await RegistrationService.TryGetAppearanceConfigAsync(config, apCts.Token);
-                        if (appearance is not null)
+                        if (!await appearanceGate.WaitAsync(0))
                         {
-                            overlay.Apply(appearance.Overlay, config.TenantName);
-                            await LockScreenService.ApplyAsync(appearance.LockScreen, apCts.Token);
+                            DiagLog.Write($"PrimaryMode: appearance apply already running — skipping ({reason}).");
+                            return;
                         }
-                    }
-                    catch (OperationCanceledException) { /* shutdown or 30s cap */ }
-                    catch (Exception ex)
-                    {
-                        DiagLog.Write($"PrimaryMode: device appearance apply failed: {ex.GetType().Name}: {ex.Message}");
+                        try
+                        {
+                            using var apCts = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
+                            apCts.CancelAfter(TimeSpan.FromSeconds(30));
+                            var appearance = await RegistrationService.TryGetAppearanceConfigAsync(config, apCts.Token);
+                            if (appearance is not null)
+                            {
+                                overlay.Apply(appearance.Overlay, config.TenantName);
+                                await LockScreenService.ApplyAsync(appearance.LockScreen, apCts.Token);
+                                DiagLog.Write($"PrimaryMode: device appearance applied ({reason}).");
+                            }
+                        }
+                        catch (OperationCanceledException) { /* shutdown or 30s cap */ }
+                        catch (Exception ex)
+                        {
+                            DiagLog.Write($"PrimaryMode: device appearance apply failed ({reason}): {ex.GetType().Name}: {ex.Message}");
+                        }
+                        finally { appearanceGate.Release(); }
                     }
 
                     try { await Task.Delay(Timeout.InfiniteTimeSpan, shutdown.Token); }

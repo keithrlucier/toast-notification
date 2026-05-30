@@ -117,14 +117,37 @@ internal static class LockScreenService
         }
     }
 
+    /// <summary>
+    /// Public revert entry point for the removal / uninstall path
+    /// (<c>--revert-appearance</c> agent mode and the remote-uninstall hub
+    /// command). Restores the genuine original lock screen if we have a
+    /// snapshot, otherwise falls back to the Windows default, then clears all
+    /// branding state. Best-effort; never throws. Calling this is identical to
+    /// disabling the feature, so it shares the exact restore path.
+    /// </summary>
+    public static Task RevertAsync(CancellationToken ct) => ApplyAsync(null, ct);
+
     private static async Task RestoreIfNeededAsync(string currentPath, string originalPath, string hashPath)
     {
-        if (!File.Exists(originalPath)) return; // never applied → nothing to undo
+        var brandedByUs = File.Exists(originalPath) || File.Exists(currentPath) || File.Exists(hashPath);
+        if (!brandedByUs) return; // never applied → nothing to undo, leave the device alone
 
         try
         {
-            await SetLockScreenAsync(originalPath);
-            DiagLog.Write("LockScreen: restored original lock screen on disable.");
+            if (File.Exists(originalPath))
+            {
+                await SetLockScreenAsync(originalPath);
+                DiagLog.Write("LockScreen: restored original lock screen on disable/revert.");
+            }
+            else
+            {
+                // We branded this device (current/hash present) but the genuine
+                // snapshot is gone (e.g. config dir partially wiped, or the agent
+                // was reinstalled while branding was active). Do-no-harm fallback:
+                // point the lock screen at the Windows default image so the device
+                // is never left stuck on our branding with no way back.
+                await RestoreWindowsDefaultAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -136,6 +159,26 @@ internal static class LockScreenService
         SafeDelete(originalPath);
         SafeDelete(currentPath);
         SafeDelete(hashPath);
+    }
+
+    /// <summary>
+    /// Sets the lock screen to the stock Windows default image. Used only as the
+    /// snapshot-lost fallback in <see cref="RestoreIfNeededAsync"/>. img100.jpg
+    /// ships on every Windows 10/11 SKU; img105.jpg is the Win11 backup. If
+    /// neither exists the device keeps whatever it currently shows (no-op).
+    /// </summary>
+    private static async Task RestoreWindowsDefaultAsync()
+    {
+        var windir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        foreach (var candidate in new[] { "img100.jpg", "img105.jpg", "img0.jpg" })
+        {
+            var path = Path.Combine(windir, "Web", "Screen", candidate);
+            if (!File.Exists(path)) continue;
+            await SetLockScreenAsync(path);
+            DiagLog.Write($"LockScreen: snapshot missing — restored Windows default '{candidate}'.");
+            return;
+        }
+        DiagLog.Write("LockScreen: snapshot missing and no Windows default image found — leaving as-is.");
     }
 
     private static async Task SetLockScreenAsync(string path)

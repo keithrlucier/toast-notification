@@ -47,6 +47,22 @@
     install typically completes in <60 seconds; the cushion covers slow
     endpoints and SSD lag.
 
+.PARAMETER PinLockScreen
+    Optional switch. Set ONLY when the tenant uses the Lock Screen Branding
+    feature. Writes three machine-wide policy values so Windows Spotlight does
+    not rotate the branded image back out:
+        HKLM\...\Policies\...\Lock Screen\HideSpotlightWindowsSpotlight = 1
+        HKLM\...\Policies\...\Personalization\NoLockScreenCamera        = 1
+        HKLM\...\Policies\...\Personalization\LockScreenOverlaysDisabled = 1
+    These are reverted by uninstall-toast-agent.ps1 (and by the MSI on
+    Control-Panel uninstall). Leave this OFF for tenants that don't brand the
+    lock screen — pinning Spotlight off machine-wide on those endpoints is
+    needless. NOTE: this intentionally does NOT set NoCloudApplicationNotification
+    (that policy suppresses toast delivery and has no place on a notification
+    agent) nor the per-user ContentDeliveryManager toggles (an RMM running as
+    SYSTEM writes those into the SYSTEM profile, not the user's — they are a
+    no-op; the HKLM Spotlight policy above already covers the machine).
+
 .EXAMPLE
     .\install-toast-agent.ps1 -TenantId 'a1b2c3d4-...' `
         -ServerUrl 'https://toastnotification.com' `
@@ -91,7 +107,9 @@ param(
 
     [string] $WorkDir = (Join-Path $env:ProgramData 'Toast2IT\Install'),
 
-    [int] $TimeoutSeconds = 300
+    [int] $TimeoutSeconds = 300,
+
+    [switch] $PinLockScreen
 )
 
 $ErrorActionPreference = 'Stop'
@@ -103,6 +121,24 @@ function Write-Log {
     Write-Host $line
     if ($script:LogFile) {
         try { Add-Content -Path $script:LogFile -Value $line -Encoding utf8 } catch { }
+    }
+}
+
+function Set-LockScreenPolicy {
+    # Pins Windows Spotlight off so the agent's branded lock screen image is not
+    # rotated back out. Machine-wide HKLM policy (admin context). The exact
+    # inverse is in uninstall-toast-agent.ps1 / the MSI's RevertLockScreenPolicy.
+    $pins = @(
+        @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Lock Screen'; Name = 'HideSpotlightWindowsSpotlight' },
+        @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization';            Name = 'NoLockScreenCamera' },
+        @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization';            Name = 'LockScreenOverlaysDisabled' }
+    )
+    foreach ($p in $pins) {
+        try {
+            if (-not (Test-Path -LiteralPath $p.Path)) { [void] (New-Item -Path $p.Path -Force) }
+            New-ItemProperty -LiteralPath $p.Path -Name $p.Name -Value 1 -PropertyType DWord -Force | Out-Null
+            Write-Log "Pinned $($p.Path)\$($p.Name) = 1"
+        } catch { Write-Log "Could not pin $($p.Path)\$($p.Name): $($_.Exception.Message)" 'WARN' }
     }
 }
 
@@ -265,6 +301,11 @@ if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
 $exitCode = $proc.ExitCode
 
 # ── Step 8: report ────────────────────────────────────────────────────────
+
+if (($exitCode -eq 0 -or $exitCode -eq 3010) -and $PinLockScreen) {
+    Write-Log "PinLockScreen set — applying lock screen Spotlight policy."
+    Set-LockScreenPolicy
+}
 
 switch ($exitCode) {
     0     { Write-Log "msiexec succeeded (exit 0). Install complete."; exit 0 }

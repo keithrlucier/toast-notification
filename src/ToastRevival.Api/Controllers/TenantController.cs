@@ -2,9 +2,11 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Hubs;
 using ToastRevival.Api.Models;
 
 namespace ToastRevival.Api.Controllers;
@@ -29,11 +31,26 @@ public class TenantController : ControllerBase
 
     private readonly AppDbContext _db;
     private readonly IWebHostEnvironment _env;
+    private readonly IHubContext<NotificationHub> _hub;
 
-    public TenantController(AppDbContext db, IWebHostEnvironment env)
+    public TenantController(AppDbContext db, IWebHostEnvironment env, IHubContext<NotificationHub> hub)
     {
         _db = db;
         _env = env;
+        _hub = hub;
+    }
+
+    /// <summary>
+    /// M12.B — tell every connected device in this tenant to re-fetch and re-apply
+    /// its appearance config now (instead of waiting for the next agent restart).
+    /// The agent's AppearanceUpdated handler covers both apply and revert-on-disable.
+    /// Devices and dashboard clients share the tenant-{id} group; the dashboard
+    /// ignores this message. Best-effort — a SignalR failure must not fail the save.
+    /// </summary>
+    private async Task NotifyAppearanceChangedAsync(Guid tenantId)
+    {
+        try { await _hub.Clients.Group($"tenant-{tenantId}").SendAsync("AppearanceUpdated"); }
+        catch { /* best-effort: the device still catches up at next startup */ }
     }
 
     [HttpGet("settings")]
@@ -276,6 +293,7 @@ public class TenantController : ControllerBase
         if (req.OpacityPercent is int op)
             t.DesktopOverlayOpacityPercent = TenantAppearance.NormalizeOpacity(op);
         await _db.SaveChangesAsync();
+        await NotifyAppearanceChangedAsync(tenantId);
         return NoContent();
     }
 
@@ -304,6 +322,7 @@ public class TenantController : ControllerBase
         // never an arbitrary URL the agent would then fetch.
         t.LockScreenImageUrl = NormalizeLockScreenUrlForStorage(req.ImageUrl);
         await _db.SaveChangesAsync();
+        await NotifyAppearanceChangedAsync(tenantId);
         return NoContent();
     }
 
@@ -361,6 +380,9 @@ public class TenantController : ControllerBase
         {
             tenant.LockScreenImageUrl = url;
             await _db.SaveChangesAsync();
+            // Image commits immediately (Diana's split: upload now, Save toggles
+            // enabled). Refresh live so a re-upload-while-enabled reaches devices.
+            await NotifyAppearanceChangedAsync(tenantId);
         }
 
         return Ok(new { url });

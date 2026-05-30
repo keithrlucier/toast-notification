@@ -163,12 +163,25 @@ Associated with 32-bit app on 64-bit clients:  No`}
 
       <h3 id="win32-update">Auto-update</h3>
       <p>
-        The MSI installs the Velopack in-process auto-updater. Once a day the agent checks the release feed at{' '}
-        <code>https://releases.toastnotification.com/agent/win-x64</code>; new versions download in the background
-        and apply on next agent restart. To pin a version and control updates through Intune instead, set{' '}
-        <code>HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate = 1</code> via a configuration profile,
-        then push new MSI versions as app updates.
+        MSI-installed agents (including Intune Win32 deployments) self-update through the MSI channel: once a day
+        the agent polls <code>/api/agent/version</code>, and when a newer release is published it downloads the
+        signed MSI, re-verifies its Authenticode signature, and installs it silently via a SYSTEM scheduled task.
+        Because the Win32 detection rule keys on the agent file&apos;s presence (not its version), this in-place
+        upgrade does not trigger an Intune reinstall — but Intune will keep reporting the originally deployed
+        version until you publish the new package. To pin a version and drive every update through Intune instead,
+        set <code>HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate = 1</code> via a configuration
+        profile (or pass <code>DISABLEAUTOUPDATE=1</code> on the install command), then push new MSI versions as
+        app updates.
       </p>
+      <Callout title="Keep your Intune package current">
+        <p>
+          Even with self-update enabled, re-wrap and republish the latest signed MSI when a new version ships.
+          Self-update covers devices already enrolled and online; republishing ensures <strong>newly enrolled</strong>{' '}
+          devices install the current version on day one and that Intune&apos;s reported version matches what is
+          actually running. For a security fix, do both — let self-update carry the existing fleet and republish so
+          the management plane is accurate.
+        </p>
+      </Callout>
 
       <hr style={{ margin: '40px 0', borderColor: 'rgba(15,23,42,0.1)' }} />
 

@@ -295,8 +295,11 @@ function LockScreenCard() {
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
   const [removeArmed, setRemoveArmed] = useState(false);
+  const [cacheBust, setCacheBust]     = useState(0);
 
-  const previewUrl = tenantLogoUrlForBrowser(imageUrl ?? '');
+  const previewUrl = imageUrl
+    ? tenantLogoUrlForBrowser(imageUrl) + (cacheBust > 0 ? `?v=${cacheBust}` : '')
+    : '';
 
   useEffect(() => {
     api.get<{ enabled: boolean; imageUrl: string | null }>('/api/tenant/lockscreen')
@@ -324,6 +327,7 @@ function LockScreenCard() {
       const { url } = await res.json() as { url?: string };
       if (!url) throw new Error('Upload failed.');
       setImageUrl(url);
+      setCacheBust(b => b + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed.');
     } finally {

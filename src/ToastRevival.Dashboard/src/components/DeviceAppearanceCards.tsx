@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError, apiErrorFromResponse, authHeaders } from '../api/client';
 import { tenantLogoUrlForBrowser } from '../lib/tenantBranding';
 
-// M12 Device Appearance — two independent cards on Tenant Settings. Diana's spec:
+// M12 Device Appearance — two independent cards on Tenant Settings. Design spec:
 // two cards, never one; disabled state shows config (never hides it); each card
 // owns its Save state. The field keys and positions below MUST match the server's
 // TenantAppearance vocabulary (hostname|user|os|ip|tenant|customtext, and the four

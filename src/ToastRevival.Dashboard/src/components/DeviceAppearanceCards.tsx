@@ -296,9 +296,10 @@ function LockScreenCard() {
   const [success, setSuccess] = useState('');
   const [removeArmed, setRemoveArmed] = useState(false);
   const [cacheBust, setCacheBust]     = useState(0);
+  const [mountTime]                   = useState(() => Date.now());
 
   const previewUrl = imageUrl
-    ? tenantLogoUrlForBrowser(imageUrl) + (cacheBust > 0 ? `?v=${cacheBust}` : '')
+    ? `${tenantLogoUrlForBrowser(imageUrl)}?v=${mountTime + cacheBust}`
     : '';
 
   useEffect(() => {

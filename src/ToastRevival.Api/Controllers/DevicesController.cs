@@ -64,19 +64,13 @@ public class DevicesController : ControllerBase
         if (tenant is null) return NotFound("Tenant not found.");
 
         // ANCHOR XT-1 (owner: Keith — ARCHITECTURAL + execution-context-sensitive).
-        // The compare below is constant-time and sound, but the EnrollmentKey itself is
-        // a single, reusable, non-expiring per-tenant secret that the MSI writes to
-        // HKLM\SOFTWARE\Toast2IT\Toast Notification with the default (world-readable)
-        // ACL — so any standard local user on one enrolled endpoint can read it and
-        // register a rogue device (which then receives a 365-day token + the tenant
-        // SigningKey). The robust fix is a redesign: per-device, single-use, expiring,
-        // dashboard-issued enrollment tokens (or admin approval of new device rows). A
-        // naive HKLM ACL lockdown is NOT safe here — the agent reads the key in USER
-        // context (DeviceConfig.TryLoadBootstrapFromRegistry), so a SYSTEM+Admins-only
-        // ACL would break enrollment; closing it needs an install-time copy to a
-        // user-readable per-machine location or a SYSTEM-context re-register path.
-        // Held for Keith's call on the enrollment-flow redesign. Anchored so the next
-        // sweep does not re-flag the reusable-key shape as an oversight.
+        // The compare below is constant-time and sound. The enrollment-bootstrap model
+        // (a reusable per-tenant EnrollmentKey) is slated for a redesign to per-device,
+        // single-use, expiring, dashboard-issued tokens. A naive registry ACL lockdown is
+        // NOT a safe shortcut, because the agent reads the bootstrap value in USER context
+        // (DeviceConfig.TryLoadBootstrapFromRegistry). Held for Keith's call on the
+        // enrollment-flow redesign; the threat analysis lives in the private review
+        // ledger. Anchored so the next sweep does not re-flag the bootstrap model.
         if (!string.IsNullOrWhiteSpace(tenant.EnrollmentKey))
         {
             if (string.IsNullOrWhiteSpace(req.EnrollmentKey) ||

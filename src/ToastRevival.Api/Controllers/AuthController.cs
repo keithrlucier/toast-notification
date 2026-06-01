@@ -670,15 +670,12 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<MfaVerifyResponse>> MfaVerifySms([FromBody] MfaVerifyRequest req)
     {
         // ANCHOR MFA-7 (owner: Keith — PRODUCT/UX decision, not a code defect to fix blind).
-        // This SMS step-up grants a full mfa=true elevation by verifying a code on the SAME
-        // SMS channel that already authenticated an SMS-login user — it is NOT a factor
-        // DISTINCT from the login factor (contrast mfa/verify, which requires a separately
-        // enrolled TOTP MfaSecret). For an SMS-only user a SIM-swap / interception attacker
-        // who already holds the session can elevate with no extra barrier, so the step-up
-        // adds little. The fix is a design call: (a) require an enrolled TOTP authenticator
-        // for step-up (M15 already shipped native TOTP for every role, so SMS users could be
-        // pushed to enrol), or (b) add a distinct SMS-elevation secret. Held for Keith.
-        // Anchored so the next sweep does not re-flag.
+        // This SMS step-up re-uses the same channel that already authenticates an SMS-login
+        // user, so it is not a factor DISTINCT from the login factor (contrast mfa/verify,
+        // which requires a separately enrolled TOTP MfaSecret). The fix is a design call:
+        // (a) require an enrolled TOTP authenticator for step-up (M15 shipped native TOTP for
+        // every role), or (b) add a distinct SMS-elevation secret. Held for Keith; rationale
+        // in the private review ledger. Anchored so the next sweep does not re-flag.
         var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
 

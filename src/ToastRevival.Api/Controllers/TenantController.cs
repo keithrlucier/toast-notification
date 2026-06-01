@@ -8,6 +8,7 @@ using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
 using ToastRevival.Api.Hubs;
 using ToastRevival.Api.Models;
+using ToastRevival.Api.Utilities;
 
 namespace ToastRevival.Api.Controllers;
 
@@ -121,6 +122,72 @@ public class TenantController : ControllerBase
 
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    // ── Tenant-wide native MFA enforcement ───────────────────────────────────
+    // When on: every member must enroll an authenticator, and sending a toast /
+    // changing the lock screen require a fresh step-up verification. Admin-only.
+
+    [HttpGet("mfa-policy")]
+    public async Task<ActionResult<TenantMfaPolicyResponse>> GetMfaPolicy()
+    {
+        if (!IsAdmin()) return Forbid();
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var t = await _db.Tenants.FindAsync(tenantId);
+        if (t is null) return NotFound();
+
+        var callerEnrolled = await CallerHasMfaAsync();
+        return Ok(new TenantMfaPolicyResponse(t.RequireMfa, callerEnrolled));
+    }
+
+    [HttpPut("mfa-policy")]
+    public async Task<IActionResult> UpdateMfaPolicy([FromBody] UpdateTenantMfaPolicyRequest req)
+    {
+        if (!IsAdmin()) return Forbid();
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var t = await _db.Tenants.FindAsync(tenantId);
+        if (t is null) return NotFound();
+
+        // Self-lockout guard: an admin cannot enforce MFA workspace-wide until their
+        // own account has a confirmed authenticator — otherwise the person flipping
+        // the switch is the first one locked out of sensitive actions.
+        if (req.RequireMfa && !t.RequireMfa && !await CallerHasMfaAsync())
+            return BadRequest(new
+            {
+                message = "Set up your own authenticator (Security → Two-Factor Authentication) before requiring MFA for the workspace."
+            });
+
+        t.RequireMfa = req.RequireMfa;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /// <summary>True when the calling user has a confirmed authenticator (MfaSecret set).</summary>
+    private async Task<bool> CallerHasMfaAsync()
+    {
+        var uid = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var secret = await _db.Users.IgnoreQueryFilters()
+            .Where(u => u.Id == uid)
+            .Select(u => u.MfaSecret)
+            .FirstOrDefaultAsync();
+        return !string.IsNullOrWhiteSpace(secret);
+    }
+
+    /// <summary>
+    /// Step-up gate for sensitive tenant actions. When the tenant enforces MFA and
+    /// the caller's token isn't elevated (mfa=true claim), returns a 403 the frontend
+    /// turns into an MFA prompt. Returns null when the action may proceed. Shares the
+    /// mfa=true mechanism with broadcast-to-all in NotificationsController.
+    /// </summary>
+    private IActionResult? RequireStepUpMfa(bool tenantRequiresMfa, string action, IConfiguration config)
+    {
+        if (tenantRequiresMfa && !User.HasFreshMfa(config))
+            return StatusCode(403, new
+            {
+                error = "mfa_required",
+                message = $"{action} requires MFA verification. Verify your authenticator and try again."
+            });
+        return null;
     }
 
     /// <summary>
@@ -308,13 +375,18 @@ public class TenantController : ControllerBase
     }
 
     [HttpPut("lockscreen")]
-    public async Task<IActionResult> UpdateLockScreen([FromBody] UpdateLockScreenConfigRequest req)
+    public async Task<IActionResult> UpdateLockScreen(
+        [FromBody] UpdateLockScreenConfigRequest req,
+        [FromServices] IConfiguration config)
     {
         if (!IsAdmin()) return Forbid();
 
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var t = await _db.Tenants.FindAsync(tenantId);
         if (t is null) return NotFound();
+
+        var gate = RequireStepUpMfa(t.RequireMfa, "Changing the lock screen", config);
+        if (gate is not null) return gate;
 
         t.LockScreenEnabled = req.Enabled;
         // Save also persists the image (or clears it on Remove), mirroring the
@@ -347,6 +419,19 @@ public class TenantController : ControllerBase
             return BadRequest(new { message = "Unsupported file type. Use JPG or PNG." });
 
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+
+        // Step-up MFA gate BEFORE any disk write — reject an unverified upload
+        // instead of writing the file and then 403'ing. Inlined (not the shared
+        // helper) because this action returns ActionResult<object>, which doesn't
+        // implicitly convert from the helper's IActionResult.
+        var requireMfa = await _db.Tenants.IgnoreQueryFilters()
+            .Where(x => x.Id == tenantId).Select(x => x.RequireMfa).FirstOrDefaultAsync();
+        if (requireMfa && !User.HasFreshMfa(config))
+            return StatusCode(403, new
+            {
+                error = "mfa_required",
+                message = "Changing the lock screen requires MFA verification. Verify your authenticator and try again."
+            });
 
         // Same persistent-root resolution as AssetsController so the file lands
         // on /opt/toast/shared/assets in prod and is served at /assets.
@@ -457,10 +542,18 @@ public class TenantController : ControllerBase
         return new string('•', 8) + key[^4..];
     }
 
+    // CFG-4: accept only our own logo asset path (relative, or absolute pointing at
+    // /assets/logos/ which is reduced to relative). Anything else — an external URL —
+    // stores null, exactly like NormalizeLockScreenUrlForStorage below. The logo is
+    // fetched by the agent (as the notification icon) via ToPublicUrl, so an arbitrary
+    // external value here is a blind own-fleet SSRF; this is the gate that stops it.
     private static string? NormalizeLogoUrlForStorage(string? logoUrl)
     {
         var trimmed = logoUrl?.Trim();
         if (string.IsNullOrWhiteSpace(trimmed)) return null;
+
+        if (trimmed.StartsWith("/assets/logos/", StringComparison.OrdinalIgnoreCase))
+            return trimmed;
 
         if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
             && uri.AbsolutePath.StartsWith("/assets/logos/", StringComparison.OrdinalIgnoreCase))
@@ -468,7 +561,7 @@ public class TenantController : ControllerBase
             return uri.PathAndQuery;
         }
 
-        return trimmed;
+        return null;
     }
 
     // Accepts only our own lock screen asset path (relative, or absolute pointing

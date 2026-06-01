@@ -5,6 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { notifyTenantBrandingUpdated, tenantLogoUrlForBrowser } from '../lib/tenantBranding';
 import DeviceAppearanceCards from '../components/DeviceAppearanceCards';
 import SsoSettingsCard from '../components/SsoSettingsCard';
+import TwoFactorCard from '../components/TwoFactorCard';
+import TenantMfaPolicyCard from '../components/TenantMfaPolicyCard';
 
 interface TenantSettingsData {
   tenantName: string;
@@ -38,6 +40,9 @@ type LogoPreviewState = 'idle' | 'loading' | 'loaded' | 'error';
 
 export default function TenantSettings() {
   useAuth();
+  // Tracks the caller's own authenticator state so the workspace-MFA policy card
+  // reflects an enrollment just completed in the Two-Factor card (no reload needed).
+  const [selfMfaEnabled, setSelfMfaEnabled] = useState<boolean | undefined>(undefined);
   const [data, setData]       = useState<TenantSettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -392,6 +397,10 @@ export default function TenantSettings() {
       </div>
 
       {/* M14 Microsoft SSO — per-tenant directory mapping + opt-in */}
+      {/* Security — native authenticator MFA (all users) + workspace enforcement (admins) */}
+      <TwoFactorCard onStatusChange={setSelfMfaEnabled} />
+      <TenantMfaPolicyCard selfEnrolled={selfMfaEnabled} />
+
       <SsoSettingsCard />
 
       {/* M12 Device Appearance — Desktop Overlay + Lock Screen Branding (two cards) */}

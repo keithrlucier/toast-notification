@@ -145,3 +145,13 @@ public class UpdateTenantSsoSettingsRequest
     public string? AzureAdTenantId { get; set; }
     public bool RequireMfa { get; set; }
 }
+
+// Tenant-wide native MFA enforcement (distinct from the SSO RequireMfa above).
+// CallerEnrolled lets the UI explain why the toggle is blocked when the admin
+// hasn't set up their own authenticator yet.
+public record TenantMfaPolicyResponse(bool RequireMfa, bool CallerEnrolled);
+
+public class UpdateTenantMfaPolicyRequest
+{
+    public bool RequireMfa { get; set; }
+}

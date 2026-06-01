@@ -64,11 +64,6 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<TrialRegistrationResponse>> RegisterInit([FromBody] TrialRegistrationRequest req)
     {
         var email = req.Email.Trim().ToLowerInvariant();
-        if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == email))
-            return Conflict("An account with that email already exists.");
-
-        if (await _db.TrialRequests.AnyAsync(r => r.Email == email && r.Status == TrialRequestStatus.Pending))
-            return Conflict("A trial request for that email is already pending review.");
 
         string website;
         try
@@ -80,6 +75,9 @@ public class AuthController : ControllerBase
             return BadRequest(ex.Message);
         }
 
+        // Verify the human challenge BEFORE any existence check so the endpoint
+        // can't be used as an account/trial enumeration oracle without solving
+        // Turnstile first.
         var remoteIp = ClientIp();
         var turnstile = await _turnstile.VerifyAsync(
             req.TurnstileToken,
@@ -88,6 +86,19 @@ public class AuthController : ControllerBase
             HttpContext.RequestAborted);
         if (!turnstile.Success)
             return BadRequest(turnstile.Error ?? "Human verification failed.");
+
+        // Non-committal, uniform response whether or not the account/trial
+        // already exists (mirrors ForgotPassword). A duplicate is handled
+        // silently server-side: we simply do not create a second trial request.
+        var emailInUse = await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == email)
+            || await _db.TrialRequests.AnyAsync(r => r.Email == email && r.Status == TrialRequestStatus.Pending);
+        if (emailInUse)
+        {
+            return Ok(new TrialRegistrationResponse(
+                Guid.Empty,
+                "pending_review",
+                "Thanks. Your trial request is pending review. We will email you after approval."));
+        }
 
         var trial = new TrialRequest
         {
@@ -179,7 +190,7 @@ public class AuthController : ControllerBase
 
         var jwt       = _tokens.CreateUserToken(user);
         var refresh   = _tokens.CreateRefreshToken();
-        var expiresAt = DateTime.UtcNow.AddMinutes(60);
+        var expiresAt = SessionExpiresAt();
 
         return Ok(new AuthResponse(jwt, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
     }
@@ -238,8 +249,33 @@ public class AuthController : ControllerBase
         return n.ToString("D6");
     }
 
+    // Session expiry advertised to clients must match the real JWT exp the
+    // TokenService stamps from Jwt:ExpiresInMinutes — otherwise the response
+    // lies about how long the token is valid.
+    private DateTime SessionExpiresAt()
+    {
+        var minutes = int.TryParse(_config["Jwt:ExpiresInMinutes"], out var m) ? m : 60;
+        return DateTime.UtcNow.AddMinutes(minutes);
+    }
+
     private static string HashSmsCode(string code) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code.Trim())));
+
+    // Records a wrong SMS-code attempt against the Identity lockout counter and,
+    // once the configured failure cap is reached, invalidates the stored code so
+    // the same 6-digit value can't be brute-forced for the rest of its window.
+    // A single typo does NOT nuke the code — only the N-failure cap does.
+    private async Task RegisterFailedSmsAttemptAsync(AppUser user)
+    {
+        await _userManager.AccessFailedAsync(user);
+
+        if (await _userManager.IsLockedOutAsync(user))
+        {
+            user.SmsVerificationCode = null;
+            user.SmsCodeExpiry       = null;
+            await _db.SaveChangesAsync();
+        }
+    }
 
     private static string MaskPhone(string phone)
     {
@@ -368,7 +404,7 @@ public class AuthController : ControllerBase
 
         var token = _tokens.CreateUserToken(user);
         var refresh = _tokens.CreateRefreshToken();
-        var expiresAt = DateTime.UtcNow.AddMinutes(60);
+        var expiresAt = SessionExpiresAt();
 
         return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, tenant.Id, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
     }
@@ -427,8 +463,22 @@ public class AuthController : ControllerBase
         var user = await _db.Users.IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Email == req.Email);
 
-        if (user is null || !await _userManager.CheckPasswordAsync(user, req.Password))
+        if (user is null)
             return Unauthorized("Invalid credentials.");
+
+        // Brute-force lockout. CheckPasswordAsync does not touch lockout state on
+        // its own, so check/record it explicitly. A locked account is rejected
+        // before the password is even evaluated.
+        if (await _userManager.IsLockedOutAsync(user))
+            return Unauthorized("Invalid credentials.");
+
+        if (!await _userManager.CheckPasswordAsync(user, req.Password))
+        {
+            await _userManager.AccessFailedAsync(user);
+            return Unauthorized("Invalid credentials.");
+        }
+
+        await _userManager.ResetAccessFailedCountAsync(user);
 
         if (user.RegistrationStep != RegistrationStep.Complete)
             return Unauthorized("Registration is incomplete. Please finish registering your account.");
@@ -439,6 +489,15 @@ public class AuthController : ControllerBase
             return Unauthorized("This tenant has been suspended. Contact support.");
 
         await PromoteSoleTenantOwnerAsync(user);
+
+        // Authenticator (TOTP) MFA: when the user has confirmed an authenticator,
+        // it is their login second factor and takes precedence over SMS — it's the
+        // stronger, explicitly-enrolled method. Completes via POST login/verify-totp.
+        if (!string.IsNullOrWhiteSpace(user.MfaSecret))
+        {
+            await _db.SaveChangesAsync();   // persist PromoteSoleTenantOwnerAsync, if any
+            return Ok(new LoginTotpChallenge(user.Id, "totp_required"));
+        }
 
         // SMS MFA: all users with a confirmed phone number must verify via SMS
         if (user.PhoneNumberConfirmed && !string.IsNullOrWhiteSpace(user.PhoneNumber))
@@ -461,7 +520,7 @@ public class AuthController : ControllerBase
 
         var token     = _tokens.CreateUserToken(user);
         var refresh   = _tokens.CreateRefreshToken();
-        var expiresAt = DateTime.UtcNow.AddMinutes(60);
+        var expiresAt = SessionExpiresAt();
         return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
     }
 
@@ -482,11 +541,19 @@ public class AuthController : ControllerBase
         if (!user.IsPlatformAdmin && await IsTenantSuspendedAsync(user.TenantId))
             return Unauthorized("This tenant has been suspended. Contact support.");
 
+        if (await _userManager.IsLockedOutAsync(user))
+            return Unauthorized("Too many attempts. Please sign in again later.");
+
         if (user.SmsCodeExpiry is null || user.SmsCodeExpiry < DateTime.UtcNow)
             return Unauthorized("Verification code expired. Please sign in again.");
 
         if (user.SmsVerificationCode != HashSmsCode(req.Code.Trim()))
+        {
+            await RegisterFailedSmsAttemptAsync(user);
             return Unauthorized("Incorrect verification code.");
+        }
+
+        await _userManager.ResetAccessFailedCountAsync(user);
 
         user.SmsVerificationCode = null;
         user.SmsCodeExpiry       = null;
@@ -497,7 +564,45 @@ public class AuthController : ControllerBase
 
         var token     = _tokens.CreateUserToken(user);
         var refresh   = _tokens.CreateRefreshToken();
-        var expiresAt = DateTime.UtcNow.AddMinutes(60);
+        var expiresAt = SessionExpiresAt();
+        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
+    }
+
+    /// <summary>
+    /// Completes authenticator (TOTP) login. Verifies the 6-digit code against the
+    /// user's confirmed MfaSecret (issued the totp_required challenge by Login) and
+    /// returns a full session JWT on success. Mirrors VerifyLoginSms.
+    /// </summary>
+    [HttpPost("login/verify-totp")]
+    [EnableRateLimiting("login-sms-per-ip")]
+    public async Task<ActionResult<AuthResponse>> VerifyLoginTotp([FromBody] LoginTotpVerifyRequest req)
+    {
+        var user = await _db.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == req.UserId);
+
+        if (user is null || user.RegistrationStep != RegistrationStep.Complete)
+            return Unauthorized("Invalid request.");
+
+        if (!user.IsPlatformAdmin && await IsTenantSuspendedAsync(user.TenantId))
+            return Unauthorized("This tenant has been suspended. Contact support.");
+
+        if (string.IsNullOrWhiteSpace(user.MfaSecret))
+            return Unauthorized("Authenticator MFA is not set up on this account.");
+
+        // MfaService.Verify mutates user.LastTotpStep on success (replay guard) —
+        // persist it so a replayed code is rejected on the next request.
+        if (!_mfa.Verify(user, req.Code))
+            return Unauthorized("Invalid or expired authenticator code.");
+
+        user.LastLogin = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        await PromoteSoleTenantOwnerAsync(user);
+        await _db.SaveChangesAsync();
+
+        var token     = _tokens.CreateUserToken(user);
+        var refresh   = _tokens.CreateRefreshToken();
+        var expiresAt = SessionExpiresAt();   // SES-1: advertise the real token lifetime
         return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
     }
 
@@ -570,11 +675,19 @@ public class AuthController : ControllerBase
         var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
         if (user is null) return Unauthorized();
 
+        if (await _userManager.IsLockedOutAsync(user))
+            return Unauthorized("Too many attempts. Please try again later.");
+
         if (user.SmsCodeExpiry is null || user.SmsCodeExpiry < DateTime.UtcNow)
             return Unauthorized("Verification code expired.");
 
         if (user.SmsVerificationCode != HashSmsCode(req.Code.Trim()))
+        {
+            await RegisterFailedSmsAttemptAsync(user);
             return Unauthorized("Incorrect verification code.");
+        }
+
+        await _userManager.ResetAccessFailedCountAsync(user);
 
         user.SmsVerificationCode = null;
         user.SmsCodeExpiry       = null;
@@ -582,17 +695,45 @@ public class AuthController : ControllerBase
 
         // MfaElevationExpiresInMinutes lives in appsettings.json — keep the
         // response expiry in lockstep with the JWT exp claim TokenService writes.
-        var minutes = int.TryParse(_config["Jwt:MfaElevationExpiresInMinutes"], out var m) ? m : 480;
+        var minutes = int.TryParse(_config["Jwt:MfaElevationExpiresInMinutes"], out var m) ? m : 15;
         var expiresAt = DateTime.UtcNow.AddMinutes(minutes);
         var mfaToken  = _tokens.CreateMfaToken(user);
         return Ok(new MfaVerifyResponse(mfaToken, expiresAt));
     }
 
     /// <summary>
-    /// Generates a TOTP secret for the calling user and returns the base32
-    /// secret + an otpauth:// URI suitable for QR code display.
-    /// The secret is saved to AppUser.MfaSecret — existing TOTP sessions on
-    /// other devices are invalidated. Admin+ only (no Technician self-enrollment).
+    /// Returns the caller's MFA status — used by the Security card and the
+    /// force-enrollment gate. Available to every authenticated user (everyone must
+    /// be able to manage their own second factor, especially under tenant enforcement).
+    /// </summary>
+    [HttpGet("mfa/status")]
+    [Authorize]
+    public async Task<ActionResult<MfaStatusResponse>> MfaStatus()
+    {
+        var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
+
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
+        if (user is null) return Unauthorized();
+
+        var tenantRequired = await _db.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == user.TenantId)
+            .Select(t => t.RequireMfa)
+            .FirstOrDefaultAsync();
+
+        return Ok(new MfaStatusResponse(
+            Enabled:        !string.IsNullOrWhiteSpace(user.MfaSecret),
+            TenantRequired: tenantRequired,
+            HasPhone:       user.PhoneNumberConfirmed && !string.IsNullOrWhiteSpace(user.PhoneNumber)));
+    }
+
+    /// <summary>
+    /// Begins authenticator enrollment: generates a fresh TOTP secret, stashes it
+    /// in AppUser.MfaPendingSecret (NOT MfaSecret — see model comment), and returns
+    /// the base32 secret + otpauth:// URI for QR display. Any authenticated user may
+    /// enroll their own account. The pending secret only becomes the active login
+    /// factor after MfaEnrollConfirm verifies a code — a started-but-abandoned
+    /// enrollment never touches an existing working authenticator.
     /// </summary>
     [HttpPost("mfa/enroll")]
     [Authorize]
@@ -604,14 +745,84 @@ public class AuthController : ControllerBase
         var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
         if (user is null) return Unauthorized();
 
-        if (user.Role == UserRole.Technician)
-            return Forbid();
-
         var (secret, qrUri) = _mfa.GenerateEnrollment(user.Email!);
-        user.MfaSecret = secret;
+        user.MfaPendingSecret = secret;
         await _db.SaveChangesAsync();
 
         return Ok(new MfaEnrollResponse(secret, qrUri));
+    }
+
+    /// <summary>
+    /// Confirms a pending authenticator enrollment. Verifies the code against
+    /// MfaPendingSecret; on success promotes it to MfaSecret (the active login
+    /// factor), clears the pending secret, and resets the replay floor. Returns an
+    /// MFA-elevated token so the just-enrolled user is immediately step-up verified.
+    /// </summary>
+    [HttpPost("mfa/enroll/confirm")]
+    [Authorize]
+    public async Task<ActionResult<MfaVerifyResponse>> MfaEnrollConfirm([FromBody] MfaVerifyRequest req)
+    {
+        var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
+
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
+        if (user is null) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(user.MfaPendingSecret))
+            return BadRequest("No pending authenticator enrollment. Start setup first.");
+
+        if (!_mfa.VerifySecret(user.MfaPendingSecret, req.Code))
+            return Unauthorized("Invalid or expired authenticator code.");
+
+        user.MfaSecret        = user.MfaPendingSecret;
+        user.MfaPendingSecret = null;
+        user.LastTotpStep     = null;   // fresh secret — clear the old replay floor
+        await _db.SaveChangesAsync();
+
+        var minutes = int.TryParse(_config["Jwt:MfaElevationExpiresInMinutes"], out var m) ? m : 15;
+        var expiresAt = DateTime.UtcNow.AddMinutes(minutes);
+        var mfaToken  = _tokens.CreateMfaToken(user);
+        return Ok(new MfaVerifyResponse(mfaToken, expiresAt));
+    }
+
+    /// <summary>
+    /// Disables authenticator MFA for the caller. Requires a valid current TOTP code
+    /// (proof of possession) and is refused while the tenant enforces MFA — you
+    /// cannot opt out of a policy your admin turned on. Clears both the active and
+    /// any pending secret.
+    /// </summary>
+    [HttpPost("mfa/disable")]
+    [Authorize]
+    public async Task<IActionResult> MfaDisable([FromBody] MfaVerifyRequest req)
+    {
+        var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
+
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
+        if (user is null) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(user.MfaSecret))
+            return BadRequest("Authenticator MFA is not enabled on this account.");
+
+        var tenantRequired = await _db.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == user.TenantId)
+            .Select(t => t.RequireMfa)
+            .FirstOrDefaultAsync();
+        if (tenantRequired)
+            return StatusCode(403, new
+            {
+                error = "mfa_enforced",
+                message = "Your workspace requires multi-factor authentication. Ask an admin to lift the requirement before disabling it."
+            });
+
+        if (!_mfa.Verify(user, req.Code))
+            return Unauthorized("Invalid or expired authenticator code.");
+
+        user.MfaSecret        = null;
+        user.MfaPendingSecret = null;
+        user.LastTotpStep     = null;
+        await _db.SaveChangesAsync();
+        return NoContent();
     }
 
     /// <summary>
@@ -641,7 +852,10 @@ public class AuthController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        var expiresAt = DateTime.UtcNow.AddMinutes(15);
+        // Derive the response expiry from the same config the token uses so the
+        // advertised step-up window always matches the JWT exp claim.
+        var minutes   = int.TryParse(_config["Jwt:MfaElevationExpiresInMinutes"], out var m) ? m : 15;
+        var expiresAt = DateTime.UtcNow.AddMinutes(minutes);
         var mfaToken  = _tokens.CreateMfaToken(user);
 
         return Ok(new MfaVerifyResponse(mfaToken, expiresAt));

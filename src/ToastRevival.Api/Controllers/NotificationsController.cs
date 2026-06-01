@@ -50,11 +50,27 @@ public class NotificationsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<NotificationResponse>> Send([FromBody] SendNotificationRequest req)
+    public async Task<ActionResult<NotificationResponse>> Send(
+        [FromBody] SendNotificationRequest req,
+        [FromServices] IConfiguration config)
     {
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var senderId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var role     = Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
+
+        // Tenant-wide MFA enforcement: when on, EVERY send requires a fresh step-up
+        // verification — same mechanism as the broadcast-to-all gate below, just applied
+        // to all targets. Checked first so an unverified caller is rejected before any
+        // target resolution or moderation work. HasFreshMfa checks mfa=true AND that the
+        // elevation is within the freshness window (not the token's exp — see helper).
+        var tenantRequiresMfa = await _db.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId).Select(t => t.RequireMfa).FirstOrDefaultAsync();
+        if (tenantRequiresMfa && !User.HasFreshMfa(config))
+            return StatusCode(403, new
+            {
+                error = "mfa_required",
+                message = "Sending a notification requires MFA verification. Verify your authenticator and try again."
+            });
 
         // Expand targets to device IDs
         var deviceIds = await ResolveTargetDeviceIds(req, tenantId);
@@ -65,14 +81,14 @@ public class NotificationsController : ControllerBase
         if (deviceIds.Count > 100 && role < UserRole.Admin)
             return StatusCode(403, new { error = "insufficient_role", message = "Sending to >100 devices requires Admin role." });
 
-        // D5/D6: Broadcast-to-all requires an MFA-elevated JWT (mfa=true claim)
+        // D5/D6: Broadcast-to-all requires a fresh MFA step-up (mfa=true + recent mfa_at).
         if (req.TargetType == TargetType.All)
         {
-            if (User.FindFirstValue("mfa") != "true")
+            if (!User.HasFreshMfa(config))
                 return StatusCode(403, new
                 {
                     error = "mfa_required",
-                    message = "Broadcasting to all devices requires MFA verification. Call POST /api/auth/mfa/verify first."
+                    message = "Broadcasting to all devices requires MFA verification. Verify your authenticator and try again."
                 });
         }
 
@@ -214,6 +230,12 @@ public class NotificationsController : ControllerBase
     public async Task<ActionResult<IEnumerable<NotificationHistoryItem>>> History(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
     {
+        // SES-4: This is a user-facing endpoint. A device JWT (type=device) would
+        // satisfy the controller-level [Authorize] but must not read tenant-wide
+        // notification history — reject token-type confusion.
+        if (User.FindFirstValue("type") == "device")
+            return StatusCode(403, new { error = "forbidden", message = "Device tokens cannot access notification history." });
+
         var p    = Math.Max(1, page);
         var size = Math.Clamp(pageSize, 1, 100);
 
@@ -284,6 +306,11 @@ public class NotificationsController : ControllerBase
             return Unauthorized();
         }
 
+        // SES-3: a decommissioned device's 365-day JWT stays cryptographically
+        // valid; reject it here (mirrors NotificationHub.OnConnectedAsync).
+        if (await IsDeviceDecommissioned(deviceId))
+            return Unauthorized();
+
         // The tenant filter on Tenants is keyed off ITenantProvider, which reads
         // tenantId from the JWT — so the filtered query would work, but we use
         // IgnoreQueryFilters() to be explicit and parallel to the rest of the
@@ -340,6 +367,10 @@ public class NotificationsController : ControllerBase
             return Unauthorized();
         }
 
+        // SES-3: reject decommissioned-device tokens (mirrors the hub).
+        if (await IsDeviceDecommissioned(deviceId))
+            return Unauthorized();
+
         var delivery = await _db.NotificationDeliveries.IgnoreQueryFilters()
             .FirstOrDefaultAsync(d => d.NotificationId == id && d.DeviceId == deviceId);
 
@@ -354,7 +385,9 @@ public class NotificationsController : ControllerBase
 
         // Push the same DeliveryUpdate that ReportInteraction() does so dashboard
         // users see a consistent stream regardless of which path delivered the event.
-        await _hub.Clients.Group($"tenant-{tenantId}")
+        // XT-4: dashboard recon events go to the user-only dashboard-{tenantId} group,
+        // never tenant-{id} (devices are in tenant-{id} and must not harvest this stream).
+        await _hub.Clients.Group($"dashboard-{tenantId}")
             .SendAsync("DeliveryUpdate", id, deviceId, req.Action);
 
         return NoContent();
@@ -555,6 +588,19 @@ public class NotificationsController : ControllerBase
 
     private static string NormalizeButtonType(string? value) =>
         string.Equals(value, "Url", StringComparison.OrdinalIgnoreCase) ? "Url" : "Action";
+
+    /// <summary>
+    /// SES-3: returns true when the device row is missing or no longer Active
+    /// (Decommissioned). Mirrors NotificationHub.OnConnectedAsync so a stale
+    /// 365-day device JWT can't keep calling device endpoints after the device
+    /// is removed. Uses IgnoreQueryFilters() to match the device-context paths.
+    /// </summary>
+    private async Task<bool> IsDeviceDecommissioned(Guid deviceId)
+    {
+        var device = await _db.Devices.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(d => d.Id == deviceId);
+        return device is null || device.Status == DeviceStatus.Decommissioned;
+    }
 
     private async Task<List<Guid>> ResolveTargetDeviceIds(SendNotificationRequest req, Guid tenantId)
     {

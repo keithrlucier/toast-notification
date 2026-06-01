@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, apiErrorFromResponse, authHeaders } from '../api/client';
+import MfaStepUpModal from './MfaStepUpModal';
 import { tenantLogoUrlForBrowser } from '../lib/tenantBranding';
 
 // M12 Device Appearance — two independent cards on Tenant Settings. Design spec:
@@ -296,6 +297,9 @@ function LockScreenCard() {
   const [success, setSuccess] = useState('');
   const [removeArmed, setRemoveArmed] = useState(false);
   const [cacheBust, setCacheBust]     = useState(0);
+  // When a lock-screen mutation is rejected with 403 mfa_required (tenant enforces
+  // MFA), we stash the retry here and show the step-up modal; on verify we re-run it.
+  const [stepUpRetry, setStepUpRetry] = useState<(() => void) | null>(null);
   // REVIEW DASH-L1 (2026-05-31): cache-bust key is mountTime+counter, not a server-provided
   // version. The robust fix (a LockScreenImageUpdatedAt column surfaced in the DTO and used as
   // ?v=) is a DB-schema change deferred to Keith's architectural call. The user-visible symptom
@@ -316,9 +320,19 @@ function LockScreenCard() {
   useEffect(() => { setPreviewState(previewUrl ? 'loading' : 'idle'); }, [previewUrl]);
   useEffect(() => { setRemoveArmed(false); }, [imageUrl]);
 
+  // 403 from a lock-screen mutation when the tenant requires MFA — surfaces the
+  // step-up modal instead of a dead-end error.
+  const isMfaRequired = (err: unknown) =>
+    err instanceof ApiError && err.status === 403 && /mfa verification/i.test(err.message);
+
   const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
+    await doUpload(file);
+  };
+
+  const doUpload = async (file: File) => {
     setUploading(true); setError('');
     try {
       const form = new FormData();
@@ -334,10 +348,10 @@ function LockScreenCard() {
       setImageUrl(url);
       setCacheBust(b => b + 1);
     } catch (err) {
+      if (isMfaRequired(err)) { setStepUpRetry(() => () => doUpload(file)); return; }
       setError(err instanceof Error ? err.message : 'Upload failed.');
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
   };
 
@@ -348,6 +362,7 @@ function LockScreenCard() {
       setSuccess('Saved.');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
+      if (isMfaRequired(err)) { setStepUpRetry(() => () => save()); return; }
       setError(err instanceof ApiError ? err.message : 'Failed to save lock screen.');
     } finally {
       setSaving(false);
@@ -435,6 +450,14 @@ function LockScreenCard() {
       )}
 
       <SaveRow saving={saving} error={error} success={success} onSave={save} label="Save Lock Screen" />
+
+      {stepUpRetry && (
+        <MfaStepUpModal
+          action="Changing the lock screen"
+          onVerified={() => { const retry = stepUpRetry; setStepUpRetry(null); retry?.(); }}
+          onCancel={() => setStepUpRetry(null)}
+        />
+      )}
     </div>
   );
 }

@@ -93,6 +93,14 @@ public class Tenant
     public string? AzureAdTenantId { get; set; }
     public bool SsoRequireMfa { get; set; }
 
+    // Tenant-wide native MFA enforcement (distinct from SsoRequireMfa, which only
+    // governs the Microsoft SSO id_token). When true, every member must have an
+    // authenticator (TOTP) enrolled, and sensitive actions — sending a toast and
+    // changing the lock screen — require a fresh step-up MFA verification. Off by
+    // default so existing tenants are unaffected. An admin cannot turn this on
+    // until their own account has MFA enrolled (self-lockout guard in TenantController).
+    public bool RequireMfa { get; set; }
+
     // Platform Admin controls. Suspension blocks login and device registration
     // without deleting tenant data — reversible. Complimentary marks the tenant
     // as free-forever (no Stripe required, no device cap, LicenseEnd ignored);

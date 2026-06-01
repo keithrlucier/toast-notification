@@ -37,9 +37,13 @@ public sealed class CloudflareTurnstileVerifier : ITurnstileVerifier
     {
         if (!IsEnabled)
         {
-            if (_required)
+            // Keys are absent/placeholder. Fail CLOSED everywhere except
+            // Development — a non-Development deploy with missing keys must not
+            // silently wave traffic through, even if Turnstile:Required is false.
+            if (_required || !_env.IsDevelopment())
                 return new TurnstileVerification(false, Error: "Human verification is not configured.");
 
+            // Development convenience only: allow local runs without keys.
             return new TurnstileVerification(true);
         }
 

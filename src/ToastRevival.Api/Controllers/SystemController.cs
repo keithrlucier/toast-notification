@@ -151,7 +151,7 @@ public class SystemController : ControllerBase
         await tx.CommitAsync();
 
         await _audit.LogAsync(
-            GetTenantId(),
+            tenant.Id,
             GetUserId(),
             "trial_request.approved",
             "TrialRequest",
@@ -568,7 +568,7 @@ public class SystemController : ControllerBase
             emailSent = await SendTrialApprovedEmailAsync(user, tenant);
 
         await _audit.LogAsync(
-            GetTenantId(), GetUserId(),
+            tenant.Id, GetUserId(),
             "platform.tenant.created", "Tenant", tenant.Id.ToString(),
             new
             {
@@ -605,7 +605,7 @@ public class SystemController : ControllerBase
         await _db.SaveChangesAsync();
 
         await _audit.LogAsync(
-            GetTenantId(), GetUserId(),
+            tenant.Id, GetUserId(),
             "platform.tenant.suspended", "Tenant", tenant.Id.ToString(),
             new { tenant.Name, tenant.SuspendedReason },
             HttpContext.Connection.RemoteIpAddress?.ToString());
@@ -625,7 +625,7 @@ public class SystemController : ControllerBase
         await _db.SaveChangesAsync();
 
         await _audit.LogAsync(
-            GetTenantId(), GetUserId(),
+            tenant.Id, GetUserId(),
             "platform.tenant.resumed", "Tenant", tenant.Id.ToString(),
             new { tenant.Name },
             HttpContext.Connection.RemoteIpAddress?.ToString());
@@ -649,7 +649,7 @@ public class SystemController : ControllerBase
         await _db.SaveChangesAsync();
 
         await _audit.LogAsync(
-            GetTenantId(), GetUserId(),
+            tenant.Id, GetUserId(),
             "platform.tenant.extended", "Tenant", tenant.Id.ToString(),
             new { tenant.Name, request.Days, newLicenseEnd = tenant.LicenseEnd },
             HttpContext.Connection.RemoteIpAddress?.ToString());
@@ -673,7 +673,7 @@ public class SystemController : ControllerBase
         await _db.SaveChangesAsync();
 
         await _audit.LogAsync(
-            GetTenantId(), GetUserId(),
+            tenant.Id, GetUserId(),
             "platform.tenant.grant_complimentary", "Tenant", tenant.Id.ToString(),
             new { tenant.Name, tenant.ComplimentaryReason },
             HttpContext.Connection.RemoteIpAddress?.ToString());
@@ -693,7 +693,7 @@ public class SystemController : ControllerBase
         await _db.SaveChangesAsync();
 
         await _audit.LogAsync(
-            GetTenantId(), GetUserId(),
+            tenant.Id, GetUserId(),
             "platform.tenant.revoke_complimentary", "Tenant", tenant.Id.ToString(),
             new { tenant.Name },
             HttpContext.Connection.RemoteIpAddress?.ToString());
@@ -731,7 +731,7 @@ public class SystemController : ControllerBase
         await _db.SaveChangesAsync();
 
         await _audit.LogAsync(
-            GetTenantId(), GetUserId(),
+            id, GetUserId(),
             "platform.tenant.deleted", "Tenant", id.ToString(),
             new { tenant.Name, tenant.Subdomain },
             HttpContext.Connection.RemoteIpAddress?.ToString());
@@ -822,7 +822,7 @@ public class SystemController : ControllerBase
         }
 
         await _audit.LogAsync(
-            GetTenantId(), GetUserId(),
+            user.TenantId, GetUserId(),
             "platform.user.password_reset_sent", "AppUser", user.Id.ToString(),
             new { user.Email, user.TenantId, emailSent },
             HttpContext.Connection.RemoteIpAddress?.ToString());
@@ -858,7 +858,7 @@ public class SystemController : ControllerBase
             return StatusCode(500, result.Errors.Select(e => e.Description));
 
         await _audit.LogAsync(
-            GetTenantId(), GetUserId(),
+            user.TenantId, GetUserId(),
             "platform.user.deleted", "AppUser", id.ToString(),
             new { user.Email, user.TenantId, role = user.Role.ToString() },
             HttpContext.Connection.RemoteIpAddress?.ToString());

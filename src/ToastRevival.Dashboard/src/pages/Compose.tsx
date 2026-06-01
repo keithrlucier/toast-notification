@@ -5,6 +5,7 @@ import { devicesApi, type Device, type DeviceGroup } from '../api/devices';
 import { assetsApi, getModerationStatus, type AssetRecord } from '../api/assets';
 import ToastPreview, { CharCount } from '../components/ToastPreview';
 import BroadcastConfirmModal from '../components/BroadcastConfirmModal';
+import MfaStepUpModal from '../components/MfaStepUpModal';
 import { TEMPLATES } from './Templates';
 import { ApiError } from '../api/client';
 
@@ -123,6 +124,8 @@ export default function Compose() {
   const [error,        setError]        = useState('');
   const [success,      setSuccess]      = useState('');
   const [showConfirm,  setShowConfirm]  = useState(false);
+  // Reactive step-up when a send is rejected with 403 mfa_required (tenant enforces MFA).
+  const [stepUpForSend, setStepUpForSend] = useState(false);
   const [activeSection,setActiveSection]= useState<'template' | 'content' | 'target'>('content');
 
   const [pickerTarget, setPickerTarget] = useState<'hero' | 'logo' | null>(null);
@@ -194,6 +197,14 @@ export default function Compose() {
       setSuccess(`Notification sent (ID: ${result.id.slice(0, 8)}…). Status: ${result.status}`);
       setTimeout(() => navigate('/history'), 2000);
     } catch (err) {
+      // Tenant-wide MFA enforcement: the send was rejected pending a step-up. Show
+      // the verification modal and retry the send once the session is elevated.
+      if (err instanceof ApiError && err.status === 403 && /mfa verification/i.test(err.message)) {
+        setShowConfirm(false);
+        setStepUpForSend(true);
+        setSending(false);
+        return;
+      }
       setError(err instanceof ApiError ? err.message : 'Failed to send notification.');
     } finally {
       setSending(false);
@@ -721,6 +732,14 @@ export default function Compose() {
           requiresMfa={requiresMfa}
           onConfirm={() => void doSend()}
           onCancel={() => setShowConfirm(false)}
+        />
+      )}
+
+      {stepUpForSend && (
+        <MfaStepUpModal
+          action="Sending a notification"
+          onVerified={() => { setStepUpForSend(false); void doSend(); }}
+          onCancel={() => setStepUpForSend(false)}
         />
       )}
 

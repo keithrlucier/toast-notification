@@ -151,9 +151,12 @@ export default function SsoSettingsCard() {
             style={{ marginTop: 3 }}
           />
           <span style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-            Require Microsoft to have verified multi-factor authentication.
+            Require Microsoft sign-ins to assert verified MFA
             <span style={{ display: 'block', fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
-              Leave off to trust your organization’s own Conditional Access policy.
+              Applies only to people signing in <em>with Microsoft</em> — the id_token must prove Entra
+              enforced a second factor, or the sign-in is rejected. This is <strong>not</strong> how you turn on
+              MFA for the workspace: that lives under Security → Two-Factor Authentication. Leave off to trust
+              your organization’s own Conditional Access policy.
             </span>
           </span>
         </label>

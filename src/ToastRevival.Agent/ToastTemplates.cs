@@ -381,10 +381,15 @@ internal static class ToastTemplateBuilder
         return builder.BuildNotification();
     }
 
+    // Server-supplied image URLs (logo/hero) are handed to the Windows image
+    // loader, which will dereference file://, UNC (\\host\share parses as file://),
+    // and other local schemes — leaking NetNTLM creds / enabling SSRF. Restrict to
+    // http(s) only, mirroring TryHttpUri, so only remote web images are fetched.
     private static bool TryUri(string? value, out Uri uri)
     {
         if (!string.IsNullOrWhiteSpace(value)
-            && Uri.TryCreate(value, UriKind.Absolute, out var parsed))
+            && Uri.TryCreate(value, UriKind.Absolute, out var parsed)
+            && parsed.Scheme is "http" or "https")
         {
             uri = parsed;
             return true;
@@ -441,8 +446,16 @@ internal static class ToastTemplateBuilder
 
         // Treat `ms-winsoundevent:Notification.X` and `http(s)://...` URIs as audio URIs.
         // Anything else, try to parse as a known AppNotificationSoundEvent enum value.
+        //
+        // A server-supplied audio URI is dereferenced by the WinRT toast audio
+        // pipeline, so restrict to safe schemes only:
+        //   - ms-winsoundevent : the OS sound-event form (e.g. Notification.Default) —
+        //                        the normal way to pick a system notification sound.
+        //   - http / https     : remotely hosted custom audio.
+        // Reject file:// (UNC / local-disk reads → NetNTLM leak / local file probe)
+        // and ms-appx:// (package-local resource the server must not be able to target).
         if (Uri.TryCreate(audioSetting, UriKind.Absolute, out var uri)
-            && (uri.Scheme is "http" or "https" or "ms-winsoundevent" or "ms-appx" or "file"))
+            && (uri.Scheme is "http" or "https" or "ms-winsoundevent"))
         {
             builder.SetAudioUri(uri);
             return;

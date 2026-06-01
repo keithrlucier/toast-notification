@@ -66,13 +66,19 @@ public class TokenService : ITokenService
             new Claim("role", user.Role.ToString()),
             new Claim("type", "user"),
             new Claim("mfa", "true"),
+            // Step-up freshness is tracked by this issued-at stamp, checked by
+            // ClaimsPrincipal.HasFreshMfa — NOT by the token's exp. The elevated token
+            // doubles as the session token, so it carries the full session lifetime
+            // (Jwt:ExpiresInMinutes); expiring it on the short MFA window would log the
+            // user out 15 min after any sensitive action.
+            new Claim("mfa_at", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
         if (user.IsPlatformAdmin)
             claims.Add(new Claim("platformAdmin", "true"));
 
-        return BuildToken(claims.ToArray(), GetExpiresAt("Jwt:MfaElevationExpiresInMinutes", 480, isMinutes: true));
+        return BuildToken(claims.ToArray(), GetExpiresAt("Jwt:ExpiresInMinutes", 60, isMinutes: true));
     }
 
     private string BuildToken(Claim[] claims, DateTime expires)

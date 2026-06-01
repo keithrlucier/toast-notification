@@ -97,6 +97,15 @@ public class DevicesController : ControllerBase
         string auditAction;
         if (existing is not null)
         {
+            // XT-2: the re-register branch reuses an existing seat, so the license
+            // *cap* legitimately doesn't apply (no new seat consumed). But it
+            // bypassed TryRegisterDeviceAtomicAsync entirely, which also skipped
+            // the suspension gate (LicenseService.IsWithinCap → SuspendedAt). A
+            // suspended tenant must not get fresh device credentials, so enforce
+            // the suspension check here before reactivating the row.
+            if (tenant.SuspendedAt.HasValue)
+                return StatusCode(403, "Tenant suspended. Device registration is disabled.");
+
             existing.OsVersion = req.OsVersion;
             existing.AgentVersion = req.AgentVersion;
             existing.RegistrationToken = tokenHash;
@@ -211,10 +220,13 @@ public class DevicesController : ControllerBase
     public async Task<ActionResult<TenantAttributionResponse>> GetTenantName()
     {
         var deviceIdClaim = User.FindFirstValue("deviceId");
-        if (string.IsNullOrEmpty(deviceIdClaim)) return Unauthorized();
+        if (!Guid.TryParse(deviceIdClaim, out var deviceId)) return Unauthorized();
 
         var tenantIdClaim = User.FindFirstValue("tenantId");
         if (!Guid.TryParse(tenantIdClaim, out var tenantId)) return Unauthorized();
+
+        // SES-3: reject decommissioned-device tokens (mirrors the hub).
+        if (await IsDeviceDecommissioned(deviceId)) return Unauthorized();
 
         var tenant = await _db.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == tenantId);
@@ -235,10 +247,13 @@ public class DevicesController : ControllerBase
     public async Task<ActionResult<AppearanceConfigResponse>> GetAppearanceConfig()
     {
         var deviceIdClaim = User.FindFirstValue("deviceId");
-        if (string.IsNullOrEmpty(deviceIdClaim)) return Unauthorized();
+        if (!Guid.TryParse(deviceIdClaim, out var deviceId)) return Unauthorized();
 
         var tenantIdClaim = User.FindFirstValue("tenantId");
         if (!Guid.TryParse(tenantIdClaim, out var tenantId)) return Unauthorized();
+
+        // SES-3: reject decommissioned-device tokens (mirrors the hub).
+        if (await IsDeviceDecommissioned(deviceId)) return Unauthorized();
 
         var tenant = await _db.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == tenantId);
@@ -270,6 +285,10 @@ public class DevicesController : ControllerBase
         var device = await _db.Devices.IgnoreQueryFilters()
             .FirstOrDefaultAsync(d => d.Id == deviceId);
         if (device is null) return NotFound();
+
+        // SES-3: a decommissioned device's 365-day JWT stays cryptographically
+        // valid; reject heartbeats from it (mirrors the hub).
+        if (device.Status == DeviceStatus.Decommissioned) return Unauthorized();
 
         device.LastPing = DateTime.UtcNow;
         if (!string.IsNullOrWhiteSpace(body?.AgentVersion))
@@ -383,6 +402,18 @@ public class DevicesController : ControllerBase
         }
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// SES-3: true when the device row is missing or Decommissioned. Mirrors
+    /// NotificationHub.OnConnectedAsync so a stale 365-day device JWT can't keep
+    /// hitting device endpoints after the device is removed. Active/Inactive pass.
+    /// </summary>
+    private async Task<bool> IsDeviceDecommissioned(Guid deviceId)
+    {
+        var device = await _db.Devices.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(d => d.Id == deviceId);
+        return device is null || device.Status == DeviceStatus.Decommissioned;
     }
 
     private bool IsAdmin()

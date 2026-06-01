@@ -111,16 +111,32 @@ Six parallel sweep agents were handed a fabricated file list as a control; all s
 
 ## Summary (this review only — separate from the cold-pass tally above)
 
-**Updated after REMEDIATION PASS 2 (2026-06-01, Carl — "Code Review: Remediate").** The 13 items carried OPEN from pass 1 are now all closed-out: 8 REMEDIATED (code-fixed + verified) and 5 DEFERRED-with-in-code-ANCHOR (genuine Keith product/architecture/topology decisions). **Zero OPEN remain.** Per the no-defer rule, every DEFERRED item names its owner + blocking decision and carries an in-code anchor so the next sweep does not re-flag it.
+**Updated after REMEDIATION PASS 2 (2026-06-01, Carl — "Code Review: Remediate").** Of the 13 items carried OPEN from pass 1: **8 REMEDIATED** (code-fixed + verified + deployed) and **7 DEFERRED — which remain OPEN.** A DEFERRAL is NOT a remediation. An in-code anchor only stops an automated sweep from RE-ALERTING; the finding stays OPEN on this ledger, owned by Keith, and counts toward the open gauge until he rules and we fix or formally accept it. The 7 open deferrals are tracked in the **DEFERRED — OPEN** table immediately below so none falls into the abyss. (7 = the 5 standalone Keith-decisions BF-2/XT-1/MFA-7/BILL-ENF-1/API-1 + the 2 remainders SES-2-R/AGT-4-R on otherwise-remediated findings.)
 
 | Severity | Count | Disposition (post-pass-2) |
 |----------|-------|-------------|
 | Critical | 0 | — (several High are Critical-adjacent but each is gated behind one precondition — single already-authenticated tenant Admin, a held credential, or a deploy misconfig — so none is a one-shot unauthenticated cross-tenant break) |
-| High     | 13 | 11 REMEDIATED (incl. MFA-1/2/5, SES-2, +the 8 from pass 1) · 2 DEFERRED-ANCHORED (BF-2, XT-1) · 0 unresolved |
-| Medium   | 8 | 7 REMEDIATED (incl. MFA-6, PE-2, XT-3) · 1 DEFERRED-ANCHORED (MFA-7) · 0 unresolved |
-| Low      | 9 | 9 REMEDIATED (incl. AGT-4 host-pin) · 0 unresolved |
-| Info     | 2 | 1 FIXED-VERIFIED (SECRET-1) · 1 DEFERRED-ANCHORED (API-1) · 0 unresolved |
-| **Total**| **32** | **28 REMEDIATED/FIXED · 4 DEFERRED-ANCHORED · 0 unresolved** (+ billing addendum: BILL-ENF-2 FIXED, BILL-ENF-1 DEFERRED-ANCHORED). SES-2 + AGT-4 are remediated on their dominant paths with the robust-revocation / HMAC-signing remainders DEFERRED-ANCHORED to Keith. |
+| High     | 13 | 11 REMEDIATED (incl. MFA-1/2/5, SES-2 main, +the 8 from pass 1) · **2 still-deferred** (BF-2, XT-1) · +SES-2-R remainder — all tracked in the DEFERRED table above |
+| Medium   | 8 | 7 REMEDIATED (incl. MFA-6, PE-2, XT-3) · **1 still-deferred** (MFA-7) — tracked above |
+| Low      | 9 | 9 REMEDIATED (incl. AGT-4 host-pin) · +AGT-4-R remainder still-deferred — tracked above |
+| Info     | 2 | 1 FIXED-VERIFIED (SECRET-1) · **1 still-deferred** (API-1) — tracked above |
+| **Total**| **32** | **28 REMEDIATED/FIXED · 7 still-deferred** (BF-2, XT-1, MFA-7, BILL-ENF-1, API-1, SES-2-R, AGT-4-R) — the single counted source is the DEFERRED table above (+ billing addendum: BILL-ENF-2 FIXED, BILL-ENF-1 still-deferred). Anchored ≠ remediated. |
+
+## DEFERRED — OPEN, AWAITING KEITH'S DECISION  (anchored ≠ remediated)
+
+**Policy (non-negotiable):** an in-code anchor stops an automated sweep from RE-ALERTING on a known item — it is **NOT** a fix. Every row here is a **DEFERRAL**: still OPEN, still owned by Keith, tracked so it is never lost. These remain OPEN on the gauge until Keith rules and we either remediate or formally accept them. Deferral ≠ remediation.
+
+| ID | Sev | Status | Owner | Decision Keith owns | In-code anchor |
+|----|-----|--------|-------|---------------------|----------------|
+| BF-2 | High | OPEN | Keith | Cloudflare-IP rate-limit trust: validate CF egress range / nginx overwrite / `KnownNetworks` — depends on the prod gateway topology. BF-1 lockout mitigates per-account in the meantime. | `Program.cs` login-per-ip |
+| XT-1 | High | OPEN | Keith | Replace the reusable per-tenant enrollment key with per-device single-use tokens (HKLM ACL can't simply be locked down — agent reads it in USER context). | `DevicesController.Register` + `Setup.wxs` BootstrapEnrollReg |
+| SES-2-R | High | OPEN | Keith | Instant revocation of live USER/operator sessions on tenant suspend (token-epoch / SecurityStamp pipeline). Device + send + hub paths already REMEDIATED; this is the session-revocation remainder. | `IsDeviceRevoked` |
+| MFA-7 | Medium | OPEN | Keith | SMS step-up must be a factor DISTINCT from the login factor: require enrolled TOTP for step-up, or add a separate SMS-elevation secret. | `AuthController.MfaVerifySms` |
+| BILL-ENF-1 | Medium | OPEN | Keith | May a PastDue tenant keep adding billable seats during grace, or deny? One-line fix either way once decided. | `LicenseService.IsWithinCap` |
+| API-1 | Info | OPEN | Keith | Implement key-auth properly (constant-time compare, tenant-scoped, must-not-bypass-MFA) OR remove the feature + its dashboard UI. Currently inert (no live bypass). | `ApiKeysController` |
+| AGT-4-R | Low | OPEN | Keith | End-to-end HMAC-sign the appearance-config (versioned server+agent rollout). Image host-pin already REMEDIATED; this is the signing remainder. | `LockScreenService` |
+
+---
 
 **Threat-coverage verdict against the owner's stated asks:**
 - **"MFA must gate lock-screen changes and any toast send" — NOT met today.** The *only* `mfa=true` enforcement in the entire API is one line (`NotificationsController.cs:71`) and it fires *only* for `TargetType.All`. Lock-screen/overlay changes, per-device sends, and per-group sends (which can address the whole fleet) carry **no MFA gate at all**. See **MFA-1, MFA-2**. Before that gate is built, fix the elevation token (**MFA-3**, it lasts 8h not the advertised 15m) and decide how SSO/Technician sessions obtain `mfa=true` (**MFA-6, MFA-7**).

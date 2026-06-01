@@ -167,6 +167,11 @@ internal static class SelfUpdateService
     {
         DiagLog.Write("UpdaterMode: SYSTEM task started.");
 
+        // REVIEW Agent-L2 (2026-05-31): trigger file lives in user-writable ProgramData and
+        // can be written by a local non-admin — that is safe by design. The uninstall arg is
+        // GUID-validated (s_productCodeRx) and the update arg is a path whose bytes are copied
+        // into the SYSTEM/Admin-only verified\ dir and Authenticode-re-verified before execution,
+        // so a forged trigger can at most point at an unsigned MSI, which fails the signature gate.
         var triggerPath = Path.Combine(GetProgramDataDir(), TriggerFileName);
         if (!File.Exists(triggerPath))
         {
@@ -307,6 +312,10 @@ internal static class SelfUpdateService
         return verifiedMsiPath;
     }
 
+    // REVIEW Agent-L1 (2026-05-31): ACL set in C# here rather than in WiX is intentional.
+    // The verified\ dir is created and owned exclusively by the SYSTEM updater and is
+    // re-created + re-locked + reparse-checked every run before use, so a WiX-pre-seeded
+    // ACL would not be load-bearing. Resolved no-change; not a deviation worth re-flagging.
     private static void LockDownToSystemAndAdmins(string dir)
     {
         var di  = new DirectoryInfo(dir);

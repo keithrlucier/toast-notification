@@ -296,6 +296,10 @@ function LockScreenCard() {
   const [success, setSuccess] = useState('');
   const [removeArmed, setRemoveArmed] = useState(false);
   const [cacheBust, setCacheBust]     = useState(0);
+  // REVIEW DASH-L1 (2026-05-31): cache-bust key is mountTime+counter, not a server-provided
+  // version. The robust fix (a LockScreenImageUpdatedAt column surfaced in the DTO and used as
+  // ?v=) is a DB-schema change deferred to Keith's architectural call. The user-visible symptom
+  // (stale preview after replace for the uploading admin) is already remediated by the counter.
   const [mountTime]                   = useState(() => Date.now());
 
   const previewUrl = imageUrl

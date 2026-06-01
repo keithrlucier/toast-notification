@@ -58,14 +58,24 @@ public class NotificationsController : ControllerBase
         var senderId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var role     = Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
 
-        // Tenant-wide MFA enforcement: when on, EVERY send requires a fresh step-up
-        // verification — same mechanism as the broadcast-to-all gate below, just applied
-        // to all targets. Checked first so an unverified caller is rejected before any
-        // target resolution or moderation work. HasFreshMfa checks mfa=true AND that the
-        // elevation is within the freshness window (not the token's exp — see helper).
-        var tenantRequiresMfa = await _db.Tenants.IgnoreQueryFilters()
-            .Where(t => t.Id == tenantId).Select(t => t.RequireMfa).FirstOrDefaultAsync();
-        if (tenantRequiresMfa && !User.HasFreshMfa(config))
+        // Tenant gate, checked before any target resolution or moderation work. One
+        // projection covers both: (1) FIX-SES-2 — a suspended tenant (the operator kill
+        // switch) cannot send at all; suspension previously only blocked login + new-device
+        // registration, so a suspended tenant's already-issued operator session kept
+        // toasting the fleet. (2) Tenant-wide MFA enforcement — when on, EVERY send needs
+        // a fresh step-up (same mechanism as the broadcast gate below; HasFreshMfa checks
+        // mfa=true AND that the elevation is within the freshness window, not the exp).
+        var tenantGate = await _db.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId)
+            .Select(t => new { t.RequireMfa, Suspended = t.SuspendedAt != null })
+            .FirstOrDefaultAsync();
+        if (tenantGate?.Suspended == true)
+            return StatusCode(403, new
+            {
+                error = "tenant_suspended",
+                message = "This organization's access is suspended."
+            });
+        if (tenantGate?.RequireMfa == true && !User.HasFreshMfa(config))
             return StatusCode(403, new
             {
                 error = "mfa_required",
@@ -81,14 +91,18 @@ public class NotificationsController : ControllerBase
         if (deviceIds.Count > 100 && role < UserRole.Admin)
             return StatusCode(403, new { error = "insufficient_role", message = "Sending to >100 devices requires Admin role." });
 
-        // D5/D6: Broadcast-to-all requires a fresh MFA step-up (mfa=true + recent mfa_at).
-        if (req.TargetType == TargetType.All)
+        // D5/D6 + FIX-MFA-2 (2026-06-01): a fleet-scale broadcast requires a fresh MFA
+        // step-up — gated on the *resolved blast radius*, not just the TargetType enum.
+        // Gating only on TargetType.All let a caller reach the whole fleet un-stepped-up
+        // by listing every device id as Device/Group targets (same end state, different
+        // enum). The >100 threshold mirrors the Admin-role broadcast gate directly above.
+        if (req.TargetType == TargetType.All || deviceIds.Count > 100)
         {
             if (!User.HasFreshMfa(config))
                 return StatusCode(403, new
                 {
                     error = "mfa_required",
-                    message = "Broadcasting to all devices requires MFA verification. Verify your authenticator and try again."
+                    message = "Broadcasting to many devices requires MFA verification. Verify your authenticator and try again."
                 });
         }
 
@@ -308,7 +322,7 @@ public class NotificationsController : ControllerBase
 
         // SES-3: a decommissioned device's 365-day JWT stays cryptographically
         // valid; reject it here (mirrors NotificationHub.OnConnectedAsync).
-        if (await IsDeviceDecommissioned(deviceId))
+        if (await IsDeviceRevoked(deviceId))
             return Unauthorized();
 
         // The tenant filter on Tenants is keyed off ITenantProvider, which reads
@@ -368,7 +382,7 @@ public class NotificationsController : ControllerBase
         }
 
         // SES-3: reject decommissioned-device tokens (mirrors the hub).
-        if (await IsDeviceDecommissioned(deviceId))
+        if (await IsDeviceRevoked(deviceId))
             return Unauthorized();
 
         var delivery = await _db.NotificationDeliveries.IgnoreQueryFilters()
@@ -590,16 +604,22 @@ public class NotificationsController : ControllerBase
         string.Equals(value, "Url", StringComparison.OrdinalIgnoreCase) ? "Url" : "Action";
 
     /// <summary>
-    /// SES-3: returns true when the device row is missing or no longer Active
-    /// (Decommissioned). Mirrors NotificationHub.OnConnectedAsync so a stale
-    /// 365-day device JWT can't keep calling device endpoints after the device
-    /// is removed. Uses IgnoreQueryFilters() to match the device-context paths.
+    /// SES-3 + FIX-SES-2 (2026-06-01): returns true when a device JWT must be refused —
+    /// the device row is missing or Decommissioned (SES-3), OR the owning tenant is
+    /// suspended (SES-2). A suspended tenant is the operator kill switch; without the
+    /// tenant half a suspended tenant's agents keep draining their Pending toasts on a
+    /// 365-day token. Mirrors NotificationHub.OnConnectedAsync; IgnoreQueryFilters() to
+    /// match the device-context paths.
     /// </summary>
-    private async Task<bool> IsDeviceDecommissioned(Guid deviceId)
+    private async Task<bool> IsDeviceRevoked(Guid deviceId)
     {
-        var device = await _db.Devices.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(d => d.Id == deviceId);
-        return device is null || device.Status == DeviceStatus.Decommissioned;
+        var row = await _db.Devices.IgnoreQueryFilters()
+            .Where(d => d.Id == deviceId)
+            .Select(d => new { d.Status, TenantSuspended = d.Tenant.SuspendedAt != null })
+            .FirstOrDefaultAsync();
+        return row is null
+            || row.Status == DeviceStatus.Decommissioned
+            || row.TenantSuspended;
     }
 
     private async Task<List<Guid>> ResolveTargetDeviceIds(SendNotificationRequest req, Guid tenantId)

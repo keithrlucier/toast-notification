@@ -180,6 +180,13 @@ builder.Services.AddRateLimiter(opts =>
     // Login brute-force protection: 10 attempts / 5 min per IP.
     // CF-Connecting-IP is the real client IP behind Cloudflare; fall back to
     // RemoteIpAddress for non-Cloudflare traffic (dev/staging).
+    //
+    // ANCHOR BF-2 (owner: Keith — DEPLOY-TOPOLOGY decision; applies to login-sms-per-ip
+    // and trial-register-per-ip too). The correct hardening of this partition key is
+    // deployment-topology-dependent and must not be applied blind; per-account abuse is
+    // already mitigated out-of-band by BF-1 (Identity account lockout). Held for Keith's
+    // call on the gateway topology. Rationale + options recorded in the private review
+    // ledger; anchored so the next sweep does not re-flag.
     opts.AddPolicy("login-per-ip", ctx =>
     {
         var partitionKey = ctx.Request.Headers["CF-Connecting-IP"].FirstOrDefault()

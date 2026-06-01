@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import MfaStepUpModal from '../components/MfaStepUpModal';
 
 interface TenantRow {
   id: string;
@@ -245,6 +246,11 @@ function CreateTenantModal({
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  // FIX-MFA-5: creating a tenant now requires a fresh platform-admin step-up. On a
+  // 403 mfa_required, replay submit() after the step-up modal elevates the session.
+  const [stepUpRetry, setStepUpRetry] = useState<(() => void) | null>(null);
+  const isMfaRequired = (err: unknown) =>
+    err instanceof ApiError && err.status === 403 && /mfa verification/i.test(err.message);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -271,6 +277,7 @@ function CreateTenantModal({
       const result = await api.post<CreateTenantResult>('/api/system/tenants', body);
       onCreated(result);
     } catch (err) {
+      if (isMfaRequired(err)) { setStepUpRetry(() => () => void submit(e)); return; }
       setError(err instanceof ApiError ? err.message : 'Failed to create tenant.');
     } finally {
       setSubmitting(false);
@@ -442,6 +449,14 @@ function CreateTenantModal({
           </div>
         </form>
       </div>
+
+      {stepUpRetry && (
+        <MfaStepUpModal
+          action="Creating a tenant"
+          onVerified={() => { const retry = stepUpRetry; setStepUpRetry(null); retry?.(); }}
+          onCancel={() => setStepUpRetry(null)}
+        />
+      )}
     </div>
   );
 }

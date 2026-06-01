@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import MfaStepUpModal from '../components/MfaStepUpModal';
 
 interface TenantUser {
   id: string;
@@ -64,6 +65,10 @@ export default function PlatformTenantDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [acting, setActing] = useState<ReadonlySet<string>>(() => new Set());
+  // FIX-MFA-5/PE-2: platform-admin writes now require a fresh step-up. On a 403
+  // mfa_required, stash a replay of the SAME action (full runAction, so it still
+  // reloads + manages the acting key) and surface the step-up modal.
+  const [stepUpRetry, setStepUpRetry] = useState<(() => void) | null>(null);
 
   const load = useCallback(async () => {
     if (!isPlatformAdmin || !id) return;
@@ -89,6 +94,10 @@ export default function PlatformTenantDetail() {
       await fn();
       await load();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 403 && /mfa verification/i.test(err.message)) {
+        setStepUpRetry(() => () => { void runAction(key, fn); });
+        return;
+      }
       setError(err instanceof ApiError ? err.message : 'Action failed.');
     } finally {
       setActing(prev => { const n = new Set(prev); n.delete(key); return n; });
@@ -346,6 +355,14 @@ export default function PlatformTenantDetail() {
           </table>
         )}
       </div>
+
+      {stepUpRetry && (
+        <MfaStepUpModal
+          action="This platform action"
+          onVerified={() => { const retry = stepUpRetry; setStepUpRetry(null); retry?.(); }}
+          onCancel={() => setStepUpRetry(null)}
+        />
+      )}
     </div>
   );
 }

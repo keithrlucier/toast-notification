@@ -53,11 +53,24 @@ public class NotificationHub : Hub
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var device = await db.Devices.IgnoreQueryFilters()
+                    .Include(d => d.Tenant)
                     .FirstOrDefaultAsync(d => d.Id == deviceId.Value);
 
                 if (device is null || device.Status == DeviceStatus.Decommissioned)
                 {
                     await Clients.Caller.SendAsync("DeviceDecommissioned");
+                    Context.Abort();
+                    return;
+                }
+
+                // FIX-SES-2 (2026-06-01): a suspended tenant is the operator kill switch.
+                // Drop its agents' hub connections so they stop receiving AppearanceUpdated
+                // pushes (and the device-{id} fanout) on their 365-day tokens. This mirrors
+                // the device-JWT REST guards (IsDeviceRevoked). NOT a decommission — we send
+                // no "DeviceDecommissioned" so the agent keeps its config and simply
+                // reconnects if/when the tenant is resumed. (?. guards an orphaned tenant FK.)
+                if (device.Tenant?.SuspendedAt != null)
+                {
                     Context.Abort();
                     return;
                 }

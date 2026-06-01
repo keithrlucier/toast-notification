@@ -140,6 +140,10 @@ function DesktopOverlayCard() {
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
+  // FIX-MFA-1: an overlay change is a fleet-wide appearance write; when the tenant
+  // enforces MFA the backend returns 403 mfa_required. Mirror the lock-screen card:
+  // stash the retry and surface the step-up modal instead of a dead-end error.
+  const [stepUpRetry, setStepUpRetry] = useState<(() => void) | null>(null);
 
   useEffect(() => {
     api.get<{ enabled: boolean; fields: string[] | null; position: string | null; customText: string | null; opacityPercent: number | null }>('/api/tenant/overlay')
@@ -160,6 +164,11 @@ function DesktopOverlayCard() {
   const toggleField = (key: string) =>
     setFields(prev => prev.includes(key) ? prev.filter(f => f !== key) : [...prev, key]);
 
+  // 403 from the overlay mutation when the tenant requires MFA — surfaces the
+  // step-up modal instead of a dead-end error (mirrors LockScreenCard).
+  const isMfaRequired = (err: unknown) =>
+    err instanceof ApiError && err.status === 403 && /mfa verification/i.test(err.message);
+
   const save = async () => {
     setSaving(true); setError(''); setSuccess('');
     try {
@@ -173,6 +182,7 @@ function DesktopOverlayCard() {
       setSuccess('Saved.');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
+      if (isMfaRequired(err)) { setStepUpRetry(() => () => save()); return; }
       setError(err instanceof ApiError ? err.message : 'Failed to save overlay.');
     } finally {
       setSaving(false);
@@ -278,6 +288,14 @@ function DesktopOverlayCard() {
       )}
 
       <SaveRow saving={saving} error={error} success={success} onSave={save} label="Save Overlay" />
+
+      {stepUpRetry && (
+        <MfaStepUpModal
+          action="Changing the desktop overlay"
+          onVerified={() => { const retry = stepUpRetry; setStepUpRetry(null); retry?.(); }}
+          onCancel={() => setStepUpRetry(null)}
+        />
+      )}
     </div>
   );
 }

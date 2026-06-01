@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, FormEvent } from 'react';
 import { billingApi, type BillingPlan, type Invoice } from '../api/billing';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import MfaStepUpModal from '../components/MfaStepUpModal';
 
 const STATUS_COLOR: Record<string, string> = {
   Active: 'var(--status-success)',
@@ -68,6 +69,11 @@ export default function Billing() {
   const [error, setError] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
+  // FIX-MFA-5: messaging/SSO provider-secret rotation now requires a fresh step-up
+  // (these write platform-wide credentials). Replay the same save after elevation.
+  const [stepUpRetry, setStepUpRetry] = useState<(() => void) | null>(null);
+  const isMfaRequired = (err: unknown) =>
+    err instanceof ApiError && err.status === 403 && /mfa verification/i.test(err.message);
 
   // Stripe config state
   const [stripeSnap, setStripeSnap]   = useState<StripeSnapshot | null>(null);
@@ -188,6 +194,7 @@ export default function Billing() {
       setMsgSaveOk(true);
       setTimeout(() => setMsgSaveOk(false), 3000);
     } catch (err) {
+      if (isMfaRequired(err)) { setStepUpRetry(() => () => void handleMessagingConfigSave(e)); return; }
       setMsgSaveError(err instanceof ApiError ? err.message : 'Save failed.');
     } finally {
       setMsgSaveLoading(false);
@@ -212,6 +219,7 @@ export default function Billing() {
       setSsoSaveOk(true);
       setTimeout(() => setSsoSaveOk(false), 3000);
     } catch (err) {
+      if (isMfaRequired(err)) { setStepUpRetry(() => () => void handleSsoConfigSave(e)); return; }
       setSsoSaveError(err instanceof ApiError ? err.message : 'Save failed.');
     } finally {
       setSsoSaveLoading(false);
@@ -661,6 +669,14 @@ export default function Billing() {
           </div>
         )}
       </section>
+
+      {stepUpRetry && (
+        <MfaStepUpModal
+          action="Updating provider credentials"
+          onVerified={() => { const retry = stepUpRetry; setStepUpRetry(null); retry?.(); }}
+          onCancel={() => setStepUpRetry(null)}
+        />
+      )}
     </div>
   );
 }

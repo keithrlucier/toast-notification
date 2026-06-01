@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import MfaStepUpModal from '../components/MfaStepUpModal';
 
 interface UserRow {
   id: string;
@@ -32,6 +33,11 @@ export default function PlatformUsers() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [acting, setActing] = useState<ReadonlySet<string>>(() => new Set());
+  // FIX-MFA-5/PE-2: cross-tenant reset/delete now require a fresh step-up. On a
+  // 403 mfa_required, stash a replay of the action and show the step-up modal.
+  const [stepUpRetry, setStepUpRetry] = useState<(() => void) | null>(null);
+  const isMfaRequired = (err: unknown) =>
+    err instanceof ApiError && err.status === 403 && /mfa verification/i.test(err.message);
 
   const load = useCallback(async (search: string) => {
     if (!isPlatformAdmin) return;
@@ -74,6 +80,7 @@ export default function PlatformUsers() {
     try {
       await api.post(`/api/system/users/${u.id}/reset-password`);
     } catch (err) {
+      if (isMfaRequired(err)) { setStepUpRetry(() => () => void onResetPassword(u)); return; }
       setError(err instanceof ApiError ? err.message : 'Failed to send reset email.');
     } finally {
       setActing(prev => { const n = new Set(prev); n.delete(key); return n; });
@@ -93,6 +100,7 @@ export default function PlatformUsers() {
       await api.delete(`/api/system/users/${u.id}`);
       setUsers(prev => prev.filter(x => x.id !== u.id));
     } catch (err) {
+      if (isMfaRequired(err)) { setStepUpRetry(() => () => void onDelete(u)); return; }
       setError(err instanceof ApiError ? err.message : 'Failed to delete user.');
     } finally {
       setActing(prev => { const n = new Set(prev); n.delete(key); return n; });
@@ -192,6 +200,14 @@ export default function PlatformUsers() {
           </table>
         )}
       </div>
+
+      {stepUpRetry && (
+        <MfaStepUpModal
+          action="This action"
+          onVerified={() => { const retry = stepUpRetry; setStepUpRetry(null); retry?.(); }}
+          onCancel={() => setStepUpRetry(null)}
+        />
+      )}
     </div>
   );
 }

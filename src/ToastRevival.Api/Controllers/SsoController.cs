@@ -170,6 +170,19 @@ public class SsoController : ControllerBase
             if (user is null)
                 return LoginError("no_account");
 
+            // FIX-XT-3 (2026-06-01): this is the FIRST federated sign-in for this user
+            // (no oid bound yet) and the match is by email/UPN ONLY. Entra does not
+            // assert here that the email is verified, and a directory/Global admin can
+            // set a user's UPN/mail to collide with a privileged Toast account — so an
+            // unverified-email auto-link into an elevated account is an intra-directory
+            // privilege-escalation path. Refuse to auto-link email→elevated; those must
+            // be oid-pre-bound by an existing admin before first SSO sign-in. Technician
+            // self-link via email is unchanged. (Whether to additionally require an
+            // email_verified / xms_edov claim is a directory-dependent policy decision —
+            // see REVIEW_LEDGER XT-3, owner: Keith.)
+            if (user.Role >= UserRole.Admin || user.IsPlatformAdmin)
+                return LoginError("link_requires_admin");
+
             // First federated sign-in for this user — bind the immutable Entra id
             // so future sign-ins match on it even if the email/UPN later changes.
             // Guard against an oid already claimed by a different user in the tenant.
@@ -192,7 +205,15 @@ public class SsoController : ControllerBase
 
         // SSO satisfied strong auth at the IdP — no SMS step. Hand the JWT to the
         // SPA via the URL fragment so it never lands in server logs or the Referer.
-        var jwt = _tokens.CreateUserToken(user);
+        //
+        // FIX-MFA-6 (2026-06-01): when Entra asserted MFA (amr contains "mfa"), reflect
+        // that into an MFA-elevated token (mfa=true + mfa_at) so the SSO session can
+        // satisfy the step-up gates (send a toast, change the lock screen) without a
+        // second, redundant prompt for a factor the IdP already enforced. Otherwise mint
+        // a plain session token and the user steps up natively when a gate demands it.
+        // Without this an Entra-MFA'd SSO admin was fail-closed OUT of the very actions
+        // the owner wants gated, with no native way to elevate.
+        var jwt = identity.MfaSatisfied ? _tokens.CreateMfaToken(user) : _tokens.CreateUserToken(user);
         return Redirect($"{FrontendBase()}/sso/callback#token={Uri.EscapeDataString(jwt)}");
     }
 

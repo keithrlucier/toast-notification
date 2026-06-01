@@ -227,6 +227,16 @@
                        Value="[SERVERURL]" />
       </Component>
 
+      <!--
+        ANCHOR XT-1 (owner: Keith — ARCHITECTURAL, execution-context-sensitive).
+        The enrollment-bootstrap value is written here under the default registry ACL.
+        Tightening it is NOT a simple util:PermissionEx change, because the agent reads
+        this value in USER context (DeviceConfig.TryLoadBootstrapFromRegistry); the
+        proper fix is the per-device single-use dashboard-issued-token redesign tracked
+        against DevicesController.Register (threat analysis in the private review ledger).
+        Held for Keith's call. Anchored so the next MSIX/WiX sweep does not re-flag this
+        write in isolation.
+      -->
       <Component Id="BootstrapEnrollReg"
                  Guid="E8B5A3DA-2F94-4C7B-AD61-4A9F3B2E8C75"
                  Condition="ENROLLMENTKEY &lt;&gt; &quot;&quot;">

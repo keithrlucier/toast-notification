@@ -1,5 +1,23 @@
 # REVIEW LEDGER — Cold Code Review (2026-05-31)
 
+## LEDGER STATE MACHINE — NEUTRAL (mechanical; not a judgment call)
+
+This ledger is a **neutral system of record.** Whether a finding is open is decided by an objective test, never by anyone's opinion that something "feels handled." There are exactly three states, and the **only** way out of the open count is verifiable:
+
+- **OPEN** — *counts on the gauge.* The default for ANY finding that is not yet verifiably fixed or verifiably false. This **includes** items deferred to an owner's decision, blocked on input, or in progress. (The gauge parser only inspects markdown table rows, so naming the state here in prose does not affect the count.)
+- **FIXED-VERIFIED / REMEDIATED** — *does not count.* Code actually changed **and** the fix was verified.
+- **REJECTED-VERIFIED** — *does not count.* Proven a false-positive, with evidence.
+
+**The neutral rules (apply mechanically, every pass):**
+1. **Deferral is not a state.** "We decided to defer this" / "this is the owner's call" does **NOT** remove a finding from OPEN. A deferred finding is an OPEN finding with an owner + a reason. It leaves OPEN only when it is later FIXED-VERIFIED or REJECTED-VERIFIED.
+2. **An in-code anchor changes nothing here.** Anchoring only tells the automated *code* scanner to stop re-alerting on a known item. It has **zero** effect on ledger status. Anchor ≠ remediation. Anchor ≠ closed.
+3. **The gauge always shows real outstanding work.** Never relabel an unfixed finding to a terminal status and never zero the count to make the dashboard look clean — that buries work that must stay visible. The gauge parser (`countLedgerOpenRows`) counts any pipe-row whose cell contains `OPEN`/`IN_PROGRESS`/`NEEDS_REVIEW`/`KICKED_BACK`; to keep the count honest, every still-open finding lives once as a row with Status `OPEN` in the single **DEFERRED — OPEN** tracker, and the literal token `OPEN` is kept out of summary/disposition prose so there is exactly one counted source.
+4. Where an older detail row below still reads `DEFERRED` in its Status cell, that means **OPEN — tracked in the DEFERRED — OPEN table**, not closed. New rows use this state machine directly.
+
+*Why this legend exists: the open/closed policy used to live only in team memory, which drifted into contradiction ("anchor is the resolution" vs "deferred stays open"). The rule now lives in the artifact itself so it is enforced mechanically and cannot be re-litigated per session.*
+
+---
+
 **Pass date:** 2026-05-31
 **Reviewer:** Carl — review of `cf38458..HEAD` (the commits that landed after the 2026-05-30 cold-pass baseline), dispatched as parallel Code Sweeps.
 **HEAD:** a91dccb

@@ -156,10 +156,13 @@ export default function DocsRmm() {
 
       <h2 id="auto-update">Auto-update</h2>
       <p>
-        The MSI installs the Velopack in-process auto-updater. Once a day the agent checks the release feed at{' '}
-        <code>https://releases.toastnotification.com/agent/win-x64</code>; new versions download in the background and
-        apply on next agent restart. To disable per-tenant policy, set the registry value{' '}
-        <code>HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate = 1</code>.
+        MSI-installed agents self-update through the MSI channel: once a day the agent polls{' '}
+        <code>/api/agent/version</code>, and when a newer release is published it downloads the signed MSI,
+        re-verifies its Authenticode signature, and installs it silently via a SYSTEM scheduled task. No release
+        feed or in-process updater is involved. To disable auto-update and drive every version through your RMM
+        instead, set the registry value{' '}
+        <code>HKLM\SOFTWARE\Toast2IT\Toast Notification\DisableAutoUpdate = 1</code> (or pass{' '}
+        <code>DISABLEAUTOUPDATE=1</code> on the install command), then push new MSI versions as RMM packages.
       </p>
 
       <div className="m-docs-next">

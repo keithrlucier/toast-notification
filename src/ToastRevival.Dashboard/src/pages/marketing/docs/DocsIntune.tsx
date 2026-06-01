@@ -305,8 +305,7 @@ exit 0`}
       <h3 id="msix-update">Auto-update</h3>
       <p>
         Intune-managed MSIX installs receive updates through Intune's app update mechanism. Push a new app
-        version to replace the existing one — endpoints update on the next sync. The Velopack in-process
-        auto-updater is no-op for Intune-managed installs.
+        version to replace the existing one — endpoints update on the next sync.
       </p>
 
       <h3 id="msix-uninstall">Uninstall</h3>

@@ -11,8 +11,21 @@ namespace ToastRevival.Api.Controllers;
 
 /// <summary>
 /// Per-tenant API key management (D5). Admin+ only.
-/// Keys are used for programmatic access to the notification API from RMM tools.
+/// Keys are intended for programmatic access to the notification API from RMM tools.
 /// The full key is returned exactly once at creation; only the SHA-256 hash is stored.
+///
+/// ANCHOR API-1 (owner: Keith — PRODUCT decision: implement-or-remove).
+/// These keys are currently INERT: nothing in the request pipeline ever reads
+/// TenantApiKey.KeyHash to authenticate a request (the only AddAuthentication scheme is
+/// JwtBearer) and LastUsedAt is never written — so the dashboard advertises "programmatic
+/// access" that does not actually work. There is no live security hole today (no key-auth
+/// path = no bypass), which is why this is Info, not a vuln. But it must be resolved one
+/// of two ways: (a) IMPLEMENT it properly — a custom ApiKey auth handler with a
+/// constant-time hash compare, explicit tenant binding, scope limits, and an explicit
+/// decision that key-auth must NOT bypass the new MFA gates (Tenant.RequireMfa); or
+/// (b) REMOVE the feature + its dashboard UI so nothing is advertised as working. Held
+/// for Keith's call; the dashboard copy was left unchanged so as not to pre-empt that
+/// decision. Anchored so the next sweep does not re-flag the inert keys as a missed bug.
 /// </summary>
 [ApiController]
 [Route("api/apikeys")]

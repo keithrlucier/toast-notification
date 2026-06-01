@@ -333,7 +333,9 @@ public class TenantController : ControllerBase
     }
 
     [HttpPut("overlay")]
-    public async Task<IActionResult> UpdateOverlay([FromBody] UpdateOverlayConfigRequest req)
+    public async Task<IActionResult> UpdateOverlay(
+        [FromBody] UpdateOverlayConfigRequest req,
+        [FromServices] IConfiguration config)
     {
         if (!IsAdmin()) return Forbid();
 
@@ -349,6 +351,14 @@ public class TenantController : ControllerBase
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var t = await _db.Tenants.FindAsync(tenantId);
         if (t is null) return NotFound();
+
+        // FIX-MFA-1 (2026-06-01): the overlay is a fleet-wide appearance write —
+        // it broadcasts AppearanceUpdated to every online agent below, identical
+        // threat surface to the lock-screen. It was the un-gated sibling M15 left
+        // behind (UpdateLockScreen/UploadLockScreenImage already step-up). Gate it
+        // on the same shared helper so all three appearance writes are consistent.
+        var gate = RequireStepUpMfa(t.RequireMfa, "Changing the desktop overlay", config);
+        if (gate is not null) return gate;
 
         t.DesktopOverlayEnabled        = req.Enabled;
         t.DesktopOverlayFields         = TenantAppearance.JoinFields(req.Fields);

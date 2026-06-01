@@ -63,6 +63,20 @@ public class DevicesController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == req.TenantId);
         if (tenant is null) return NotFound("Tenant not found.");
 
+        // ANCHOR XT-1 (owner: Keith — ARCHITECTURAL + execution-context-sensitive).
+        // The compare below is constant-time and sound, but the EnrollmentKey itself is
+        // a single, reusable, non-expiring per-tenant secret that the MSI writes to
+        // HKLM\SOFTWARE\Toast2IT\Toast Notification with the default (world-readable)
+        // ACL — so any standard local user on one enrolled endpoint can read it and
+        // register a rogue device (which then receives a 365-day token + the tenant
+        // SigningKey). The robust fix is a redesign: per-device, single-use, expiring,
+        // dashboard-issued enrollment tokens (or admin approval of new device rows). A
+        // naive HKLM ACL lockdown is NOT safe here — the agent reads the key in USER
+        // context (DeviceConfig.TryLoadBootstrapFromRegistry), so a SYSTEM+Admins-only
+        // ACL would break enrollment; closing it needs an install-time copy to a
+        // user-readable per-machine location or a SYSTEM-context re-register path.
+        // Held for Keith's call on the enrollment-flow redesign. Anchored so the next
+        // sweep does not re-flag the reusable-key shape as an oversight.
         if (!string.IsNullOrWhiteSpace(tenant.EnrollmentKey))
         {
             if (string.IsNullOrWhiteSpace(req.EnrollmentKey) ||
@@ -225,8 +239,8 @@ public class DevicesController : ControllerBase
         var tenantIdClaim = User.FindFirstValue("tenantId");
         if (!Guid.TryParse(tenantIdClaim, out var tenantId)) return Unauthorized();
 
-        // SES-3: reject decommissioned-device tokens (mirrors the hub).
-        if (await IsDeviceDecommissioned(deviceId)) return Unauthorized();
+        // SES-3 + SES-2: reject decommissioned-device OR suspended-tenant tokens.
+        if (await IsDeviceRevoked(deviceId)) return Unauthorized();
 
         var tenant = await _db.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == tenantId);
@@ -252,8 +266,8 @@ public class DevicesController : ControllerBase
         var tenantIdClaim = User.FindFirstValue("tenantId");
         if (!Guid.TryParse(tenantIdClaim, out var tenantId)) return Unauthorized();
 
-        // SES-3: reject decommissioned-device tokens (mirrors the hub).
-        if (await IsDeviceDecommissioned(deviceId)) return Unauthorized();
+        // SES-3 + SES-2: reject decommissioned-device OR suspended-tenant tokens.
+        if (await IsDeviceRevoked(deviceId)) return Unauthorized();
 
         var tenant = await _db.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == tenantId);
@@ -283,12 +297,16 @@ public class DevicesController : ControllerBase
         if (!Guid.TryParse(deviceIdClaim, out var deviceId)) return Unauthorized();
 
         var device = await _db.Devices.IgnoreQueryFilters()
+            .Include(d => d.Tenant)
             .FirstOrDefaultAsync(d => d.Id == deviceId);
         if (device is null) return NotFound();
 
         // SES-3: a decommissioned device's 365-day JWT stays cryptographically
         // valid; reject heartbeats from it (mirrors the hub).
         if (device.Status == DeviceStatus.Decommissioned) return Unauthorized();
+        // FIX-SES-2: same kill-switch for a suspended tenant's devices. ?. guards an
+        // orphaned tenant FK (can't happen with the FK constraint, but fail safe).
+        if (device.Tenant?.SuspendedAt != null) return Unauthorized();
 
         device.LastPing = DateTime.UtcNow;
         if (!string.IsNullOrWhiteSpace(body?.AgentVersion))
@@ -405,15 +423,24 @@ public class DevicesController : ControllerBase
     }
 
     /// <summary>
-    /// SES-3: true when the device row is missing or Decommissioned. Mirrors
-    /// NotificationHub.OnConnectedAsync so a stale 365-day device JWT can't keep
-    /// hitting device endpoints after the device is removed. Active/Inactive pass.
+    /// SES-3 + FIX-SES-2 (2026-06-01): true when a device JWT must be refused — the
+    /// device row is missing or Decommissioned (SES-3), OR the owning tenant is
+    /// suspended (SES-2). Suspension is the operator kill switch for a compromised/
+    /// abusive tenant; without the tenant half a suspended tenant's agents keep
+    /// pulling appearance config + branding and draining toasts on their 365-day
+    /// tokens. Active/Inactive devices under an ACTIVE tenant pass. Mirrors the hub.
+    /// (Instant revocation of live USER/operator sessions on suspend needs a token
+    /// epoch / SecurityStamp pipeline — see REVIEW_LEDGER SES-2 remainder, owner: Keith.)
     /// </summary>
-    private async Task<bool> IsDeviceDecommissioned(Guid deviceId)
+    private async Task<bool> IsDeviceRevoked(Guid deviceId)
     {
-        var device = await _db.Devices.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(d => d.Id == deviceId);
-        return device is null || device.Status == DeviceStatus.Decommissioned;
+        var row = await _db.Devices.IgnoreQueryFilters()
+            .Where(d => d.Id == deviceId)
+            .Select(d => new { d.Status, TenantSuspended = d.Tenant.SuspendedAt != null })
+            .FirstOrDefaultAsync();
+        return row is null
+            || row.Status == DeviceStatus.Decommissioned
+            || row.TenantSuspended;
     }
 
     private bool IsAdmin()

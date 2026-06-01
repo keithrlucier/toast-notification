@@ -643,7 +643,7 @@ namespace ToastRevival.Agent
                             if (appearance is not null)
                             {
                                 overlay.Apply(appearance.Overlay, config.TenantName);
-                                await LockScreenService.ApplyAsync(appearance.LockScreen, apCts.Token);
+                                await LockScreenService.ApplyAsync(appearance.LockScreen, config.ServerUrl, apCts.Token);
                                 DiagLog.Write($"PrimaryMode: device appearance applied ({reason}).");
                             }
                         }

@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
+using ToastRevival.Api.Utilities;
 
 namespace ToastRevival.Api.Controllers;
 
@@ -48,6 +49,29 @@ public class SystemController : ControllerBase
         _config = config;
         _logger = logger;
     }
+
+    /// <summary>
+    /// FIX-MFA-5 / PE-2 (2026-06-01): step-up gate for the platform-admin god-panel.
+    /// Before this the entire controller was guarded only by the <c>platformAdmin</c>
+    /// claim riding an ordinary session token — the MOST sensitive, cross-tenant
+    /// surface in the product was the LEAST MFA-protected. The destructive +
+    /// secret-rotation + cross-tenant-takeover endpoints now require a FRESH MFA
+    /// elevation (mfa=true + recent mfa_at), the same mechanism as tenant send /
+    /// lock-screen. Reads stay open so the panel still loads and the operator can reach
+    /// the step-up prompt. A stepped-up platform admin keeps the platformAdmin claim
+    /// (CreateMfaToken preserves it), so the guard is always satisfiable. Returns null
+    /// when the action may proceed; a 403 the dashboard turns into a step-up modal
+    /// otherwise. (Message says "MFA verification" so the shared FE step-up matcher
+    /// fires.)
+    /// </summary>
+    private IActionResult? RequireFreshMfa()
+        => User.HasFreshMfa(_config)
+            ? null
+            : StatusCode(403, new
+            {
+                error = "mfa_required",
+                message = "This action requires MFA verification. Verify your authenticator and try again."
+            });
 
     [HttpGet("trial-requests")]
     public async Task<IActionResult> TrialRequests([FromQuery] TrialRequestStatus status = TrialRequestStatus.Pending)
@@ -205,6 +229,7 @@ public class SystemController : ControllerBase
     [HttpPost("messaging/config")]
     public async Task<IActionResult> UpdateMessagingConfig([FromBody] UpdateMessagingConfigRequest request)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         if (request is null)
             return BadRequest(new { message = "Messaging configuration is required." });
 
@@ -245,6 +270,7 @@ public class SystemController : ControllerBase
     [HttpPost("sso/config")]
     public async Task<IActionResult> UpdateSsoConfig([FromBody] UpdateSsoConfigRequest request)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         if (request is null)
             return BadRequest(new { message = "SSO configuration is required." });
 
@@ -281,6 +307,7 @@ public class SystemController : ControllerBase
     [HttpPost("billing/config")]
     public async Task<IActionResult> UpdateBillingConfig([FromBody] UpdateBillingConfigRequest request)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         if (request is null)
             return BadRequest(new { message = "Billing configuration is required." });
 
@@ -480,6 +507,7 @@ public class SystemController : ControllerBase
     [HttpPost("tenants")]
     public async Task<IActionResult> CreateTenant([FromBody] CreateTenantRequest request)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         if (request is null) return BadRequest("Body required.");
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest("Tenant name is required.");
@@ -596,6 +624,7 @@ public class SystemController : ControllerBase
     [HttpPost("tenants/{id:guid}/suspend")]
     public async Task<IActionResult> SuspendTenant(Guid id, [FromBody] SuspendTenantRequest? request)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
         if (tenant is null) return NotFound();
         if (tenant.SuspendedAt.HasValue) return Conflict("Tenant is already suspended.");
@@ -616,6 +645,7 @@ public class SystemController : ControllerBase
     [HttpPost("tenants/{id:guid}/resume")]
     public async Task<IActionResult> ResumeTenant(Guid id)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
         if (tenant is null) return NotFound();
         if (!tenant.SuspendedAt.HasValue) return Conflict("Tenant is not suspended.");
@@ -636,6 +666,7 @@ public class SystemController : ControllerBase
     [HttpPost("tenants/{id:guid}/extend")]
     public async Task<IActionResult> ExtendTenant(Guid id, [FromBody] ExtendTenantRequest request)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         if (request is null || request.Days <= 0 || request.Days > 3650)
             return BadRequest("Days must be between 1 and 3650.");
 
@@ -660,6 +691,7 @@ public class SystemController : ControllerBase
     [HttpPost("tenants/{id:guid}/grant-complimentary")]
     public async Task<IActionResult> GrantComplimentary(Guid id, [FromBody] GrantComplimentaryRequest? request)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
         if (tenant is null) return NotFound();
 
@@ -684,6 +716,7 @@ public class SystemController : ControllerBase
     [HttpPost("tenants/{id:guid}/revoke-complimentary")]
     public async Task<IActionResult> RevokeComplimentary(Guid id)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
         if (tenant is null) return NotFound();
         if (!tenant.IsComplimentary) return Conflict("Tenant is not complimentary.");
@@ -704,6 +737,7 @@ public class SystemController : ControllerBase
     [HttpDelete("tenants/{id:guid}")]
     public async Task<IActionResult> DeleteTenant(Guid id, [FromQuery] string? confirm = null)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id);
         if (tenant is null) return NotFound();
 
@@ -797,6 +831,10 @@ public class SystemController : ControllerBase
     [HttpPost("users/{id:guid}/reset-password")]
     public async Task<IActionResult> SendUserPasswordReset(Guid id)
     {
+        // FIX-PE-2: cross-tenant password-reset is an account-takeover primitive — a
+        // compromised platform-admin session could mint reset links for any user in
+        // any tenant. Require a fresh step-up like the other destructive ops.
+        if (RequireFreshMfa() is { } mfa) return mfa;
         var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id);
         if (user is null) return NotFound();
         if (string.IsNullOrWhiteSpace(user.Email))
@@ -833,6 +871,7 @@ public class SystemController : ControllerBase
     [HttpDelete("users/{id:guid}")]
     public async Task<IActionResult> DeleteUser(Guid id)
     {
+        if (RequireFreshMfa() is { } mfa) return mfa;
         var callerUserId = GetUserId();
         if (callerUserId == id)
             return BadRequest("Refusing to delete your own account.");

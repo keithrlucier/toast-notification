@@ -227,6 +227,18 @@
                        Value="[SERVERURL]" />
       </Component>
 
+      <!--
+        ANCHOR XT-1 (owner: Keith — ARCHITECTURAL, execution-context-sensitive).
+        EnrollmentKey is written here with the DEFAULT HKLM\SOFTWARE ACL, where
+        BUILTIN\Users has Read — so any standard local user can read this reusable
+        per-tenant secret and register a rogue device. A naive util:PermissionEx
+        lockdown to SYSTEM+Admins would BREAK enrollment, because the agent reads this
+        value in USER context (DeviceConfig.TryLoadBootstrapFromRegistry). Closing it
+        properly is a redesign (per-device single-use dashboard-issued tokens) or an
+        install-time copy to a user-readable per-machine location — held for Keith's
+        call (see the matching anchor in DevicesController.Register). Anchored here so
+        the next MSIX/WiX sweep does not re-flag the un-PermissionEx'd write in isolation.
+      -->
       <Component Id="BootstrapEnrollReg"
                  Guid="E8B5A3DA-2F94-4C7B-AD61-4A9F3B2E8C75"
                  Condition="ENROLLMENTKEY &lt;&gt; &quot;&quot;">

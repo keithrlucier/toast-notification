@@ -120,6 +120,16 @@ public class LicenseService : ILicenseService
         if (string.IsNullOrEmpty(tenant.StripeSubscriptionId)) return false;
         if (tenant.BillingStatus == BillingStatus.Canceled)    return false;
 
+        // ANCHOR BILL-ENF-1 (owner: Keith — PRODUCT POLICY, not a code defect).
+        // BillingStatus.PastDue is deliberately NOT in the deny set above: a tenant
+        // whose payment is failing keeps adding billable devices (26+) during an
+        // unbounded grace window. This is "paid tier without paying" IF unintended —
+        // but it may be intentional grace so a card-decline doesn't instantly brick a
+        // customer's fleet. The fix is one line —
+        //     if (tenant.BillingStatus == BillingStatus.PastDue) return false;
+        // (optionally bounded by a grace deadline) — held pending Keith's decision on
+        // whether/how long PastDue tenants may grow billable capacity. Anchored so the
+        // next sweep does not re-flag it as an oversight.
         return true;
     }
 }

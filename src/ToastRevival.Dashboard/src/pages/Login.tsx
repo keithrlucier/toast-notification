@@ -19,6 +19,7 @@ const SSO_ERRORS: Record<string, string> = {
   suspended:    'Your organization’s access is suspended. Contact support.',
   incomplete:   'Your account registration isn’t finished yet.',
   link_conflict: 'That Microsoft identity is already linked to another account.',
+  link_requires_admin: 'For security, an administrator must link your Microsoft account before your first single sign-on. Ask your administrator to set it up.',
   denied:       'Microsoft sign-in was cancelled.',
   unavailable:  'Microsoft sign-in isn’t available right now.',
 };

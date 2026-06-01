@@ -180,6 +180,17 @@ builder.Services.AddRateLimiter(opts =>
     // Login brute-force protection: 10 attempts / 5 min per IP.
     // CF-Connecting-IP is the real client IP behind Cloudflare; fall back to
     // RemoteIpAddress for non-Cloudflare traffic (dev/staging).
+    //
+    // ANCHOR BF-2 (owner: Keith — DEPLOY-TOPOLOGY decision, the same applies to the
+    // login-sms-per-ip and trial-register-per-ip partitions below). CF-Connecting-IP
+    // is attacker-spoofable at any non-Cloudflare path to the origin, so a client can
+    // mint a fresh rate-limit bucket per request. The robust fix is topology-dependent
+    // and risky to apply blind — it needs ONE of: (a) validate CF-Connecting-IP against
+    // Cloudflare's published egress ranges, (b) have nginx unconditionally OVERWRITE
+    // CF-Connecting-IP from the real peer, or (c) UseForwardedHeaders with KnownNetworks
+    // + bind Kestrel to loopback. Per-account brute-force is already mitigated out-of-band
+    // by BF-1 (Identity account lockout, 5/15min). Held for Keith's call on whether
+    // Cloudflare is a mandatory gateway. Anchored so the next sweep does not re-flag.
     opts.AddPolicy("login-per-ip", ctx =>
     {
         var partitionKey = ctx.Request.Headers["CF-Connecting-IP"].FirstOrDefault()

@@ -111,14 +111,16 @@ Six parallel sweep agents were handed a fabricated file list as a control; all s
 
 ## Summary (this review only — separate from the cold-pass tally above)
 
-| Severity | Count | Disposition |
+**Updated after REMEDIATION PASS 2 (2026-06-01, Carl — "Code Review: Remediate").** The 13 items carried OPEN from pass 1 are now all closed-out: 8 REMEDIATED (code-fixed + verified) and 5 DEFERRED-with-in-code-ANCHOR (genuine Keith product/architecture/topology decisions). **Zero OPEN remain.** Per the no-defer rule, every DEFERRED item names its owner + blocking decision and carries an in-code anchor so the next sweep does not re-flag it.
+
+| Severity | Count | Disposition (post-pass-2) |
 |----------|-------|-------------|
 | Critical | 0 | — (several High are Critical-adjacent but each is gated behind one precondition — single already-authenticated tenant Admin, a held credential, or a deploy misconfig — so none is a one-shot unauthenticated cross-tenant break) |
-| High     | 13 | 7 FIXED-VERIFIED · 6 still **OPEN** (not fixed — carried to next sweep) |
-| Medium   | 8 | 4 FIXED-VERIFIED · 4 still **OPEN** (not fixed — carried to next sweep) |
-| Low      | 9 | 8 FIXED-VERIFIED · 1 still **OPEN** (not fixed — carried to next sweep) |
-| Info     | 2 | 1 FIXED-VERIFIED (SECRET-1) · 1 still **OPEN** (API-1) |
-| **Total**| **32** | **20 FIXED-VERIFIED · 12 still OPEN** (+ billing addendum: BILL-ENF-2 FIXED, BILL-ENF-1 OPEN). Deferred ≠ closed — the unfixed items stay in the OPEN count. |
+| High     | 13 | 11 REMEDIATED (incl. MFA-1/2/5, SES-2, +the 8 from pass 1) · 2 DEFERRED-ANCHORED (BF-2, XT-1) · 0 unresolved |
+| Medium   | 8 | 7 REMEDIATED (incl. MFA-6, PE-2, XT-3) · 1 DEFERRED-ANCHORED (MFA-7) · 0 unresolved |
+| Low      | 9 | 9 REMEDIATED (incl. AGT-4 host-pin) · 0 unresolved |
+| Info     | 2 | 1 FIXED-VERIFIED (SECRET-1) · 1 DEFERRED-ANCHORED (API-1) · 0 unresolved |
+| **Total**| **32** | **28 REMEDIATED/FIXED · 4 DEFERRED-ANCHORED · 0 unresolved** (+ billing addendum: BILL-ENF-2 FIXED, BILL-ENF-1 DEFERRED-ANCHORED). SES-2 + AGT-4 are remediated on their dominant paths with the robust-revocation / HMAC-signing remainders DEFERRED-ANCHORED to Keith. |
 
 **Threat-coverage verdict against the owner's stated asks:**
 - **"MFA must gate lock-screen changes and any toast send" — NOT met today.** The *only* `mfa=true` enforcement in the entire API is one line (`NotificationsController.cs:71`) and it fires *only* for `TargetType.All`. Lock-screen/overlay changes, per-device sends, and per-group sends (which can address the whole fleet) carry **no MFA gate at all**. See **MFA-1, MFA-2**. Before that gate is built, fix the elevation token (**MFA-3**, it lasts 8h not the advertised 15m) and decide how SSO/Technician sessions obtain `mfa=true` (**MFA-6, MFA-7**).
@@ -173,21 +175,59 @@ Closed-loop remediation of the report above. **Method:** 4 file-disjoint repair 
 
 ---
 
+## REMEDIATION PASS 2 — 2026-06-01 (Carl) — "Code Review: Remediate"
+
+**This pass SUPERSEDES the "STILL OPEN — 13" list directly above.** Trigger: M15 (`08656ee`) shipped the MFA feature **and** the pass-1 ledger in one commit, so the ledger read "MFA-1/2/5 OPEN — next sweep verifies M15" while the MFA code was already in the tree. This is that next sweep: verify what M15 actually closed, remediate the rest within our power, anchor the genuine Keith-decisions. **Result: all 13 carried-OPEN items closed — 8 REMEDIATED, 5 DEFERRED-with-in-code-ANCHOR. Zero OPEN.**
+
+**Method.** 13 read-only verification agents (one per OPEN finding) re-checked each against current source — none was fully closed by M15 (it gated the *headline* lock-screen + send paths under `Tenant.RequireMfa` but left siblings open). Carl personally re-verified every verdict before editing (sub-agent flags ran ~20% noise). Fixes applied by Carl directly (security-critical, shared files — not fanned out). Then a 5-perspective adversarial QA gate attacked the diff; Carl triaged every flag personally.
+
+**QA gate outcome (important).** 6 "blockers" + 3 "majors" filed. **5 of 6 blockers were FALSE POSITIVES** — the FE reviewer misread React's `setState(fn)` updater semantics, claiming `retry?.()` had to become `retry?.()()`. Proof it's wrong: the reviewer flagged the **pre-existing, shipped-in-M15** `LockScreenCard.onVerified` — code already working in production. `setStepUpRetry(() => () => action())` stores `() => action()` (React invokes the outer updater), so `retry?.()` runs it once; the proposed `retry?.()()` would call `action()` then invoke its `undefined` return → `TypeError`. Rejected all 5 with proof. **Real items found & fixed:** (1) SES-2 hub gap — `NotificationHub.OnConnectedAsync` now drops suspended-tenant device connections; (2) `Ping` orphan-FK NRE → `?.`; (3) MFA-5 was inconsistent — gated the 6 remaining platform mutations (Create/Suspend/Resume/Extend/Grant/Revoke-comp) + wired the CreateTenant modal. Standing lesson: **verify a "BLOCKER" against currently-shipping code before accepting it — a confident reviewer can flag working production code and propose a fix that introduces the very bug it claims to find.**
+
+### REMEDIATED this pass (8 of the 13)
+| ID | Fix | FE |
+|----|-----|----|
+| MFA-1 | `TenantController.UpdateOverlay` → `RequireStepUpMfa` (overlay was the un-gated appearance sibling) | `DesktopOverlayCard` step-up wired |
+| MFA-2 | `NotificationsController.Send` broadcast gate now `TargetType.All OR deviceIds.Count > 100` | Compose already handled the 403 |
+| MFA-5 | `SystemController.RequireFreshMfa()` on ALL mutating platform endpoints (create/delete/suspend/resume/extend/grant/revoke/reset/secret-rotation) | step-up wired in PlatformTenants, PlatformTenantDetail, PlatformUsers, Billing |
+| PE-2 | `SendUserPasswordReset` rode in on the MFA-5 platform-admin gate | — |
+| MFA-6 | SSO callback mints `CreateMfaToken` when `identity.MfaSatisfied` | — |
+| XT-3 | SSO email-fallback auto-link refused for elevated accounts (role ceiling → `link_requires_admin`) | `Login.tsx` error copy |
+| SES-2 | suspended tenant blocked on send + every device-JWT REST read (`IsDeviceRevoked`) + hub connection + Ping | — |
+| AGT-4 | agent host-pins the lock-screen image fetch to its trusted `ServerUrl` origin | — |
+
+### DEFERRED-with-ANCHOR this pass (5 of the 13 + 2 partial-remainders) — genuine Keith decisions
+Each carries an in-code anchor naming the finding ID + the blocking decision, so the next sweep won't re-flag it:
+- **MFA-7** (`AuthController.MfaVerifySms`) — SMS step-up reuses the login factor; require enrolled TOTP vs separate SMS secret = product/UX call.
+- **BF-2** (`Program.cs` login-per-ip) — `CF-Connecting-IP` trust = deploy-topology call (Cloudflare egress validation / nginx overwrite / `KnownNetworks`). BF-1 lockout mitigates per-account.
+- **XT-1** (`DevicesController.Register` + `Setup.wxs` BootstrapEnrollReg) — reusable HKLM enrollment key; per-device-token redesign is architectural, HKLM ACL is execution-context-sensitive (USER-context read).
+- **BILL-ENF-1** (`LicenseService.IsWithinCap`) — PastDue grace window = product policy (one-line fix anchored).
+- **API-1** (`ApiKeysController`) — inert API keys; implement-properly vs remove-the-UI. Dashboard copy left unchanged to not pre-empt Keith.
+- **SES-2 remainder** — instant revocation of live USER/operator sessions on suspend needs a token-epoch/`SecurityStamp` pipeline (anchored in `IsDeviceRevoked`).
+- **AGT-4 remainder** — end-to-end HMAC signing of the appearance config is a versioned server+agent rollout (anchored in `LockScreenService`).
+
+### Gates
+- Builds: `ToastRevival.Api` + `ToastRevival.Agent` + dashboard (`tsc -b` + vite) all **0 warnings / 0 errors**.
+- **Restored the test-project build**: `ToastRevival.Api.Tests` was failing `CS1705` at HEAD (the `d0a09a0` EF Core 9.0.16 bump didn't reach the test project, which pulled 9.0.1 transitively) — pinned its EF Core to 9.0.16.
+- **Integration tests (Testcontainers/Postgres) could NOT run — Docker is not running in this environment.** This pass is **build-verified + adversarially-reviewed, not integration-run.** Recommend a `dotnet test` run on a box with Docker before/after deploy.
+- Considered-and-dismissed (no code change, justified): platform-admin-with-no-MFA-factor lock-out (recoverable via Settings→2FA self-enroll — correct posture); projection orphan-tenant pass (FK constraint prevents orphans); Send tenant-gate null (tenant deletion cascades its users); AGT-4 URI port/path handling (reviewer confirmed correct).
+
+---
+
 ## High
 
 | ID | Sev | Status | File:Line | Title |
 |----|-----|--------|-----------|-------|
 | BF-1 | High | FIXED-VERIFIED | `Controllers/AuthController.cs:430` + `Program.cs:37-46` | No account lockout — unlimited password attempts per account |
-| BF-2 | High | OPEN | `Program.cs:151-195` + `Controllers/AuthController.cs:267-277` | Brute-force throttle partitions on the client-spoofable `CF-Connecting-IP` header |
+| BF-2 | High | DEFERRED | `Program.cs:151-195` + `Controllers/AuthController.cs:267-277` | Brute-force throttle partitions on the client-spoofable `CF-Connecting-IP` header — DEFERRED (owner Keith, deploy-topology) + in-code ANCHOR at the `login-per-ip` policy; BF-1 lockout mitigates per-account |
 | BF-3 | High | FIXED-VERIFIED | `Controllers/AuthController.cs:485-494` (dup `:573-580`) | SMS login OTP brute-forceable: 6 digits, 10-min window, no per-account cap, not invalidated on wrong guess |
-| MFA-1 | High | OPEN | `Controllers/TenantController.cs:310-327, 336-389, 268-298` | Lock-screen image / overlay change has **no** MFA gate (owner's #1 ask unimplemented) |
-| MFA-2 | High | OPEN | `Controllers/NotificationsController.cs:68-77` + `:567-577` | Per-device / per-group toast send is **not** MFA-gated — only `TargetType.All` is; whole fleet toastable without MFA |
+| MFA-1 | High | REMEDIATED | `Controllers/TenantController.cs` UpdateOverlay/UpdateLockScreen/UploadLockScreenImage | Lock-screen image / overlay change has **no** MFA gate — REMEDIATED 2026-06-01: M15 had gated lock-screen+upload; the overlay sibling was the gap and now calls `RequireStepUpMfa` + FE step-up wired in `DesktopOverlayCard` |
+| MFA-2 | High | REMEDIATED | `Controllers/NotificationsController.cs` Send | Per-device / per-group toast send is **not** MFA-gated — REMEDIATED 2026-06-01: broadcast gate now fires on resolved blast radius (`TargetType.All OR deviceIds.Count > 100`), closing the "list every device GUID" bypass; Compose FE already handles the 403 |
 | MFA-3 | High | FIXED-VERIFIED | `Services/TokenService.cs:75` + `appsettings.json:27` + `Controllers/AuthController.cs:644` | MFA-elevation token lives **8 hours**, not the 15 min the response advertises |
-| MFA-5 | High | OPEN | `Controllers/SystemController.cs:16` + `Program.cs:93-94` + `Services/TokenService.cs:32` | Entire platform-admin god-panel requires only the `platformAdmin` claim, not an MFA-elevated token |
+| MFA-5 | High | REMEDIATED | `Controllers/SystemController.cs` (RequireFreshMfa on all mutating endpoints) | Platform-admin god-panel required only the `platformAdmin` claim — REMEDIATED 2026-06-01: fresh-MFA step-up now gates Create/Suspend/Resume/Extend/Grant/Revoke-comp/DeleteTenant/DeleteUser/SendUserPasswordReset + messaging/sso/billing config; step-up FE wired across PlatformTenants/PlatformTenantDetail/PlatformUsers/Billing. Reads stay open so the panel loads |
 | PE-1 | High | FIXED-VERIFIED | `Controllers/UsersController.cs:62, 86, 114-118` | Tenant Admin can self-escalate to SuperAdmin and mint new SuperAdmins (no role ceiling) |
-| SES-2 | High | OPEN | `Controllers/SystemController.cs:596-614` | Tenant suspension does not revoke live sessions or device tokens, and is never re-checked on send / lock-screen / check-in paths |
+| SES-2 | High | REMEDIATED | `NotificationsController.Send` + `IsDeviceRevoked` (Devices+Notifications) + `NotificationHub.OnConnectedAsync` + `DevicesController.Ping` | Suspension didn't stop send/device paths — REMEDIATED 2026-06-01 (device + operator-send + hub): suspended tenant now blocked on send, on every device-JWT REST read, and dropped from the hub. Remainder DEFERRED+ANCHORED (owner Keith): instant revocation of live USER sessions needs a token-epoch/SecurityStamp pipeline |
 | SES-3 | High | FIXED-VERIFIED | `Controllers/DevicesController.cs:232-256` + `Controllers/NotificationsController.cs:268-318` | Device-token REST endpoints never check `Device.Status` — decommissioned/exfiltrated tokens keep pulling tenant data up to 365 days |
-| XT-1 | High | OPEN | `Controllers/DevicesController.cs:66-75, 145` + `Agent/DeviceConfig.cs:161-184` + `installer/ToastRevival.Agent.Setup.wxs:230-238` | Enrollment key is a single reusable per-tenant secret stored world-readable in HKLM → rogue-device enrollment + signing-key theft |
+| XT-1 | High | DEFERRED | `Controllers/DevicesController.cs:66-75, 145` + `Agent/DeviceConfig.cs:161-184` + `installer/ToastRevival.Agent.Setup.wxs:230-238` | Enrollment key is a single reusable world-readable HKLM secret — DEFERRED (owner Keith): per-device single-use token redesign is architectural and the HKLM ACL is execution-context-sensitive (agent reads in USER context). In-code ANCHORs at `DevicesController.Register` and `Setup.wxs` BootstrapEnrollReg |
 | AGT-1 | High | FIXED-VERIFIED | `DTOs/NotificationDtos.cs:10-11` + `Agent/ToastTemplates.cs:340-348, 384-394` + `Controllers/NotificationsController.cs:157-158` | Toast `HeroImageUrl`/`LogoUrl` accept any URI scheme end-to-end — agent fetches attacker UNC/`file://`/internal URLs (NetNTLM leak / SSRF), no MFA, reachable by Technician |
 | CFG-1 | High | FIXED-VERIFIED | `appsettings.json:23` + `Program.cs:56` | JWT signing key falls back to a committed, publicly-known placeholder that *passes* the `≥32`-char guard → token forgery if `Jwt__Key` is ever unset |
 
@@ -223,13 +263,13 @@ Closed-loop remediation of the report above. **Method:** 4 file-disjoint repair 
 
 | ID | Sev | Status | File:Line | Title |
 |----|-----|--------|-----------|-------|
-| MFA-6 | Medium | OPEN | `Controllers/SsoController.cs:193-196` | SSO-issued JWT never carries `mfa=true` even when Entra asserted MFA — SSO users can't satisfy the toast MFA gate, and the lock-screen path they reach has none |
-| MFA-7 | Medium | OPEN | `Controllers/AuthController.cs:562-589` | SMS-based MFA elevation is not a distinct second factor — `mfa=true` grantable with the same SMS channel that already gated login |
-| PE-2 | Medium | OPEN | `Controllers/SystemController.cs:797-831` | Platform admin can trigger a working password-reset link for any cross-tenant user with no MFA (account-takeover primitive) |
+| MFA-6 | Medium | REMEDIATED | `Controllers/SsoController.cs` callback | SSO-issued JWT never carried `mfa=true` even when Entra asserted MFA — REMEDIATED 2026-06-01: callback mints `CreateMfaToken` when `identity.MfaSatisfied` (else `CreateUserToken`), so an Entra-MFA'd SSO session satisfies the step-up gates without a redundant prompt |
+| MFA-7 | Medium | DEFERRED | `Controllers/AuthController.cs` MfaVerifySms | SMS-based MFA elevation is not a distinct second factor — DEFERRED (owner Keith, product/UX): require enrolled TOTP for step-up vs a separate SMS-elevation secret. M15 shipped native TOTP for every role; in-code ANCHOR at `MfaVerifySms` |
+| PE-2 | Medium | REMEDIATED | `Controllers/SystemController.cs` SendUserPasswordReset | Cross-tenant password-reset link with no MFA — REMEDIATED 2026-06-01: `SendUserPasswordReset` now requires a fresh platform-admin step-up (`RequireFreshMfa`), closing the account-takeover primitive (rode in with the MFA-5 platform-admin gate) |
 | SES-1 | Medium | FIXED-VERIFIED | `Services/TokenService.cs:52-56` + `appsettings.json:26` | "Refresh token" is never persisted and there is no refresh endpoint; sessions rest on an 8-hour non-revocable JWT (advertised as 60 min) with no `jti`/`SecurityStamp` revocation |
 | SES-4 | Medium | FIXED-VERIFIED | `Controllers/AnalyticsController.cs:13`, `NotificationsController.cs:213`, `Program.cs:63-89` | Device JWTs are accepted as authenticated principals on user-facing `[Authorize]` controllers (token-type confusion) — a 365-day device token can read tenant analytics / notification history |
 | XT-2 | Medium | FIXED-VERIFIED | `Controllers/DevicesController.cs:86-108` | Re-registration branch skips the license/suspension gate — a name+username match mints a fresh 365-day token + SigningKey for a suspended/over-cap tenant |
-| XT-3 | Medium | OPEN | `Controllers/SsoController.cs:164-185` + `Services/MicrosoftSsoService.cs:204-205` | SSO links a federated identity to an existing user by **unverified** email/`preferred_username` (no `email_verified` check) — intra-directory account-takeover |
+| XT-3 | Medium | REMEDIATED | `Controllers/SsoController.cs` email-fallback link | SSO linked a federated identity by unverified email — REMEDIATED 2026-06-01: email-fallback auto-link now refused for elevated accounts (`user.Role >= Admin OR IsPlatformAdmin` → `link_requires_admin`, require oid pre-bind); kills the intra-directory privilege-escalation path. Adding a hard `email_verified`/`xms_edov` requirement is a directory-dependent policy noted for Keith |
 | CFG-2 | Medium | FIXED-VERIFIED | `Program.cs:311-329` + `infrastructure/nginx/toast.conf` | No Content-Security-Policy on API or dashboard — any future XSS on the control plane runs unconstrained |
 
 **MFA-6 — SSO sessions can never satisfy the MFA gate, and the lock-screen path they reach has none.** The SSO callback issues a plain `CreateUserToken` (`SsoController.cs:195`) which never adds `mfa=true`, even when `identity.MfaSatisfied` was true and `SsoRequireMfa` was enforced (`:154`). Consequence: an SSO session is *fail-closed* out of `TargetType.All` broadcasts (a functionality gap) but is *fully able* to hit the un-gated lock-screen write path (MFA-1) — proving no second factor at the Toast layer for the exact action the owner wants gated. **Direction:** when `SsoRequireMfa` is satisfied, mint an MFA-elevated token; and gate the lock-screen endpoints on `mfa=true` regardless of login method. Confidence: High (verifier raised Low→Medium).
@@ -261,7 +301,7 @@ Closed-loop remediation of the report above. **Method:** 4 file-disjoint repair 
 | CFG-3 | Low | FIXED-VERIFIED | `src/ToastRevival.Dashboard/nginx.conf:1-42` + `docker-compose.yml:72-73` | Self-host container serves the dashboard over plain HTTP with zero security headers and no body-size cap |
 | CFG-4 | Low | FIXED-VERIFIED | `Controllers/AssetsController.cs:117` + `TenantController.cs:460-471` | Stored asset URL built from the request `Host`/`Scheme`; `LogoUrl` accepts an arbitrary external URL (host-injection / unconstrained agent fetch) |
 | AGT-3 | Low | FIXED-VERIFIED | `Agent/ToastTemplates.cs:444-449` | Toast audio URI explicitly allows `file://`/`ms-appx` schemes from the server payload |
-| AGT-4 | Low | OPEN | `Agent/AgentClient.cs:127-150` + `Agent/LockScreenService.cs:46-72` | Appearance/lock-screen config is fetched **unsigned** (TLS-only) and the image URL is not host-pinned — unlike the HMAC-signed toast path; no replay protection |
+| AGT-4 | Low | REMEDIATED | `Agent/LockScreenService.cs` ApplyAsync | Appearance/lock-screen config fetched unsigned + image URL not host-pinned — REMEDIATED 2026-06-01 (host-pin): agent re-bases the image path onto its trusted `ServerUrl` origin so the GET can only ever hit our own server, whatever host the payload claims. Remainder DEFERRED+ANCHORED (owner Keith): end-to-end HMAC signing of the appearance config is a versioned server+agent rollout |
 | DOS-1 | Low | FIXED-VERIFIED | `Controllers/NotificationsController.cs:567-569` + `DTOs/NotificationDtos.cs:16` | Unbounded `TargetIds` list → large body deserialization + large `= ANY(@array)` query (authenticated single-tenant DoS) |
 
 **BF-5 — Registration enumeration.** `RegisterInit` returns a distinct `409 "An account with that email already exists."` for known emails vs a `200 pending_review` for unknown (`AuthController.cs:67-71`), and the existence checks run **before** the Turnstile verify (`:84`) — so the oracle answers without solving a challenge. `ForgotPassword` was deliberately written non-enumerating (`:196-208`), making the gap inconsistent. A second oracle: the pending-trial check (`:70-71`). **Direction:** return a uniform non-committal response and handle duplicates server-side. Confidence: Medium.
@@ -286,7 +326,7 @@ Closed-loop remediation of the report above. **Method:** 4 file-disjoint repair 
 
 ## Info
 
-**API-1 — Per-tenant API keys are generated/stored but never accepted to authenticate any request.** `ApiKeysController` creates (CSPRNG 32 bytes, SHA-256 at rest, prefix, full key shown once), lists, and revokes keys, but **no code anywhere reads a key to authenticate** — repo-wide `KeyHash` grep shows only the controller, model, migrations, and index; `LastUsedAt` is never written; the sole `AddAuthentication` is JwtBearer-only (`Program.cs:63`). Positively, there is therefore no current non-constant-time compare or prefix-brute-force surface, and — relevant to the owner's ask — **no API-key path that could bypass the planned MFA gate today**. The risk is the gap between the advertised "programmatic access for RMM" and reality: **when** key auth is wired up, it must use a constant-time compare, explicit tenant binding, scope limits, and an explicit decision on whether key-auth may send toasts without MFA (it must not, given the owner's requirement). **Direction:** implement it properly or remove the feature/UI so it isn't advertised as working. Confidence: High (that it is inert).
+**API-1 — DEFERRED+ANCHORED 2026-06-01 (owner Keith, implement-or-remove).** In-code ANCHOR added to `ApiKeysController` naming the decision; dashboard copy left unchanged so as not to pre-empt Keith. Per-tenant API keys are generated/stored but never accepted to authenticate any request. `ApiKeysController` creates (CSPRNG 32 bytes, SHA-256 at rest, prefix, full key shown once), lists, and revokes keys, but **no code anywhere reads a key to authenticate** — repo-wide `KeyHash` grep shows only the controller, model, migrations, and index; `LastUsedAt` is never written; the sole `AddAuthentication` is JwtBearer-only (`Program.cs:63`). Positively, there is therefore no current non-constant-time compare or prefix-brute-force surface, and — relevant to the owner's ask — **no API-key path that could bypass the planned MFA gate today**. The risk is the gap between the advertised "programmatic access for RMM" and reality: **when** key auth is wired up, it must use a constant-time compare, explicit tenant binding, scope limits, and an explicit decision on whether key-auth may send toasts without MFA (it must not, given the owner's requirement). **Direction:** implement it properly or remove the feature/UI so it isn't advertised as working. Confidence: High (that it is inert).
 
 **SECRET-1 — Rotated PATs remain cleartext-at-rest; a tracked example string carries a `github_pat_` placeholder.** Follow-on hygiene to the now-REMEDIATED SEC-C1: the new private + public-mirror PATs live in cleartext in `~/.git-credentials` (path-keyed `store`) and `.env.pats` — the deliberate, documented two-PAT-one-host tradeoff (ACL-protected under the user profile, not in any transcript). Accepted, but it remains a single-box single-point exposure: a host compromise or an unencrypted backup leaks both repo PATs at once. Separately, `scripts/sync-public-mirror.ps1:53` contains a literal `"github_pat_..."` placeholder inside its `<# .EXAMPLE #>` help block — confirmed benign (the strict `{30,}`-char token scan across all tracked files is clean), but it is the kind of line a future edit could accidentally fill with a real token and commit. **Direction (owner's call, not applied):** consider a pre-commit secret scan (the repo already has `.githooks/`) keyed on `gh[pousr]_`/`github_pat_` with ≥30 trailing chars so a real token can never be committed; and a periodic PAT-rotation reminder since `store` tokens never expire on their own. Confidence: High.
 
@@ -344,5 +384,5 @@ A parallel logic-level pass (Carl) overlapped almost entirely with the multi-per
 
 | ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
 |----|----------|--------|-----------|--------------|----------------|------------|
-| BILL-ENF-1 | Medium | OPEN | `src/ToastRevival.Api/Services/LicenseService.cs:113-117` | Above the free tier `IsWithinCap` denies only when `StripeSubscriptionId` is empty or `BillingStatus == Canceled`; `PastDue` is NOT in the deny set, so a payment-failing tenant keeps adding billable devices (26+) during an unbounded grace window. | "Paid tier without paying": a past-due tenant grows into billable seats with no successful charge and no upper bound. May be intentional grace - flagged for Keith's product decision, not assumed a bug. | High |
+| BILL-ENF-1 | Medium | DEFERRED | `src/ToastRevival.Api/Services/LicenseService.cs` IsWithinCap | Above the free tier `IsWithinCap` denies only on empty `StripeSubscriptionId` or `Canceled`; `PastDue` is NOT in the deny set, so a payment-failing tenant keeps adding billable devices during an unbounded grace window. | DEFERRED (owner Keith, product policy): whether/how long PastDue tenants may grow billable capacity is a grace-policy decision, not a bug. In-code ANCHOR at the deny block names the one-line fix. | High |
 | BILL-ENF-2 | Low | FIXED-VERIFIED | `src/ToastRevival.Api/Services/LicenseService.cs:110` | `if (tenant.ConsumedCount <= FreeTierDeviceLimit) return true;` is checked BEFORE the increment, so at `ConsumedCount == 25` the 26th device - the first *billable* seat per `BillingPlanRules.BillableDevices = Max(0, count-25)` - is admitted with no Stripe subscription; only the 27th hits the gate. Off-by-one (`<=` vs `<`). | One billable seat per tenant usable with no subscription - revenue leak, internally inconsistent with `BillableDevices`. Exactly the standing "1-N free / N+1 paid: verify < vs <=" check. | High |

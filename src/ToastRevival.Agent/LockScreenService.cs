@@ -29,7 +29,7 @@ internal static class LockScreenService
     private const long   MaxBytes     = 5 * 1024 * 1024;
     private static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(30);
 
-    public static async Task ApplyAsync(LockScreenConfig? config, CancellationToken ct)
+    public static async Task ApplyAsync(LockScreenConfig? config, string serverUrl, CancellationToken ct)
     {
         var dir          = ConfigStore.GetConfigDirectory();
         var currentPath  = Path.Combine(dir, CurrentFile);
@@ -49,6 +49,23 @@ internal static class LockScreenService
             DiagLog.Write($"LockScreen: invalid image url '{config.ImageUrl}'");
             return;
         }
+
+        // FIX-AGT-4 (2026-06-01): host-pin the fetch to our trusted ServerUrl. The
+        // appearance channel is TLS-authenticated but UNSIGNED (no HMAC, unlike the
+        // toast path), so a TLS-trust compromise could repoint ImageUrl at an attacker
+        // host. Re-base the image PATH onto ServerUrl so the GET can only ever hit our
+        // own origin, whatever host the payload claims — the image is same-origin
+        // (/assets/lockscreen/, served by the same server the agent already trusts).
+        // (End-to-end HMAC signing of the whole appearance config is the full fix — a
+        // versioned server+agent rollout; see REVIEW_LEDGER AGT-4 remainder, owner: Keith.)
+        if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out var serverUri))
+        {
+            DiagLog.Write($"LockScreen: invalid server url '{serverUrl}'");
+            return;
+        }
+        if (!string.Equals(uri.Host, serverUri.Host, StringComparison.OrdinalIgnoreCase))
+            DiagLog.Write($"LockScreen: image host '{uri.Host}' != server '{serverUri.Host}' — pinning to server origin.");
+        uri = new Uri(serverUri, uri.PathAndQuery);
 
         byte[] bytes;
         try
@@ -125,7 +142,9 @@ internal static class LockScreenService
     /// branding state. Best-effort; never throws. Calling this is identical to
     /// disabling the feature, so it shares the exact restore path.
     /// </summary>
-    public static Task RevertAsync(CancellationToken ct) => ApplyAsync(null, ct);
+    // Disable/restore path: config is null, so ApplyAsync early-returns before the
+    // host-pin ever reads serverUrl — an empty origin here is intentional and unused.
+    public static Task RevertAsync(CancellationToken ct) => ApplyAsync(null, string.Empty, ct);
 
     private static async Task RestoreIfNeededAsync(string currentPath, string originalPath, string hashPath)
     {

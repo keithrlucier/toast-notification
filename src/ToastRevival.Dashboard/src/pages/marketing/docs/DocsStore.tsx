@@ -97,9 +97,8 @@ export default function DocsStore() {
 
       <h2 id="auto-update">Auto-update</h2>
       <p>
-        Microsoft Store installs auto-update through the Store itself. The Velopack auto-updater is no-op when the
-        package is installed via Store (<code>IsInstalled = false</code> in Velopack terms). New agent versions roll
-        out through the Store update queue with no per-endpoint action required.
+        Microsoft Store installs auto-update through the Store itself. New agent versions roll out through the
+        Store update queue with no per-endpoint action required.
       </p>
 
       <Callout kind="warning" title="Store-managed updates">

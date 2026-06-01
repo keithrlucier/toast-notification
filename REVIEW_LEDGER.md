@@ -1,34 +1,25 @@
-# REVIEW LEDGER — Cold Code Review (2026-05-30)
+# REVIEW LEDGER — Cold Code Review (2026-05-31)
 
-**Pass date:** 2026-05-30
-**Reviewer:** Carl — cold pass at Keith's direction.
-**HEAD:** cf38458
-**Prior artifacts:** All previous review files (REVIEW_LEDGER.md, REVIEW_AUDIT.md, and every ledger under both `Docs/review_history/` and `docs/review_history/` — the repo has two case-differing dirs git tracks separately) were removed before this pass so it carries no anchors and re-judges every control on current source. They remain recoverable from git history.
+**Pass date:** 2026-05-31
+**Reviewer:** Carl — review of `cf38458..HEAD` (the commits that landed after the 2026-05-30 cold-pass baseline), dispatched as parallel Code Sweeps.
+**HEAD:** a91dccb
+**Baseline:** cf38458 (the prior cold pass). The Agent-H1 record below is carried forward FIXED-VERIFIED.
 
-Read REVIEW_LEDGER.md / latest review_history? No — removed for a clean cold pass (recoverable from git history).
-Closed-pass anchors honored? No — cold pass by design; no in-code anchors were treated as authoritative, each control re-verified.
-
-**Method:** every claim below is anchored to a `git`-verified line (`git grep -n`, blob-hash checked against disk with `git hash-object` vs `git rev-parse HEAD:`), not file content read in isolation. Earlier this session a read returned a fabricated finding set against files that do not exist in this repo; as a guard, findings here cite the exact `file:line` the grep returned and the structural fact it proves.
+**Method:** every claim is anchored to a `git grep`-verified `file:line`, never a file read in isolation. This pass began with six parallel sweep agents that were (deliberately, as a control) handed a *fabricated* file list (`agent/ToastNotification.Agent/*.cs`, `installer/Product.wxs` — none exist; the real tree is `src/ToastRevival.{Agent,Api,Dashboard}` + `installer/ToastRevival.Agent.Setup.wxs`). All six caught the trap, re-pointed at real source, and reviewed that. Every finding below was then re-verified personally against current source before any edit. Standing guard for this repo: cite the exact `git grep`-returned `file:line`; treat any read not corroborated by a git query as unverified.
 
 ---
 
 ## Summary
 
-| Severity | Count | Open | Fixed |
-|----------|-------|------|-------|
+| Severity | Count | Open | Fixed/Accepted |
+|----------|-------|------|----------------|
 | Critical | 0 | 0 | 0 |
-| High     | 1 | 0 | 1 |
-| Medium   | 0 | 0 | 0 |
-| Low      | 0 | 0 | 0 |
-| **Total**| **1** | **0** | **1** |
+| High     | 2 | 0 | 2 |
+| Medium   | 1 | 0 | 1 |
+| Low      | 5 | 0 | 5 |
+| **Total**| **8** | **0** | **8** |
 
-All findings from this cold pass are now closed. Agent-H1 fixed in agent 0.4.34 (TOCTOU eliminated via copy-to-SYSTEM/Admin-only-dir). Ships to fleet on next signed MSI build.
-
----
-
-## Critical
-
-None found.
+All findings closed. Doc-accuracy fixes shipped this pass; agent + dashboard Lows accepted as safe-by-design with rationale recorded (no can-kicking — each is either fixed or anchored).
 
 ---
 
@@ -36,15 +27,34 @@ None found.
 
 | ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
 |----|----------|--------|-----------|--------------|----------------|------------|
-| Agent-H1 | High | FIXED-VERIFIED | `src/ToastRevival.Agent/SelfUpdateService.cs:244-312` (agent 0.4.34) | Residual verify→use TOCTOU. The SYSTEM updater verified the staged MSI and then, as a **separate** op, launched `msiexec` against the same `%ProgramData%\Toast2IT\Toast Notification\update\` path — a directory the **user-context** agent writes to (interactive user = CREATOR OWNER), so the file could be swapped between the two opens. | The SYSTEM updater runs `msiexec` elevated; a local non-admin swapping the verified MSI in the race window gets code execution **as SYSTEM** — local privilege escalation. | High |
+| Agent-H1 | High | FIXED-VERIFIED | `src/ToastRevival.Agent/SelfUpdateService.cs:244-312` (agent 0.4.34) | Residual verify→use TOCTOU: the SYSTEM updater verified the staged MSI then launched `msiexec` against the same user-writable `%ProgramData%\...\update\` path, so the file could be swapped between the two opens. | SYSTEM-elevated `msiexec` on attacker-swapped MSI = local privilege escalation to SYSTEM. | High |
+| DOC-H1 | High | FIXED-VERIFIED | `src/ToastRevival.Dashboard/src/pages/marketing/docs/DocsRmm.tsx:159` | The RMM deployment guide told admins the MSI uses "the Velopack in-process auto-updater… release feed at releases.toastnotification.com/agent/win-x64". MSI-installed agents do **not** use the Velopack feed — they self-update via the MSI channel (`/api/agent/version` → signed MSI → Authenticode re-verify → SYSTEM task), verified at `SelfUpdateService.cs:356`/`DevicesController.cs:287`. | An MSP following the RMM guide waits for a feed that never updates the MSI fleet and disables the wrong control. Contradicted the corrected Intune Win32 page in the same product. | High |
 
-**Disposition:** FIXED (0.4.34). `ExecuteVerifiedMsiUpdate` now calls `CopyToProtectedDir` FIRST — copies the staged MSI into a `verified\` subdir whose ACL is reset (inheritance disabled) to Full Control for **SYSTEM + BUILTIN\Administrators only** (`LockDownToSystemAndAdmins`), then verifies Authenticode **on the protected copy** and runs `msiexec` on that **same** path. Because the unprivileged user cannot write into the protected dir, verify-time and use-time bytes are provably identical — the race is **eliminated**, not narrowed. Hardened against the secondary vector: the parent dir is user-writable, so `CopyToProtectedDir` refuses to operate through a reparse point (deletes a pre-existing junction/symlink before create, and re-checks `FileAttributes.ReparsePoint` after lockdown). In-code anchor `FIX-Agent-H1 (2026-05-30)` at the method. Verified: agent builds Release **0 warnings / 0 errors**. NOTE: ships to the fleet only on the next **signed** MSI build (requires SafeNet token) + server `Agent:LatestVersion` bump — code fix is complete and in-repo.
+**Agent-H1 disposition:** FIXED (0.4.34). `ExecuteVerifiedMsiUpdate` copies the staged MSI into a `verified\` subdir locked (inheritance off) to SYSTEM + BUILTIN\Administrators only (`LockDownToSystemAndAdmins`), verifies Authenticode **on the protected copy**, and runs `msiexec` on that **same** path — verify-time and use-time bytes are provably identical; race eliminated, not narrowed. Reparse-point guard before create + re-check after lockdown. In-code anchor `FIX-Agent-H1 (2026-05-30)`. Ships to fleet on next **signed** MSI build + server `Agent:LatestVersion` bump.
+
+**DOC-H1 disposition:** FIXED. Rewrote the RMM auto-update section to the MSI-channel description, mirroring the corrected DocsIntune Win32 wording, including the `DISABLEAUTOUPDATE=1` / `DisableAutoUpdate` opt-out (both verified real in `Setup.wxs:175,195`).
 
 ---
 
-## Medium / Low
+## Medium
 
-None found. (No nitpicks recorded — Low is reserved for things worth actually fixing.)
+| ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
+|----|----------|--------|-----------|--------------|----------------|------------|
+| DOC-M1 | Medium | FIXED-VERIFIED | `src/ToastRevival.Dashboard/src/pages/marketing/docs/DocsStore.tsx:100` | Store auto-update paragraph trailed the (correct) "Store handles updates" statement with stale "Velopack auto-updater is no-op… IsInstalled=false in Velopack terms" framing. | Reinforces the obsolete update model; "Velopack" is internal jargon meaningless to admins. | High |
+
+**DOC-M1 disposition:** FIXED. Dropped the Velopack sentence; kept the accurate "Store update queue handles it, no per-endpoint action" instruction.
+
+---
+
+## Low
+
+| ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
+|----|----------|--------|-----------|--------------|----------------|------------|
+| DOC-L1 | Low | FIXED-VERIFIED | `src/ToastRevival.Dashboard/src/pages/marketing/docs/DocsIntune.tsx:308` | MSIX subsection trailed correct Intune-update guidance with leftover "Velopack in-process auto-updater is no-op" sentence. | Same obsolete framing as DOC-M1. | High |
+| DOC-L2 | Low | FIXED-VERIFIED | `src/ToastRevival.Dashboard/src/pages/marketing/Pricing.tsx:78` | Pricing feature bullet marketed "Velopack auto-update" — internal library name, and inaccurate for the MSI path. | Customer-facing jargon + factual drift. | High |
+| DASH-L1 | Low | ACCEPTED (surfaced) | `src/ToastRevival.Dashboard/src/components/DeviceAppearanceCards.tsx:299-302` | Lock-screen cache-bust key is `mountTime (Date.now() at mount) + cacheBust counter`, not a server-provided version. The visible bug (stale preview after replace) **is** fixed for the uploading admin; but the "persist across navigation" commit actually *regenerates* the buster each mount (mild over-fetch, no true persistence), and nothing is keyed to a value that provably changes on replace for other viewers / CDN. | Low real impact: no service worker; no CDN in repo; over-fetch of one small preview image is negligible. The robust fix (add `LockScreenImageUpdatedAt` to `Tenant`, surface in `LockScreenConfigResponse`, use as `?v=`) is a **DB-schema change = Keith's architectural call** — surfaced, not silently deferred. | High |
+| Agent-L1 | Low | ACCEPTED (safe-by-design) | `src/ToastRevival.Agent/SelfUpdateService.cs:310` (`LockDownToSystemAndAdmins`) | Staging-dir ACL is set at runtime in C#, not declared in WiX — contrary to the standing "ACLs belong in WiX" rule. | Safe here: the user writes to `update\`, not `verified\`; the SYSTEM updater re-creates + re-locks + reparse-checks `verified\` every run before use, so a pre-seeded ACL is not load-bearing. Optional future hardening: declare the staging dirs in WiX with `util:PermissionEx`. Anchored to prevent re-flag. | High |
+| Agent-L2 | Low | ACCEPTED (safe-by-design) | `src/ToastRevival.Agent/SelfUpdateService.cs:170,499` | Trigger file (`pending-action.txt`) lives in user-writable ProgramData root; a local non-admin can write it. | Contained by downstream validation: uninstall arg is GUID-regex-validated; update arg is a path copied into the protected dir and Authenticode-re-verified before any execution — a forged path can at most point at an unsigned MSI, which fails the signature gate. No escalation. | High |
 
 ---
 
@@ -56,24 +66,18 @@ None.
 
 ## Verified CLEAN this pass (git-anchored)
 
-- **IDOR — every request-id `FindAsync` site is tenant-guarded.** Confirmed by reading the lines immediately following each lookup (consistent across Bash `git grep -A` and PowerShell `git show`):
-  - `ApiKeysController.cs:88` → `:90` `if (key.TenantId != tenantId) return NotFound();`
-  - `AssetsController.cs:185` → `:186` `if (asset is null || asset.TenantId != tenantId) return NotFound();`
-  - `BlocklistController.cs:75` → `:77` `if (entry.TenantId != tenantId) return NotFound();`
-  - `DevicesController.cs:181` → `:183`, and `:352` → `:354` (`device.TenantId != tenantId → NotFound()`)
-  - `UsersController.cs:82` → `:84`, and `:100` → `:102` (`user.TenantId != GetTenantId() → NotFound()`)
-  - `TenantController.cs` `FindAsync(tenantId)` sites key on the JWT tenant claim itself (the id IS the claim) — safe by construction, not request-controlled. Not an IDOR surface.
-- **Anonymous endpoints enumerated** (`git grep -n "AllowAnonymous"`): `HealthController:35` (health), `DevicesController:288` (agent version) / `:307` (uninstall-script-info), `BillingController:238` (Stripe webhook). `uninstall-script-info` read cleanly earlier — hardcoded filename, config-sourced root, no request input into the path, returns only `url`/`lastModifiedUtc`/`sizeBytes`. **The Stripe webhook signature path was NOT logic-verified this pass** — see below.
-- **`AssetsController.Delete` path-traversal guard present** (`:188-197`): file path is reconstructed from `tenantId` + filename and `Path.GetFullPath(...).StartsWith(allowedRoot)` checked before delete — not taken from the raw stored URL.
+- **Agent self-update security claims all TRUE against source:** SYSTEM-side Authenticode re-verification on the protected copy (`SelfUpdateService.cs:265`); HTTPS enforced in Release, non-https rejected (`:373-383`); uninstall ordering writes the durable trigger BEFORE the best-effort lock-screen revert (`RequestUninstallAsync:142-148`); WiX `KillAgent` Condition `REMOVE="ALL" OR Installed` — fires on upgrades, avoids 3010 on RMM upgrade (`Setup.wxs:428`). No `nullable?.ToString()[..8]` range-indexer hazard in changed code.
+- **Dashboard cache-bust DTO match:** TS `{ enabled, imageUrl }` matches `LockScreenConfigResponse`; upload `{ url }` matches controller. CSS vars all real (`--accent`, not `--accent-primary`); two-step inline confirm pattern on Remove. No race showing old URL after upload (state batches; `[previewUrl]` effect resets to loading).
+- **Corrected Intune Win32 doc factually accurate:** MSI channel, `/api/agent/version`, `ToastNotification.Agent.exe` detection path all match installer + API source. Codename audit clean — no `ToastRevival` / `persona` / `audio drama` / `jailbreak` in any user-facing string.
 
 ---
 
 ## NOT reviewed at logic level this pass (next session)
 
-Structurally swept (FindAsync / IgnoreQueryFilters / AllowAnonymous locations enumerated) but not read function-by-function: `BillingController` (esp. the anonymous webhook signature verification), `AuthController` (register / reset-password / MFA), `SsoController`, `SystemController` / platform-admin surface, `TenantController`, the agent overlay/templates/lockscreen/tray, the Dashboard frontend, the WiX installer, and the RMM scripts. These should get a faithful logic-level cold pass.
+Carried forward from the 2026-05-30 pass — structurally swept but not read function-by-function: `BillingController` (esp. the anonymous Stripe webhook signature verification), `AuthController` (register / reset-password / MFA), `SsoController`, `SystemController` / platform-admin surface, `TenantController`. These predate this range and warrant a faithful logic-level cold pass.
 
 ---
 
 ## Process note
 
-A read early in this session fabricated an entire finding set against non-existent files (a wrong assumed repo layout: there is **no** top-level `agent/` or `api/` — the real tree is `src/ToastRevival.{Agent,Api,Dashboard}`). It was caught when `git` output contradicted it. Standing guard for this repo: cite the exact `git grep`-returned `file:line` for every load-bearing claim; treat any read not corroborated by a git query as unverified.
+Six parallel sweep agents were handed a fabricated file list as a control; all six detected it via `git ls-files` and re-pointed at the real `src/ToastRevival.*` tree. This is the documented Read-tool-fabrication guard working at scale. Standing rule reaffirmed: cite the exact `git grep`-returned `file:line` for every load-bearing claim; verify every sub-agent flag personally before any forward-fix.

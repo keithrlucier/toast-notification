@@ -75,7 +75,7 @@ const INCLUSIONS = [
       'MSIX through the Microsoft Store',
       'Intune Win32 and MSIX LOB compatible',
       'RMM silent install with CLIENTID, SERVERURL, and ENROLLMENTKEY properties',
-      'Velopack auto-update with enterprise opt-out registry toggle',
+      'Automatic signed-MSI agent updates with enterprise opt-out registry toggle',
     ],
   },
   {

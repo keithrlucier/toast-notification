@@ -29,9 +29,18 @@ public class NotificationHub : Hub
         var tenantId = GetTenantId();
         var type = Context.User?.FindFirstValue("type");
 
-        // Join tenant group so dashboard users receive real-time updates
+        // tenant-{id} carries agent-facing pushes (e.g. AppearanceUpdated) that
+        // BOTH devices and dashboard users may consume, so every connection joins
+        // it. Dashboard-only recon events (DeviceConnected/DeviceDisconnected/
+        // DeliveryUpdate) go to dashboard-{id}, which ONLY non-device (user)
+        // connections join — a device must not be able to harvest other devices'
+        // online/offline transitions or in-flight notification IDs.
         if (tenantId.HasValue)
+        {
             await Groups.AddToGroupAsync(Context.ConnectionId, $"tenant-{tenantId}");
+            if (type != "device")
+                await Groups.AddToGroupAsync(Context.ConnectionId, $"dashboard-{tenantId}");
+        }
 
         if (type == "device")
         {
@@ -58,7 +67,7 @@ public class NotificationHub : Hub
 
                 // Notify dashboard users in the tenant that a device came online
                 if (tenantId.HasValue)
-                    await Clients.Group($"tenant-{tenantId}").SendAsync("DeviceConnected", deviceId);
+                    await Clients.Group($"dashboard-{tenantId}").SendAsync("DeviceConnected", deviceId);
 
                 await UpdateLastPingAsync(deviceId.Value);
                 _logger.LogInformation("Device {DeviceId} connected (tenant {TenantId})", deviceId, tenantId);
@@ -77,7 +86,7 @@ public class NotificationHub : Hub
         {
             ConnectedDevices.TryRemove(deviceId.Value, out _);
             if (tenantId.HasValue)
-                await Clients.Group($"tenant-{tenantId}").SendAsync("DeviceDisconnected", deviceId);
+                await Clients.Group($"dashboard-{tenantId}").SendAsync("DeviceDisconnected", deviceId);
             _logger.LogInformation("Device {DeviceId} disconnected", deviceId);
         }
 
@@ -104,7 +113,7 @@ public class NotificationHub : Hub
             delivery.DeliveredAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
 
-            await Clients.Group($"tenant-{tenantId}")
+            await Clients.Group($"dashboard-{tenantId}")
                 .SendAsync("DeliveryUpdate", notificationId, deviceId, "delivered");
         }
     }
@@ -130,7 +139,7 @@ public class NotificationHub : Hub
             delivery.Action = action;
             await db.SaveChangesAsync();
 
-            await Clients.Group($"tenant-{tenantId}")
+            await Clients.Group($"dashboard-{tenantId}")
                 .SendAsync("DeliveryUpdate", notificationId, deviceId, action);
         }
     }

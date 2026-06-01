@@ -69,8 +69,8 @@ export default function Login() {
   const [loading,  setLoading]  = useState(false);
   const [ssoEnabled, setSsoEnabled] = useState(false);
 
-  // Step 2 state (SMS challenge)
-  const [step,        setStep]        = useState<'password' | 'sms'>('password');
+  // Step 2 state (SMS or authenticator challenge)
+  const [step,        setStep]        = useState<'password' | 'sms' | 'totp'>('password');
   const [pendingId,   setPendingId]   = useState('');
   const [maskedPhone, setMaskedPhone] = useState('');
   const [code,        setCode]        = useState('');
@@ -108,8 +108,11 @@ export default function Login() {
         setMaskedPhone(result.maskedPhone);
         setStep('sms');
         startCooldown();
+      } else if ('step' in result && result.step === 'totp_required') {
+        setPendingId(result.userId);
+        setStep('totp');
       } else {
-        // No phone on file — direct login
+        // No second factor on file — direct login
         setSession(result as import('../api/auth').AuthResponse);
         navigate(from, { replace: true });
       }
@@ -126,6 +129,21 @@ export default function Login() {
     setLoading(true);
     try {
       const auth = await authApi.loginVerifySms({ userId: pendingId, code: code.trim() });
+      setSession(auth);
+      navigate(from, { replace: true });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Verification failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTotpVerify = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const auth = await authApi.loginVerifyTotp({ userId: pendingId, code: code.trim() });
       setSession(auth);
       navigate(from, { replace: true });
     } catch (err) {
@@ -232,7 +250,7 @@ export default function Login() {
                 </>
               )}
             </form>
-          ) : (
+          ) : step === 'sms' ? (
             <form onSubmit={handleSmsVerify}>
               {error && <div className="error-banner">{error}</div>}
               <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.55 }}>
@@ -280,6 +298,38 @@ export default function Login() {
                 </button>
               </div>
             </form>
+          ) : (
+            <form onSubmit={handleTotpVerify}>
+              {error && <div className="error-banner">{error}</div>}
+              <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.55 }}>
+                Enter the 6-digit code from your authenticator app to complete sign-in.
+              </p>
+              <div className="field" style={{ marginBottom: 24 }}>
+                <label htmlFor="totp-code">Authenticator code</label>
+                <input
+                  id="totp-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required
+                  maxLength={6}
+                  pattern="\d{6}"
+                  value={code}
+                  onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
+                  autoFocus
+                  style={{ fontFamily: 'var(--font-mono)', letterSpacing: '0.15em', fontSize: 20 }}
+                />
+              </div>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                style={{ width: '100%', justifyContent: 'center', padding: '12px 16px' }}
+                disabled={loading || code.length < 6}
+              >
+                {loading ? <span className="spinner" /> : 'Verify'}
+              </button>
+            </form>
           )}
         </div>
 
@@ -292,7 +342,7 @@ export default function Login() {
           </p>
         )}
 
-        {step === 'sms' && (
+        {step !== 'password' && (
           <p style={{ textAlign: 'center', marginTop: 20, color: 'var(--text-dim)', fontSize: 13 }}>
             <button
               type="button"

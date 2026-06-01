@@ -70,6 +70,15 @@ public record LoginSmsVerifyRequest(
     [Required] Guid UserId,
     [Required] string Code);
 
+// Authenticator (TOTP) challenge returned by Login when the user has a confirmed
+// MfaSecret. Takes precedence over the SMS challenge. Step == "totp_required".
+public record LoginTotpChallenge(Guid UserId, string Step);
+
+// Authenticator OTP verify — completes login
+public record LoginTotpVerifyRequest(
+    [Required] Guid UserId,
+    [Required] string Code);
+
 public record AuthResponse(
     string Token,
     string RefreshToken,

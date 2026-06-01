@@ -49,6 +49,10 @@ public class UsersController : ControllerBase
     {
         if (!IsAdmin()) return Forbid();
 
+        // Privilege-ceiling: a caller may never assign a role above their own.
+        // Prevents an Admin from creating a SuperAdmin.
+        if (req.Role > GetCallerRole()) return Forbid();
+
         var tenantId = GetTenantId();
 
         if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == req.Email))
@@ -78,6 +82,10 @@ public class UsersController : ControllerBase
 
         var callerId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         if (id == callerId) return BadRequest("Cannot change your own role.");
+
+        // Privilege-ceiling: a caller may never promote a user above their own
+        // role. Prevents an Admin from minting a SuperAdmin.
+        if (req.Role > GetCallerRole()) return Forbid();
 
         var user = await _db.Users.FindAsync(id);
         if (user is null) return NotFound();
@@ -111,9 +119,8 @@ public class UsersController : ControllerBase
     private Guid GetTenantId() =>
         Guid.Parse(User.FindFirstValue("tenantId")!);
 
-    private bool IsAdmin()
-    {
-        var role = Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
-        return role >= UserRole.Admin;
-    }
+    private UserRole GetCallerRole() =>
+        Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
+
+    private bool IsAdmin() => GetCallerRole() >= UserRole.Admin;
 }

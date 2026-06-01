@@ -40,6 +40,14 @@ builder.Services.AddIdentityCore<AppUser>(opts =>
     opts.Password.RequiredLength = 8;
     opts.Password.RequireUppercase = false;
     opts.Password.RequireNonAlphanumeric = false;
+
+    // Brute-force lockout. CheckPasswordAsync/SMS-code verification call into
+    // UserManager lockout helpers in AuthController; these options govern the
+    // threshold and window. AllowedForNewUsers so accounts are protected from
+    // creation (CreateAsync sets LockoutEnabled=true by default).
+    opts.Lockout.MaxFailedAccessAttempts = 5;
+    opts.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+    opts.Lockout.AllowedForNewUsers = true;
 })
 .AddRoles<IdentityRole<Guid>>()
 .AddEntityFrameworkStores<AppDbContext>()
@@ -53,11 +61,35 @@ var jwtKey = builder.Configuration["Jwt:Key"]
 // silently falls through to whatever short placeholder sits in appsettings.json.
 // HMAC-SHA256 wants 32+ bytes of key material; anything shorter weakens the
 // signature beyond useful guarantee. Block it.
-if (!builder.Environment.IsDevelopment() && jwtKey.Length < 32)
+//
+// The committed placeholder is 63 chars, so the length check alone lets it pass.
+// Reject the known placeholder (and any value still carrying the REPLACE marker
+// or other obvious default/low-entropy sentinels) so a misconfigured deploy
+// fails closed at startup instead of signing tokens with a public key.
+if (!builder.Environment.IsDevelopment())
 {
-    throw new InvalidOperationException(
-        "Jwt:Key must be at least 32 characters in non-Development environments. " +
-        "Override via the Jwt__Key environment variable.");
+    if (jwtKey.Length < 32)
+    {
+        throw new InvalidOperationException(
+            "Jwt:Key must be at least 32 characters in non-Development environments. " +
+            "Override via the Jwt__Key environment variable.");
+    }
+
+    const string knownPlaceholder =
+        "REPLACE-THIS-WITH-A-STRONG-SECRET-KEY-IN-PRODUCTION-MIN-32-CHARS";
+    var looksLikePlaceholder =
+        string.Equals(jwtKey, knownPlaceholder, StringComparison.Ordinal)
+        || jwtKey.Contains("REPLACE", StringComparison.OrdinalIgnoreCase)
+        || jwtKey.Contains("CHANGEME", StringComparison.OrdinalIgnoreCase)
+        || jwtKey.Contains("PLACEHOLDER", StringComparison.OrdinalIgnoreCase);
+
+    if (looksLikePlaceholder)
+    {
+        throw new InvalidOperationException(
+            "Jwt:Key is set to a default/placeholder value in a non-Development " +
+            "environment. Set a strong, unique secret via the Jwt__Key environment " +
+            "variable before deploying.");
+    }
 }
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -325,6 +357,15 @@ app.Use(async (ctx, next) =>
     // Permissions-Policy: the API has no need for camera/mic/geolocation
     // surfaces. Disabling closes any embedded-context probe vector.
     headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+    // Content-Security-Policy: lock down script/object/base/frame-ancestors for
+    // the JSON API and the SPA it may serve. style/font/img relaxations cover the
+    // SPA's Google Fonts usage and data:/https: images (toast hero/logo URLs).
+    headers["Content-Security-Policy"] =
+        "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; " +
+        "frame-ancestors 'none'; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' https://fonts.gstatic.com; " +
+        "img-src 'self' data: https:";
     await next();
 });
 

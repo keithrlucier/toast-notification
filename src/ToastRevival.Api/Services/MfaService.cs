@@ -25,6 +25,28 @@ public class MfaService
     }
 
     /// <summary>
+    /// Stateless TOTP check against an arbitrary base32 secret, with no replay
+    /// bookkeeping. Used to confirm a PENDING enrollment (AuthController.MfaEnrollConfirm)
+    /// where the secret isn't yet stored as AppUser.MfaSecret and there is no
+    /// LastTotpStep history to guard. Same ±1 step skew window as <see cref="Verify"/>.
+    /// </summary>
+    public bool VerifySecret(string? base32Secret, string code)
+    {
+        if (string.IsNullOrWhiteSpace(base32Secret)) return false;
+        if (string.IsNullOrWhiteSpace(code)) return false;
+
+        try
+        {
+            var totp = new Totp(Base32Encoding.ToBytes(base32Secret));
+            return totp.VerifyTotp(code.Trim(), out _, new VerificationWindow(previous: 1, future: 1));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Verifies a 6-digit TOTP code against the user's stored base32 secret
     /// and rejects replay within or before the same 30-second time-step.
     ///

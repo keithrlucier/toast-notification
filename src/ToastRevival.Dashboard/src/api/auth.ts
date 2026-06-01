@@ -49,8 +49,27 @@ export interface LoginSmsVerifyRequest {
   code: string;
 }
 
-// login returns either AuthResponse (no phone) or LoginSmsChallenge (phone confirmed)
-export type LoginResult = AuthResponse | LoginSmsChallenge;
+// Returned by login when the user has a confirmed authenticator (takes
+// precedence over the SMS challenge).
+export interface LoginTotpChallenge {
+  userId: string;
+  step: 'totp_required';
+}
+
+export interface LoginTotpVerifyRequest {
+  userId: string;
+  code: string;
+}
+
+export interface MfaStatusResponse {
+  enabled: boolean;
+  tenantRequired: boolean;
+  hasPhone: boolean;
+}
+
+// login returns AuthResponse (no second factor), LoginSmsChallenge (phone
+// confirmed), or LoginTotpChallenge (authenticator enrolled)
+export type LoginResult = AuthResponse | LoginSmsChallenge | LoginTotpChallenge;
 
 export const authApi = {
   login: (req: LoginRequest) =>
@@ -59,11 +78,23 @@ export const authApi = {
   loginVerifySms: (req: LoginSmsVerifyRequest) =>
     api.post<AuthResponse>('/api/auth/login/verify-sms', req),
 
+  loginVerifyTotp: (req: LoginTotpVerifyRequest) =>
+    api.post<AuthResponse>('/api/auth/login/verify-totp', req),
+
   register: (req: RegisterRequest) =>
     api.post<AuthResponse>('/api/auth/register', req),
 
+  mfaStatus: () =>
+    api.get<MfaStatusResponse>('/api/auth/mfa/status'),
+
   mfaEnroll: () =>
     api.post<MfaEnrollResponse>('/api/auth/mfa/enroll'),
+
+  mfaEnrollConfirm: (req: MfaVerifyRequest) =>
+    api.post<MfaVerifyResponse>('/api/auth/mfa/enroll/confirm', req),
+
+  mfaDisable: (req: MfaVerifyRequest) =>
+    api.post<void>('/api/auth/mfa/disable', req),
 
   mfaVerify: (req: MfaVerifyRequest) =>
     api.post<MfaVerifyResponse>('/api/auth/mfa/verify', req),

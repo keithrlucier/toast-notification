@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
@@ -12,11 +13,22 @@ namespace ToastRevival.Api.Controllers;
 [Route("api/[controller]")]
 [Authorize]
 [EnableRateLimiting("tenant-per-minute")]
-public class AnalyticsController : ControllerBase
+public class AnalyticsController : ControllerBase, IActionFilter
 {
     private readonly AppDbContext _db;
 
     public AnalyticsController(AppDbContext db) => _db = db;
+
+    // Token-type confinement: tenant analytics is a dashboard surface. A device
+    // JWT (type="device") satisfies the controller's [Authorize] but must never
+    // read tenant-wide analytics. Reject device tokens before any action runs.
+    public void OnActionExecuting(ActionExecutingContext context)
+    {
+        if (User.FindFirstValue("type") == "device")
+            context.Result = new ForbidResult();
+    }
+
+    public void OnActionExecuted(ActionExecutedContext context) { }
 
     [HttpGet("summary")]
     public async Task<IActionResult> Summary([FromQuery] int days = 30)

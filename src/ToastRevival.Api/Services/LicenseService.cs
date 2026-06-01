@@ -107,7 +107,13 @@ public class LicenseService : ILicenseService
             return tenant.ConsumedCount < BillingPlanRules.TrialDeviceLimit;
 
         // Free tier: devices 1-25 always allowed, no Stripe required.
-        if (tenant.ConsumedCount <= BillingPlanRules.FreeTierDeviceLimit)
+        // ConsumedCount is the count BEFORE this registration's increment, so it
+        // is the index of the seat about to be taken. While < 25 devices are
+        // already registered, the next seat (1..25) is free. At ConsumedCount==25
+        // the next seat is device 26 — the first BILLABLE seat (BillableDevices =
+        // Max(0, count-25)) — so it must fall through to the subscription check.
+        // Using `<` (not `<=`) closes the off-by-one that admitted device 26 free.
+        if (tenant.ConsumedCount < BillingPlanRules.FreeTierDeviceLimit)
             return true;
 
         // Above free tier: a real Stripe subscription must exist and not be canceled.

@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { useAuth } from '../contexts/AuthContext';
+import MfaEnrollmentGate from './MfaEnrollmentGate';
 
 function roleLabel(role?: string, isPlatformAdmin?: boolean): string {
   if (isPlatformAdmin) return 'Platform Admin';
@@ -20,6 +21,7 @@ export default function Layout() {
 
   return (
     <div className="app-shell">
+      <MfaEnrollmentGate />
       <Sidebar />
       <section className="app-workspace">
         <header className="app-topbar">

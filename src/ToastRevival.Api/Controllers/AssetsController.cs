@@ -113,8 +113,13 @@ public class AssetsController : ControllerBase
         var filePath = Path.Combine(uploadDir, fileName);
         await System.IO.File.WriteAllBytesAsync(filePath, bytes);
 
-        // URL is absolute so the Windows agent can fetch it from a toast payload
-        var url = $"{Request.Scheme}://{Request.Host}/assets/{tenantId}/{fileName}";
+        // URL is absolute so the Windows agent can fetch it from a toast payload.
+        // CFG-4: build from the configured canonical origin (App:BaseUrl), NOT the
+        // request Host — AllowedHosts="*" makes Request.Host attacker-spoofable, which
+        // would otherwise bake a hostile origin into the durable AssetLibrary.Url that
+        // both the dashboard <img> and the agent hero-image fetch later load.
+        var baseUrl = (_config["App:BaseUrl"] ?? "https://toastnotification.com").TrimEnd('/');
+        var url = $"{baseUrl}/assets/{tenantId}/{fileName}";
 
         var moderationJson = JsonSerializer.Serialize(new
         {

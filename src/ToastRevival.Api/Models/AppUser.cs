@@ -14,7 +14,16 @@ public class AppUser : IdentityUser<Guid>
     public Guid TenantId { get; set; }
     public UserRole Role { get; set; } = UserRole.Technician;
     public bool IsPlatformAdmin { get; set; }
+    // The ACTIVE, confirmed authenticator (TOTP) secret. Non-null ⇔ MFA is enabled
+    // as a login factor AND usable for step-up elevation. Only ever written after
+    // the user proves possession by entering a valid code (MfaEnrollConfirm).
     public string? MfaSecret { get; set; }
+
+    // Enrollment in progress: the freshly-generated secret returned to the QR code,
+    // held here until the user confirms it with a valid code. Kept SEPARATE from
+    // MfaSecret so starting (and abandoning) a re-enrollment can never overwrite a
+    // working authenticator and lock the user out. Cleared on confirm or disable.
+    public string? MfaPendingSecret { get; set; }
 
     // Last TOTP time-step accepted by MfaService.Verify. RFC 6238 step =
     // floor(unixSeconds / 30). Verify rejects any code whose matched step is

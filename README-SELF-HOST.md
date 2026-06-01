@@ -132,8 +132,18 @@ pipeline, and the renewals, and deliver the signed agent from your portal.
 
 ## Reverse Proxy and TLS
 
-The compose stack serves HTTP on port 80. For production, put a reverse proxy in
-front and terminate TLS there. Example nginx upstream block:
+The compose stack serves cleartext **HTTP on port 80** — suitable for local and
+LAN-only evaluation only.
+
+> **A TLS terminator is REQUIRED in front of the container for production.** The
+> dashboard is the control plane: admins authenticate with JWTs that are sent on
+> every request. Served over cleartext HTTP those Admin JWTs (and the login
+> credentials that mint them) are exposed to anyone on the network path and can be
+> replayed to take over the tenant. Do **not** expose port 80 directly to the
+> internet — always front it with a reverse proxy that terminates TLS.
+
+For production, put a reverse proxy in front and terminate TLS there. Example
+nginx upstream block:
 
 ```nginx
 server {

@@ -1,0 +1,50 @@
+#!/bin/sh
+# SECRET-1: block commits that introduce a GitHub token.
+#
+# Scans the STAGED content (what is actually about to be committed) for GitHub
+# token patterns and aborts the commit if any is found. Prevents a repeat of the
+# SEC-C1 exposure (a write-capable PAT committed to the repo).
+#
+# Patterns:
+#   gh[pousr]_[A-Za-z0-9]{30,}   classic / fine-grained-prefixed tokens
+#                                (ghp_, gho_, ghu_, ghs_, ghr_)
+#   github_pat_[A-Za-z0-9_]{30,} fine-grained PATs
+#
+# The {30,} trailing-length requirement means the benign placeholder
+# "github_pat_..." (literal ellipsis) in scripts/sync-public-mirror.ps1 does NOT
+# match, so legitimate help text is not flagged.
+#
+# Enabled via:  git config core.hooksPath .githooks
+
+# Token regexes (ERE). Two alternatives kept separate for clarity.
+TOKEN_RE='gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}'
+
+# Scan only the staged additions (diff against HEAD, or the empty tree on the
+# very first commit). --no-color so ANSI codes can't split a token.
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    against=HEAD
+else
+    # SHA-1 of the empty tree — diff the whole initial commit.
+    against=$(git hash-object -t tree /dev/null)
+fi
+
+# Look only at added/changed lines (leading '+') in the staged diff.
+matches=$(git diff --cached --no-color "$against" \
+    | grep '^+' \
+    | grep -nE "$TOKEN_RE")
+
+if [ -n "$matches" ]; then
+    echo "ERROR: commit blocked — a GitHub token was detected in staged changes." >&2
+    echo "" >&2
+    echo "A string matching a GitHub token pattern (ghp_/gho_/ghu_/ghs_/ghr_ or" >&2
+    echo "github_pat_) is about to be committed. Committing credentials is forbidden" >&2
+    echo "(see SEC-C1). Remove the token, rotate it if it was ever real, and re-stage." >&2
+    echo "" >&2
+    echo "Offending staged line(s):" >&2
+    echo "$matches" >&2
+    echo "" >&2
+    echo "If this is a verified false positive, bypass with: git commit --no-verify" >&2
+    exit 1
+fi
+
+exit 0

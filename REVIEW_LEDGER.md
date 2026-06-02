@@ -24,14 +24,15 @@ contains an uppercase terminal token: `FIXED-VERIFIED`, `REMEDIATED`, `REJECTED-
 
 ## OPEN findings (live gauge source)
 
-**None — gauge → 0.** XT-1, the last open finding, was remediated in code and QA-verified on
-this 2026-06-02 remediation pass (details under **Closed this pass — XT-1** below).
+**None — gauge → 0.** XT-1, the last open finding, was remediated, QA-verified, and **deployed
+LIVE** on this 2026-06-02 remediation pass (details under **Closed this pass — XT-1** below).
 
-**NOTE — STAGED, not yet live.** The XT-1 fix is built + QA-gated but **not committed or
-deployed** (this pass stages the work and waits for Keith's "ship"). It goes live on a
-**server + dashboard deploy** — and the architect finding is that it needs **no MSI bump, no
-code-signing token, and no RMM reinstall**: the single-use token rides the existing
-`ENROLLMENTKEY` install plumbing, so the agent and WiX installer are untouched.
+**LIVE on TOASTWEB1 (v0.5.27, 2026-06-02).** Committed `b9dc8f2` → private `main`; API +
+dashboard deployed; **M17 applied on startup** (`CREATE TABLE EnrollmentTokens` in the journal);
+`/api/health` healthy; the new admin endpoints respond `401` (deployed + auth-gated); public
+mirror synced at tag `v0.5.27` (`6d7ae27`). The architect win held: **no MSI bump, no
+code-signing token, and no RMM reinstall** — the single-use token rides the existing
+`ENROLLMENTKEY` install plumbing, so the agent and WiX installer were untouched.
 
 _No open rows._
 
@@ -39,11 +40,11 @@ _No open rows._
 
 ## Closed this pass — 2026-06-02 (XT-1 remediation)
 
-- **XT-1** — FIXED-VERIFIED (code-complete + QA-gated; **STAGED**, ships on the next
-  server+dashboard deploy — **no MSI / signing token / RMM**) — per-device single-use
-  enrollment tokens replace reliance on the reusable per-tenant `EnrollmentKey`. Keith
-  approved the design on the 2026-06-02 call (opaque 32-byte token, single-use, 24h TTL,
-  dashboard-issued, admin-revocable) and chose **"cut it now."**
+- **XT-1** — FIXED-VERIFIED (**LIVE on TOASTWEB1, v0.5.27** — server + dashboard deployed;
+  **no MSI / signing token / RMM**) — per-device single-use enrollment tokens replace reliance
+  on the reusable per-tenant `EnrollmentKey`. Keith approved the design on the 2026-06-02 call
+  (opaque 32-byte token, single-use, 24h TTL, dashboard-issued, admin-revocable) and chose
+  **"cut it now."**
   **Code shipped:** `EnrollmentToken` model + EF migration **M17** (`EnrollmentTokens` table,
   unique `(TenantId, TokenHash)`, applies on API startup) + admin **issue/list/revoke**
   endpoints on `DevicesController` (admin-gated, tenant-scoped, audited) + an **Enrollment

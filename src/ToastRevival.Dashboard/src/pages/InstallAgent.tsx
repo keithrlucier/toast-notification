@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import DeployCommand from '../components/DeployCommand';
+import EnrollmentTokens from '../components/EnrollmentTokens';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function InstallAgent() {
@@ -44,6 +45,8 @@ export default function InstallAgent() {
       </div>
 
       <DeployCommand />
+
+      <EnrollmentTokens />
 
       <div className="card">
         <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Deployment paths</h2>

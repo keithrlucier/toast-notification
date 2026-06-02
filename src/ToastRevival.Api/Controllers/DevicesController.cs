@@ -63,22 +63,24 @@ public class DevicesController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == req.TenantId);
         if (tenant is null) return NotFound("Tenant not found.");
 
-        // ANCHOR XT-1 (owner: Keith — ARCHITECTURAL + execution-context-sensitive).
-        // The compare below is constant-time and sound. The enrollment-bootstrap model
-        // (a reusable per-tenant EnrollmentKey) is slated for a redesign to per-device,
-        // single-use, expiring, dashboard-issued tokens. A naive registry ACL lockdown is
-        // NOT a safe shortcut, because the agent reads the bootstrap value in USER context
-        // (DeviceConfig.TryLoadBootstrapFromRegistry). Held for Keith's call on the
-        // enrollment-flow redesign; the threat analysis lives in the private review
-        // ledger. Anchored so the next sweep does not re-flag the bootstrap model.
-        if (!string.IsNullOrWhiteSpace(tenant.EnrollmentKey))
+        // XT-1 — device enrollment gate. A tenant may have single-use, expiring,
+        // dashboard-issued EnrollmentTokens and/or the legacy reusable per-tenant
+        // EnrollmentKey. The agent presents whichever value the MSI wrote to the HKLM
+        // bootstrap in the same req.EnrollmentKey field, so this needs no agent or
+        // installer change. We try the single-use token first (consuming it atomically
+        // and binding it to this device identity), then fall back to the legacy key.
+        // A spent token left behind in a device's registry cannot provision a NEW rogue
+        // device — that is the XT-1 win. When the tenant has neither mechanism,
+        // registration stays open (unchanged).
+        var tenantHasLegacyKey = !string.IsNullOrWhiteSpace(tenant.EnrollmentKey);
+        var tenantHasTokens = await _db.EnrollmentTokens.IgnoreQueryFilters()
+            .AnyAsync(t => t.TenantId == req.TenantId);
+        if (tenantHasLegacyKey || tenantHasTokens)
         {
-            if (string.IsNullOrWhiteSpace(req.EnrollmentKey) ||
-                !CryptographicOperations.FixedTimeEquals(
-                    System.Text.Encoding.UTF8.GetBytes(req.EnrollmentKey),
-                    System.Text.Encoding.UTF8.GetBytes(tenant.EnrollmentKey)))
+            if (!await PassesEnrollmentGateAsync(req.TenantId, tenant.EnrollmentKey,
+                                                 req.EnrollmentKey, req.DeviceName, req.Username))
             {
-                return StatusCode(403, "Invalid enrollment key.");
+                return StatusCode(403, "Invalid or expired enrollment token.");
             }
         }
 
@@ -213,6 +215,98 @@ public class DevicesController : ControllerBase
 
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         await _audit.LogAsync(tenantId, userId, "device.decommission", "Device", id.ToString());
+
+        return NoContent();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // XT-1 — admin enrollment-token management (per-device, single-use, expiring).
+    // Admin-only, tenant-scoped. The issued token is pasted into the MSI deploy
+    // command's ENROLLMENTKEY=... slot in place of the reusable per-tenant key.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Issue a single-use enrollment token. The plaintext is returned exactly once;
+    /// only its SHA-256 hash is persisted. One token per device.
+    /// </summary>
+    [Authorize]
+    [HttpPost("enrollment-tokens")]
+    [EnableRateLimiting("tenant-per-minute")]
+    public async Task<ActionResult<IssuedEnrollmentTokenResponse>> IssueEnrollmentToken(
+        [FromBody] IssueEnrollmentTokenRequest req)
+    {
+        if (!IsAdmin()) return Forbid();
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var userId = Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? uid : (Guid?)null;
+
+        var ttlHours = Math.Clamp(req.TtlHours ?? 24, 1, 168);
+        var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var label = string.IsNullOrWhiteSpace(req.Label) ? null : req.Label.Trim();
+
+        var token = new EnrollmentToken
+        {
+            TenantId = tenantId,
+            TokenHash = HashToken(rawToken),
+            Label = label,
+            CreatedByUserId = userId,
+            ExpiresAt = DateTime.UtcNow.AddHours(ttlHours),
+        };
+        _db.EnrollmentTokens.Add(token);
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(tenantId, userId, "enrollment-token.issue", "EnrollmentToken",
+            token.Id.ToString(), new { token.Label, token.ExpiresAt },
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new IssuedEnrollmentTokenResponse(token.Id, rawToken, token.ExpiresAt, token.Label));
+    }
+
+    /// <summary>List this tenant's enrollment tokens (newest first). Never returns plaintext.</summary>
+    [Authorize]
+    [HttpGet("enrollment-tokens")]
+    [EnableRateLimiting("tenant-per-minute")]
+    public async Task<ActionResult<IEnumerable<EnrollmentTokenDto>>> ListEnrollmentTokens()
+    {
+        if (!IsAdmin()) return Forbid();
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var now = DateTime.UtcNow;
+
+        var tokens = await _db.EnrollmentTokens
+            .Where(t => t.TenantId == tenantId)
+            .OrderByDescending(t => t.CreatedAt)
+            .ToListAsync();
+
+        return Ok(tokens.Select(t => new EnrollmentTokenDto(
+            t.Id, t.Label, EnrollmentTokenStatus(t, now), t.CreatedAt, t.ExpiresAt,
+            t.UsedAt, t.UsedByDeviceName, t.UsedByUsername, t.RevokedAt)));
+    }
+
+    /// <summary>
+    /// Revoke an enrollment token. An unredeemed token can no longer be used; a token
+    /// already used to register a device is unaffected (the device keeps its JWT).
+    /// </summary>
+    [Authorize]
+    [HttpDelete("enrollment-tokens/{id:guid}")]
+    [EnableRateLimiting("tenant-per-minute")]
+    public async Task<IActionResult> RevokeEnrollmentToken(Guid id)
+    {
+        if (!IsAdmin()) return Forbid();
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var token = await _db.EnrollmentTokens.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
+        if (token is null) return NotFound();
+
+        if (token.RevokedAt is null)
+        {
+            token.RevokedAt = DateTime.UtcNow;
+            token.RevokedByUserId = Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? uid : null;
+            await _db.SaveChangesAsync();
+
+            await _audit.LogAsync(tenantId, token.RevokedByUserId, "enrollment-token.revoke", "EnrollmentToken",
+                token.Id.ToString(), null, HttpContext.Connection.RemoteIpAddress?.ToString());
+        }
 
         return NoContent();
     }
@@ -484,4 +578,72 @@ public class DevicesController : ControllerBase
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
         return Convert.ToHexString(bytes).ToLower();
     }
+
+    /// <summary>
+    /// XT-1 enrollment gate. Returns true when <paramref name="presented"/> is an
+    /// acceptable single-use token (consumed atomically here and bound to the device
+    /// identity) or matches the legacy per-tenant key. Called from the anonymous
+    /// Register endpoint, so every read IgnoreQueryFilters and scopes by tenantId.
+    /// </summary>
+    private async Task<bool> PassesEnrollmentGateAsync(
+        Guid tenantId, string? legacyKey, string? presented, string deviceName, string username)
+    {
+        if (string.IsNullOrWhiteSpace(presented)) return false;
+
+        // 1) Single-use token path (preferred). Look up by hash of the presented value.
+        var hash = HashToken(presented);
+        var token = await _db.EnrollmentTokens.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(t => t.TenantId == tenantId && t.TokenHash == hash);
+        if (token is not null)
+        {
+            if (token.RevokedAt is not null) return false;
+
+            if (token.UsedAt is null)
+            {
+                if (token.ExpiresAt < DateTime.UtcNow) return false;
+
+                // Atomic single-use claim: the conditional UPDATE flips UsedAt only if
+                // it is still null, so two devices racing the same token cannot both
+                // pass — the check and the state-change are one SQL statement (the
+                // "exactly one fire" rule). ExecuteUpdate bypasses the tracker, hence
+                // the AsNoTracking reads around it.
+                var now = DateTime.UtcNow;
+                var claimed = await _db.EnrollmentTokens.IgnoreQueryFilters()
+                    .Where(t => t.Id == token.Id && t.UsedAt == null && t.RevokedAt == null)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(t => t.UsedAt, now)
+                        .SetProperty(t => t.UsedByDeviceName, deviceName)
+                        .SetProperty(t => t.UsedByUsername, username));
+                if (claimed == 1) return true;
+
+                // Lost the race — re-read fresh and let the same-device reinstall rule decide.
+                token = await _db.EnrollmentTokens.IgnoreQueryFilters().AsNoTracking()
+                    .FirstOrDefaultAsync(t => t.Id == token.Id);
+                if (token is null || token.RevokedAt is not null) return false;
+            }
+
+            // Already used — allow only a reinstall of the SAME machine (the MSI wipes
+            // config.json on uninstall, so the agent must re-register). The idempotent
+            // lookup below reuses the existing row, so this never mints a new seat.
+            return string.Equals(token.UsedByDeviceName, deviceName, StringComparison.Ordinal)
+                && string.Equals(token.UsedByUsername, username, StringComparison.Ordinal);
+        }
+
+        // 2) Legacy reusable per-tenant key fallback (constant-time compare).
+        if (!string.IsNullOrWhiteSpace(legacyKey)
+            && CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(presented),
+                Encoding.UTF8.GetBytes(legacyKey)))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string EnrollmentTokenStatus(EnrollmentToken t, DateTime now) =>
+        t.RevokedAt is not null ? "revoked"
+        : t.UsedAt is not null ? "used"
+        : t.ExpiresAt < now ? "expired"
+        : "active";
 }

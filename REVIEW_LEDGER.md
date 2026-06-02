@@ -24,12 +24,45 @@ contains an uppercase terminal token: `FIXED-VERIFIED`, `REMEDIATED`, `REJECTED-
 
 ## OPEN findings (live gauge source)
 
-What's left needs Keith's product / architecture / release decision — not skipped work.
-Everything else green-lit on the 2026-06-01 call shipped this session (see **Closed** below).
+**None — gauge → 0.** XT-1, the last open finding, was remediated in code and QA-verified on
+this 2026-06-02 remediation pass (details under **Closed this pass — XT-1** below).
 
-| ID | Sev | Status | Owner | File / anchor | Decision Keith owns |
-|----|-----|--------|-------|---------------|---------------------|
-| XT-1 | High | OPEN | Keith | `DevicesController.Register` + `Setup.wxs` | Per-device single-use enrollment tokens, replacing the reusable per-tenant HKLM key (today's key is read in **user context**, so a registry ACL is not a safe shortcut). **Team recommendation — approve and we build it:** opaque 32-byte random token, single-use, dashboard-issued, 24h TTL, admin-revocable. Two phases: (1) a **non-breaking server-first phase** we ship the moment you say go — `EnrollmentToken` model + migration + admin issue/list/revoke endpoints + dashboard UI + `Register` also accepting single-use tokens while the legacy key keeps working; (2) an **MSI phase** — agent + WiX read the issued token — needing an MSI bump + your code-signing token + an RMM reinstall push. We held phase 1 only because the token format / TTL / revocation policy are your architectural call; approve the defaults above (or amend) and we execute. Stays High+Open until phase 2 disables the legacy key on the fleet. |
+**NOTE — STAGED, not yet live.** The XT-1 fix is built + QA-gated but **not committed or
+deployed** (this pass stages the work and waits for Keith's "ship"). It goes live on a
+**server + dashboard deploy** — and the architect finding is that it needs **no MSI bump, no
+code-signing token, and no RMM reinstall**: the single-use token rides the existing
+`ENROLLMENTKEY` install plumbing, so the agent and WiX installer are untouched.
+
+_No open rows._
+
+---
+
+## Closed this pass — 2026-06-02 (XT-1 remediation)
+
+- **XT-1** — FIXED-VERIFIED (code-complete + QA-gated; **STAGED**, ships on the next
+  server+dashboard deploy — **no MSI / signing token / RMM**) — per-device single-use
+  enrollment tokens replace reliance on the reusable per-tenant `EnrollmentKey`. Keith
+  approved the design on the 2026-06-02 call (opaque 32-byte token, single-use, 24h TTL,
+  dashboard-issued, admin-revocable) and chose **"cut it now."**
+  **Code shipped:** `EnrollmentToken` model + EF migration **M17** (`EnrollmentTokens` table,
+  unique `(TenantId, TokenHash)`, applies on API startup) + admin **issue/list/revoke**
+  endpoints on `DevicesController` (admin-gated, tenant-scoped, audited) + an **Enrollment
+  tokens** admin UI on the Install Agent page (issue → show-once + copy, status list,
+  two-step revoke). `DevicesController.Register` now **dual-accepts**: it tries the single-use
+  token first (hash-lookup, **atomic** single-use claim via a conditional `ExecuteUpdate`,
+  bound to the redeeming device identity), then falls back to the legacy constant-time key
+  compare; tenants with neither mechanism stay open-registration (unchanged).
+  **The XT-1 win:** a spent token left in a device's registry is worthless — it cannot
+  provision a *new* device, only re-authenticate the same machine on reinstall.
+  **Why no MSI/agent change:** the agent already presents the HKLM bootstrap value in the same
+  `req.EnrollmentKey` field, so the token rides the existing wire — the agent + WiX are
+  untouched. Disabling the legacy key later is just clearing the per-tenant `EnrollmentKey`
+  server-side (no fleet reinstall), once Keith switches his deploy process to issuing tokens.
+  **Verification:** API `dotnet build` 0/0; dashboard `tsc -b` + `vite build` clean; M17
+  generated with a consistent model snapshot; QA-gated by **2 adversarial reviewers → SHIP**
+  (cross-tenant IDOR, double-spend race, expired/revoked, spent-token reuse, legacy +
+  open-registration regression, admin gating + audit, TS↔C# DTO contract, CSS/design-system —
+  all clean). **Ship = commit + server+dashboard deploy + public mirror, on Keith's go.**
 
 ---
 

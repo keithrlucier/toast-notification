@@ -28,6 +28,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<TenantBlocklistEntry> TenantBlocklistEntries => Set<TenantBlocklistEntry>();
     public DbSet<TenantApiKey> TenantApiKeys => Set<TenantApiKey>();
     public DbSet<TrialRequest> TrialRequests => Set<TrialRequest>();
+    public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -158,6 +159,23 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.Property(k => k.KeyHash).HasMaxLength(64);
             e.HasIndex(k => k.KeyHash).IsUnique();
             e.HasQueryFilter(k => k.TenantId == _tenantProvider.TenantId);
+        });
+
+        // XT-1 — per-device single-use enrollment tokens. Tenant-scoped like the
+        // other per-tenant tables; a unique (TenantId, TokenHash) index backs the
+        // O(1) lookup at registration time.
+        builder.Entity<EnrollmentToken>(e =>
+        {
+            e.HasOne(t => t.Tenant)
+             .WithMany()
+             .HasForeignKey(t => t.TenantId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.Property(t => t.TokenHash).HasMaxLength(64);
+            e.Property(t => t.Label).HasMaxLength(120);
+            e.Property(t => t.UsedByDeviceName).HasMaxLength(256);
+            e.Property(t => t.UsedByUsername).HasMaxLength(256);
+            e.HasIndex(t => new { t.TenantId, t.TokenHash }).IsUnique();
+            e.HasQueryFilter(t => t.TenantId == _tenantProvider.TenantId);
         });
 
         builder.Entity<TrialRequest>(e =>

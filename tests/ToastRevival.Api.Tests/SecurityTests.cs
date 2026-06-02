@@ -2,14 +2,18 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OtpNet;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
 using ToastRevival.Api.Models;
+using ToastRevival.Api.Services;
 using Xunit;
 
 namespace ToastRevival.Api.Tests;
@@ -779,7 +783,258 @@ public sealed class SecurityTests
         Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
     }
 
+    // ─── XT-1 Enrollment Tokens (XT-L3) + MFA replay atomicity (AUTH-H1) ──────
+
+    [Fact]
+    public async Task AuthH1_ConcurrentSameTotpCode_AdvancesReplayFloorExactlyOnce()
+    {
+        // AUTH-H1 — the replay guard is the conditional UPDATE in
+        // MfaService.VerifyAndClaimAsync. Two requests carrying the same
+        // intercepted TOTP code race the floor advance from independent
+        // DbContexts (exactly what /login/verify-totp + /mfa/verify would do
+        // under a concurrent replay). Only one may win.
+        await _load.ResetAsync();
+        var factory = _load.Factory;
+
+        var t = await SecurityHarness.SeedTenantAsync(factory, role: UserRole.Admin, deviceCount: 0);
+
+        var mfa = new MfaService();
+        var (secret, _) = mfa.GenerateEnrollment("auth-h1@pen.test");
+
+        // Enroll a confirmed MFA secret on the seeded user, replay floor cleared.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var u = await db.Users.IgnoreQueryFilters().FirstAsync(x => x.Id == t.AdminUser.Id);
+            u.MfaSecret = secret;
+            u.LastTotpStep = null;
+            await db.SaveChangesAsync();
+        }
+
+        var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp();
+
+        async Task<bool> ClaimAsync()
+        {
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var u = await db.Users.IgnoreQueryFilters().FirstAsync(x => x.Id == t.AdminUser.Id);
+            return await mfa.VerifyAndClaimAsync(db, u, code);
+        }
+
+        var results = await Task.WhenAll(ClaimAsync(), ClaimAsync());
+
+        // The atomic conditional UPDATE lets exactly one request win the advance.
+        Assert.Equal(1, results.Count(r => r));
+    }
+
+    [Fact]
+    public async Task EnrollmentToken_AdminEndpoints_RejectNonAdmin()
+    {
+        // XT-L3 — issue / list / revoke are admin-only (Forbid for Technician).
+        // No register calls, so this is safe on the shared factory.
+        await _load.ResetAsync();
+        var factory = _load.Factory;
+
+        var t = await SecurityHarness.SeedTenantAsync(factory, role: UserRole.Technician, deviceCount: 0);
+        using var http = SecurityHarness.AuthedClient(factory, t.AdminToken);
+
+        var issue = await http.PostAsJsonAsync("/api/devices/enrollment-tokens",
+            new IssueEnrollmentTokenRequest(Label: "probe", TtlHours: 24));
+        Assert.Equal(HttpStatusCode.Forbidden, issue.StatusCode);
+
+        var list = await http.GetAsync("/api/devices/enrollment-tokens");
+        Assert.Equal(HttpStatusCode.Forbidden, list.StatusCode);
+
+        var revoke = await http.DeleteAsync($"/api/devices/enrollment-tokens/{Guid.NewGuid()}");
+        Assert.Equal(HttpStatusCode.Forbidden, revoke.StatusCode);
+    }
+
+    [Fact]
+    public async Task EnrollmentToken_ExpiredToken_RejectsRegistration()
+    {
+        // XT-L3 — an unredeemed token past ExpiresAt cannot be claimed.
+        await _load.ResetAsync();
+        await using var factory = await FreshRegistrationFactoryAsync();
+
+        var t = await SecurityHarness.SeedTenantAsync(factory, deviceCount: 0, tenantNamePrefix: "XT-Expired");
+        const string raw = "xt-expired-raw-token";
+        await SeedEnrollmentTokenAsync(factory, t.TenantId, raw, expiresAt: DateTime.UtcNow.AddSeconds(-1));
+
+        using var http = factory.CreateClient();
+        var resp = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
+            TenantId: t.TenantId, DeviceName: "xt-expired-dev", Username: "xt-expired-user",
+            OsVersion: "Windows 11", AgentVersion: "0.4.0.0", EnrollmentKey: raw));
+
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task EnrollmentToken_TokenFromAnotherTenant_RejectsRegistration()
+    {
+        // XT-L3 — a token issued to tenant B must never enroll a device into A.
+        // A is given its own (valid) token so A's registration gate is active;
+        // otherwise A allows open registration and the cross-tenant attempt is
+        // not actually exercised.
+        await _load.ResetAsync();
+        await using var factory = await FreshRegistrationFactoryAsync();
+
+        var a = await SecurityHarness.SeedTenantAsync(factory, deviceCount: 0, tenantNamePrefix: "XT-A");
+        var b = await SecurityHarness.SeedTenantAsync(factory, deviceCount: 0, tenantNamePrefix: "XT-B");
+        await SeedEnrollmentTokenAsync(factory, a.TenantId, "xt-a-own-token", DateTime.UtcNow.AddHours(24));
+        const string bRaw = "xt-b-secret-token";
+        await SeedEnrollmentTokenAsync(factory, b.TenantId, bRaw, DateTime.UtcNow.AddHours(24));
+
+        using var http = factory.CreateClient();
+        var resp = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
+            TenantId: a.TenantId, DeviceName: "xt-cross-dev", Username: "xt-cross-user",
+            OsVersion: "Windows 11", AgentVersion: "0.4.0.0", EnrollmentKey: bRaw));
+
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task EnrollmentToken_RevokedActiveToken_RejectsRegistration()
+    {
+        // XT-L3 — an admin-revoked unredeemed token can no longer be claimed.
+        await _load.ResetAsync();
+        await using var factory = await FreshRegistrationFactoryAsync();
+
+        var t = await SecurityHarness.SeedTenantAsync(factory, role: UserRole.Admin, deviceCount: 0, tenantNamePrefix: "XT-Revoke");
+        const string raw = "xt-revoke-raw-token";
+        var tokenId = await SeedEnrollmentTokenAsync(factory, t.TenantId, raw, DateTime.UtcNow.AddHours(24));
+
+        using (var admin = SecurityHarness.AuthedClient(factory, t.AdminToken))
+        {
+            var revoke = await admin.DeleteAsync($"/api/devices/enrollment-tokens/{tokenId}");
+            Assert.Equal(HttpStatusCode.NoContent, revoke.StatusCode);
+        }
+
+        using var http = factory.CreateClient();
+        var resp = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
+            TenantId: t.TenantId, DeviceName: "xt-revoke-dev", Username: "xt-revoke-user",
+            OsVersion: "Windows 11", AgentVersion: "0.4.0.0", EnrollmentKey: raw));
+
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task EnrollmentToken_ReinstallSameMachineAllowed_DifferentMachineRejected()
+    {
+        // XT-L3 — the single-use carve-out: a real issued token enrolls a device,
+        // a clean reinstall of the SAME machine (same DeviceName + Username) may
+        // re-present the spent token, but a DIFFERENT machine presenting it is
+        // rejected. (XT-M1 tracks the strength of the same-machine identity.)
+        await _load.ResetAsync();
+        await using var factory = await FreshRegistrationFactoryAsync();
+
+        var t = await SecurityHarness.SeedTenantAsync(factory, role: UserRole.Admin, deviceCount: 0, tenantNamePrefix: "XT-Reinstall");
+
+        // Admin issues a real single-use token (end-to-end, no hash guesswork).
+        string rawToken;
+        using (var admin = SecurityHarness.AuthedClient(factory, t.AdminToken))
+        {
+            var issueResp = await admin.PostAsJsonAsync("/api/devices/enrollment-tokens",
+                new IssueEnrollmentTokenRequest(Label: "Reception PC", TtlHours: 24));
+            issueResp.EnsureSuccessStatusCode();
+            var issued = await issueResp.Content.ReadFromJsonAsync<IssuedEnrollmentTokenResponse>();
+            Assert.NotNull(issued);
+            rawToken = issued!.Token;
+        }
+
+        using var http = factory.CreateClient();
+
+        var first = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
+            TenantId: t.TenantId, DeviceName: "reception-pc", Username: "frontdesk",
+            OsVersion: "Windows 11", AgentVersion: "0.4.0.0", EnrollmentKey: rawToken));
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        var sameMachine = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
+            TenantId: t.TenantId, DeviceName: "reception-pc", Username: "frontdesk",
+            OsVersion: "Windows 11 (rebuild)", AgentVersion: "0.4.1.0", EnrollmentKey: rawToken));
+        Assert.Equal(HttpStatusCode.OK, sameMachine.StatusCode);
+
+        var differentMachine = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
+            TenantId: t.TenantId, DeviceName: "rogue-pc", Username: "frontdesk",
+            OsVersion: "Windows 11", AgentVersion: "0.4.0.0", EnrollmentKey: rawToken));
+        Assert.Equal(HttpStatusCode.Forbidden, differentMachine.StatusCode);
+    }
+
+    [Fact]
+    public async Task EnrollmentToken_ConcurrentClaimsOfSameToken_OnlyOneWins()
+    {
+        // XT-L3 — atomicity: two devices racing the same fresh token cannot both
+        // succeed. The ExecuteUpdateAsync claim serializes so exactly one wins
+        // (200); the loser fails the used-token carve-out (different machine) → 403.
+        await _load.ResetAsync();
+        await using var factory = await FreshRegistrationFactoryAsync();
+
+        var t = await SecurityHarness.SeedTenantAsync(factory, role: UserRole.Admin, deviceCount: 0, tenantNamePrefix: "XT-Race");
+
+        string rawToken;
+        using (var admin = SecurityHarness.AuthedClient(factory, t.AdminToken))
+        {
+            var issueResp = await admin.PostAsJsonAsync("/api/devices/enrollment-tokens",
+                new IssueEnrollmentTokenRequest(Label: "race", TtlHours: 24));
+            issueResp.EnsureSuccessStatusCode();
+            var issued = await issueResp.Content.ReadFromJsonAsync<IssuedEnrollmentTokenResponse>();
+            Assert.NotNull(issued);
+            rawToken = issued!.Token;
+        }
+
+        async Task<HttpStatusCode> RegisterAsync(string suffix)
+        {
+            using var http = factory.CreateClient();
+            var resp = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
+                TenantId: t.TenantId, DeviceName: $"race-{suffix}", Username: $"race-user-{suffix}",
+                OsVersion: "Windows 11", AgentVersion: "0.4.0.0", EnrollmentKey: rawToken));
+            return resp.StatusCode;
+        }
+
+        var statuses = await Task.WhenAll(RegisterAsync("a"), RegisterAsync("b"));
+
+        Assert.Single(statuses, s => s == HttpStatusCode.OK);
+        Assert.Single(statuses, s => s == HttpStatusCode.Forbidden);
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Stands up a dedicated <see cref="ApiTestFactory"/> on the shared Postgres DB
+    /// for register-path tests. The anonymous <c>device-per-hour</c> limiter buckets
+    /// every unauthenticated <c>/register</c> to one shared "anon" partition (10/hr),
+    /// and <see cref="LoadFixture.ResetAsync"/> only truncates the DB — it does not
+    /// reset the in-memory limiter on the collection factory. A fresh factory gives
+    /// each test its own rate-limit window. Mirrors <see cref="RegistrationLoadTests"/>.
+    /// Call <c>_load.ResetAsync()</c> first to clear the DB this factory will share.
+    /// </summary>
+    private async Task<ApiTestFactory> FreshRegistrationFactoryAsync()
+    {
+        var factory = new ApiTestFactory(_load.ConnectionString);
+        using var warmup = factory.CreateClient();
+        await warmup.GetAsync("/api/templates");   // force host boot + db.Database.Migrate()
+        return factory;
+    }
+
+    /// <summary>
+    /// Inserts an <see cref="EnrollmentToken"/> row directly, hashing the raw token
+    /// exactly as production does (SHA-256, lowercase hex) so the registration gate's
+    /// hash lookup matches. Returns the new token Id.
+    /// </summary>
+    private static async Task<Guid> SeedEnrollmentTokenAsync(
+        ApiTestFactory factory, Guid tenantId, string rawToken, DateTime expiresAt)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var token = new EnrollmentToken
+        {
+            TenantId  = tenantId,
+            TokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken))).ToLowerInvariant(),
+            ExpiresAt = expiresAt,
+        };
+        db.EnrollmentTokens.Add(token);
+        await db.SaveChangesAsync();
+        return token.Id;
+    }
 
     private static HubConnection BuildHubConnection(ApiTestFactory factory, Uri hubUrl, string token)
     {

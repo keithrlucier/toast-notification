@@ -609,7 +609,10 @@ public class DevicesController : ControllerBase
                 // the AsNoTracking reads around it.
                 var now = DateTime.UtcNow;
                 var claimed = await _db.EnrollmentTokens.IgnoreQueryFilters()
-                    .Where(t => t.Id == token.Id && t.UsedAt == null && t.RevokedAt == null)
+                    // XT-L1 — tenant scope in the atomic claim (defense in depth; the
+                    // lookup above is already tenant-scoped, but every query touching
+                    // tenant data carries the predicate, not inferring it).
+                    .Where(t => t.Id == token.Id && t.TenantId == tenantId && t.UsedAt == null && t.RevokedAt == null)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(t => t.UsedAt, now)
                         .SetProperty(t => t.UsedByDeviceName, deviceName)
@@ -617,14 +620,34 @@ public class DevicesController : ControllerBase
                 if (claimed == 1) return true;
 
                 // Lost the race — re-read fresh and let the same-device reinstall rule decide.
+                // XT-L2 — keep the tenant predicate on the re-read so a leaked token.Id
+                // cannot surface another tenant's row into the reinstall carve-out below.
                 token = await _db.EnrollmentTokens.IgnoreQueryFilters().AsNoTracking()
-                    .FirstOrDefaultAsync(t => t.Id == token.Id);
+                    .FirstOrDefaultAsync(t => t.Id == token.Id && t.TenantId == tenantId);
                 if (token is null || token.RevokedAt is not null) return false;
             }
 
             // Already used — allow only a reinstall of the SAME machine (the MSI wipes
             // config.json on uninstall, so the agent must re-register). The idempotent
             // lookup below reuses the existing row, so this never mints a new seat.
+            //
+            // XT-M1 (OPEN — owner: Keith; fix scheduled as XT-3) — "same machine" here is
+            // the (DeviceName, Username) tuple the agent self-reports, which is also the
+            // tuple the idempotent Device match (Register, above) keys on. These are NOT
+            // hardware-backed: an attacker who reads a spent token out of HKLM AND knows
+            // the original device name + username can re-enroll under that identity.
+            // Severity is bounded (HKLM read already implies machine compromise), so this
+            // is a defense-in-depth gap, not an open door.
+            //
+            // DECISION (2026-06-02, Keith, by phone): the "require a fresh token per
+            // reinstall" option is REJECTED — it breaks silent RMM mass deployment across
+            // hundreds of devices (every reinstall would need a freshly issued token).
+            // The carve-out STAYS as-is. The proper fix is to bind the token to a hardware
+            // identifier (the machine SID already computed agent-side for the lock-screen
+            // path) — a cross-component change (agent payload + UsedByMachineSid column +
+            // migration + backward-compatible carve-out during agent rollout). That work is
+            // scoped as build-mode project XT-3 (see Docs/ToastRevival/projects/XT-3/).
+            // This anchor keeps XT-M1 from being re-flagged as un-triaged until XT-3 ships.
             return string.Equals(token.UsedByDeviceName, deviceName, StringComparison.Ordinal)
                 && string.Equals(token.UsedByUsername, username, StringComparison.Ordinal);
         }

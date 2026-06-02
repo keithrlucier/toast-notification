@@ -275,7 +275,13 @@ public class DevicesController : ControllerBase
         {
             ImageUrl = ToPublicUrl(tenant.LockScreenImageUrl)
         };
-        return Ok(new AppearanceConfigResponse(overlay, lockScreen));
+        // AGT-4-R: HMAC-sign the exact JSON the agent will verify + apply.
+        // The response carries BOTH the unsigned overlay/lockScreen (so a pre-0.4.35 agent
+        // keeps working — it ignores the extra fields) AND the signed payload + signature.
+        // A 0.4.35+ agent verifies the signature and applies ONLY the signed payload, never
+        // the unsigned top-level fields.
+        var (signedPayload, signature) = AppearanceConfigBuilder.BuildSigned(overlay, lockScreen, tenant.SigningKey);
+        return Ok(new AppearanceConfigResponse(overlay, lockScreen, signedPayload, signature));
     }
 
     // Called by agent to confirm it's still alive (heartbeat).

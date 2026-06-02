@@ -6,9 +6,13 @@ public class Tenant
     public string Name { get; set; } = null!;
     public string Subdomain { get; set; } = null!;
 
-    // Per-tenant HMAC-SHA256 signing key (base64). Generated at tenant creation,
-    // returned to agents at device registration so they can verify notification
-    // payloads before rendering.
+    // Per-tenant HMAC-SHA256 signing key (base64, 32 random bytes). Generated at tenant
+    // creation, returned to agents at device registration so they can verify notification
+    // payloads (and, as of AGT-4-R, the appearance/lock-screen config) before applying.
+    // SECURITY INVARIANT: this key is NEVER exposed to admins, NEVER shown in the dashboard,
+    // and has NO reset/rotate endpoint. It reaches a device only at registration and is held
+    // there DPAPI-encrypted (config.json). A stolen device config grants only the ability to
+    // VERIFY this tenant's payloads — not to forge new ones; forging requires the server DB.
     public string SigningKey { get; set; } = null!;
 
     // Optional pre-shared key required for device registration. When null,

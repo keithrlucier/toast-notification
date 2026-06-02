@@ -9,7 +9,12 @@ namespace ToastRevival.Agent;
 /// </summary>
 internal sealed record AppearanceConfig(
     OverlayConfig? Overlay,
-    LockScreenConfig? LockScreen);
+    LockScreenConfig? LockScreen,
+    // AGT-4-R: present on signed responses — the canonical {overlay, lockScreen} JSON the
+    // server HMAC'd and the base64 signature. The agent verifies the HMAC over SignedPayload
+    // and applies the config parsed FROM those exact bytes (see AgentClient).
+    string? SignedPayload = null,
+    string? Signature = null);
 
 /// <summary>
 /// Desktop info-overlay config. <see cref="Fields"/> holds the enabled field keys
@@ -25,7 +30,9 @@ internal sealed record OverlayConfig(
     string? CustomText,
     int? OpacityPercent);
 
-/// <summary>Lock screen branding config. ImageUrl is an absolute http(s) URL.</summary>
+/// <summary>Lock screen branding config. ImageUrl is an absolute http(s) URL.
+/// ImageUpdatedAtUtc (DASH-L1) is the server cache-bust stamp; nullable for older servers.</summary>
 internal sealed record LockScreenConfig(
     bool Enabled,
-    string? ImageUrl);
+    string? ImageUrl,
+    DateTime? ImageUpdatedAtUtc = null);

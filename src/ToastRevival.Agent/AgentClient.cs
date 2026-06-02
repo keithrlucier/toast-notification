@@ -140,7 +140,41 @@ internal static class RegistrationService
                 DiagLog.Write($"TryGetAppearanceConfigAsync: server returned {(int)resp.StatusCode}");
                 return null;
             }
-            return await resp.Content.ReadFromJsonAsync<AppearanceConfig>(cancellationToken: ct);
+            var dto = await resp.Content.ReadFromJsonAsync<AppearanceConfig>(cancellationToken: ct);
+            if (dto is null) return null;
+
+            // AGT-4-R: the appearance/lock-screen config MUST be HMAC-signed by the tenant
+            // SigningKey. The server signs EVERY response as of agent 0.4.35 (deployed
+            // server-first), so a missing OR asymmetric (one field only) OR invalid signature
+            // is treated as tampering / downgrade and the config is DROPPED — the last-applied
+            // appearance stays in place. We never apply the unsigned top-level Overlay/
+            // LockScreen fields (those exist only so a pre-0.4.35 agent keeps working); we
+            // apply ONLY the config parsed from the verified bytes. This fail-closed posture
+            // closes the strip-the-signature downgrade vector.
+            if (string.IsNullOrEmpty(dto.SignedPayload) || string.IsNullOrEmpty(dto.Signature))
+            {
+                DiagLog.Write("TryGetAppearanceConfigAsync: appearance-config missing a signature — config dropped (server must sign).");
+                return null;
+            }
+            if (!HmacVerifier.Verify(dto.SignedPayload, dto.Signature, config.SigningKey))
+            {
+                DiagLog.Write("TryGetAppearanceConfigAsync: appearance-config HMAC verification FAILED — config dropped.");
+                return null;
+            }
+            // Web defaults = case-insensitive: the signed payload's outer keys are the
+            // server's anonymous-object names ("overlay"/"lockScreen"), so a case-SENSITIVE
+            // deserialize would bind them to null. Apply ONLY these verified bytes.
+            // (Replay residual: an old, legitimately-signed config could be replayed under a
+            // TLS-trust compromise — stale-but-real content only, never forged. A monotonic
+            // config-version reject is a noted Low-severity future hardening.)
+            var verified = JsonSerializer.Deserialize<AppearanceConfig>(
+                dto.SignedPayload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            if (verified is null)
+            {
+                DiagLog.Write("TryGetAppearanceConfigAsync: signed payload verified but did not deserialize — config dropped.");
+                return null;
+            }
+            return verified;
         }
         catch (Exception ex)
         {

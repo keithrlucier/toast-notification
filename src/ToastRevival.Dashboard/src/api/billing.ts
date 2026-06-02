@@ -12,6 +12,7 @@ export interface BillingPlan {
   licenseEnd: string | null;
   trialEnd: string | null;
   stripeCustomerId: string | null;
+  billingEnabled?: boolean;
 }
 
 export interface Invoice {

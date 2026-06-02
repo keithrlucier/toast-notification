@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Stripe;
 using ToastRevival.Api.Models;
 
@@ -16,6 +17,7 @@ public class StripeBillingSyncService : IStripeBillingSyncService
 
     public async Task SyncSubscriptionQuantityAsync(Tenant tenant, CancellationToken ct = default)
     {
+        if (!_config.GetValue<bool>("Billing:Enabled")) return; // billing disabled platform-wide
         if (string.IsNullOrWhiteSpace(tenant.StripeSubscriptionId)) return;
 
         var secretKey = _config["Stripe:SecretKey"];

@@ -1,5 +1,46 @@
 # ToastRevival - Test Log
 
+## MFA-7 — SMS step-up downgrade guard (v0.5.26, Code Review remediation)
+
+**Finding:** A user with an enrolled TOTP authenticator (`MfaSecret` set) could elevate the
+session via the weaker SMS step-up channel (`mfa/send-sms` + `mfa/verify-sms`), bypassing the
+stronger separately-enrolled factor.
+
+**Fix:** Guard on **both** `AuthController.MfaSendSms` and `MfaVerifySms` — when `MfaSecret`
+is non-empty, refuse with `403 { error: "totp_required" }`. send-sms refuses before spending a
+ClickSend SMS; verify-sms guards too (defense in depth: a code minted before enrollment or a
+direct API call still can't elevate over SMS).
+
+**Non-breaking proof (source inspection):**
+- Login path already prefers TOTP — a TOTP user is never sent a login SMS, so the only gap was
+  the step-up path. SMS-only / SSO / legacy users (no `MfaSecret`) are unaffected.
+- `MfaStepUpModal.tsx` calls `mfaSendSms()` first and on **any** failure flips to the
+  authenticator code path (`.catch(() => setUseSms(false))`). The new 403 routes a TOTP user
+  straight to the authenticator prompt — **no frontend change required**.
+
+**Build / deploy verification (LIVE):**
+- `dotnet build ToastRevival.Api`: **0 warnings, 0 errors**; published linux-x64.
+- Deployed to TOASTWEB1 (`/opt/toast/api`, prior build → `api.bak.prev`). `toast-api` active;
+  `GET /api/health` → `healthy` (db healthy, queue 0) on the fresh binary; `/login` → 200;
+  `POST /api/auth/mfa/send-sms` unauth → **401** (auth gate intact, no 500).
+
+**Regression tests added** (`tests/ToastRevival.Api.Tests/SecurityTests.cs`):
+- `MfaStepUp_TotpEnrolledUser_SmsPathBlocked_ForcesAuthenticator` — TOTP user gets 403
+  `totp_required` on BOTH send-sms and verify-sms.
+- `MfaStepUp_NonTotpUser_SmsGuardIsInert` — guard inert for non-TOTP users, proven hermetically
+  (no external SMS send): send-sms falls to the phone check (400), verify-sms to the code-expiry
+  check (401) — neither returns `totp_required`.
+
+**Test-exec caveat (honest gap):** the two integration tests are committed but were **not run**
+on the dev host — no Docker, no local Postgres, and no CI runner present (the fixture needs
+Postgres 16 via Testcontainers or `TOAST_TEST_CONNECTION_STRING`). They pass on any Docker/CI
+runner. Present-correctness of this 6-line guard rests on source inspection + the live deploy;
+the tests are regression protection. **To fully green:** run `dotnet test` against a Postgres 16,
+or wire the `api-tests.yml` workflow the PUBLIC-MIRROR doc references but that isn't in the repo.
+
+**Disposition:** FIXED-VERIFIED in REVIEW_LEDGER.md (gauge 2→1). Retiring SMS outright is a
+separate migration decision owned by Keith — explicitly NOT part of this finding.
+
 ## 2026-05-22 (FIX-ASSETS-001/002 — asset previews + rename)
 
 ### Build Checks

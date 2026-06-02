@@ -54,27 +54,9 @@ internal static class SelfUpdateService
     /// </summary>
     public static async Task RunMsiUpdateLoopAsync(DeviceConfig config, CancellationToken ct)
     {
-        // Velopack owns this install — don't double-update.
-        bool isVelopackManaged;
-        try
+        if (ShouldSkipMsiUpdates(out var skipReason))
         {
-            var mgr = new Velopack.UpdateManager(string.Empty);
-            isVelopackManaged = mgr.IsInstalled;
-        }
-        catch (Exception ex)
-        {
-            DiagLog.Write($"SelfUpdateService: Velopack detection faulted ({ex.GetType().Name}: {ex.Message}) — assuming MSI-deployed, continuing.");
-            isVelopackManaged = false;
-        }
-        if (isVelopackManaged)
-        {
-            DiagLog.Write("SelfUpdateService: Velopack-managed install — MSI update loop skipped.");
-            return;
-        }
-
-        if (!IsAutoUpdateEnabled())
-        {
-            DiagLog.Write("SelfUpdateService: DisableAutoUpdate set — MSI update loop skipped.");
+            DiagLog.Write($"SelfUpdateService: MSI update loop skipped — {skipReason}.");
             return;
         }
 
@@ -97,7 +79,39 @@ internal static class SelfUpdateService
         }
     }
 
+    /// <summary>
+    /// Admin-triggered immediate update check, invoked from the "CheckForUpdate"
+    /// hub command so the fleet can be rolled forward without waiting for the 24h
+    /// poll. Same guards as the periodic loop: no-op for Velopack-managed installs
+    /// and when DisableAutoUpdate is set.
+    /// </summary>
+    public static async Task ForceCheckAsync(DeviceConfig config, CancellationToken ct)
+    {
+        if (ShouldSkipMsiUpdates(out var skipReason))
+        {
+            DiagLog.Write($"SelfUpdateService: ForceCheck ignored — {skipReason}.");
+            return;
+        }
+        DiagLog.Write("SelfUpdateService: admin-triggered update check starting.");
+        await CheckAndTriggerAsync(config, ct);
+    }
+
+    // Serializes update checks so an admin-pushed ForceCheck cannot race the
+    // periodic loop into a double download / double updater-task fire.
+    private static readonly SemaphoreSlim _checkGate = new(1, 1);
+
     private static async Task CheckAndTriggerAsync(DeviceConfig config, CancellationToken ct)
+    {
+        if (!await _checkGate.WaitAsync(0, ct).ConfigureAwait(false))
+        {
+            DiagLog.Write("SelfUpdateService: update check already in progress — skipping duplicate.");
+            return;
+        }
+        try { await CheckAndTriggerCoreAsync(config, ct); }
+        finally { _checkGate.Release(); }
+    }
+
+    private static async Task CheckAndTriggerCoreAsync(DeviceConfig config, CancellationToken ct)
     {
         var serverInfo = await FetchServerVersionAsync(config, ct);
         if (serverInfo is null) return;
@@ -475,6 +489,28 @@ internal static class SelfUpdateService
         {
             DiagLog.Write($"SelfUpdateService: failed to fire updater task: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    // True when MSI self-update should not run for this install: either Velopack
+    // owns it (it has its own updater) or the admin set DisableAutoUpdate. Shared
+    // by the periodic loop and the admin-triggered ForceCheck.
+    private static bool ShouldSkipMsiUpdates(out string reason)
+    {
+        bool isVelopackManaged;
+        try
+        {
+            var mgr = new Velopack.UpdateManager(string.Empty);
+            isVelopackManaged = mgr.IsInstalled;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"SelfUpdateService: Velopack detection faulted ({ex.GetType().Name}: {ex.Message}) — assuming MSI-deployed, continuing.");
+            isVelopackManaged = false;
+        }
+        if (isVelopackManaged) { reason = "Velopack-managed install"; return true; }
+        if (!IsAutoUpdateEnabled()) { reason = "DisableAutoUpdate set"; return true; }
+        reason = "";
+        return false;
     }
 
     private static bool IsAutoUpdateEnabled()

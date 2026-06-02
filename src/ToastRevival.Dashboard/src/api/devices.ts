@@ -97,6 +97,10 @@ export const devicesApi = {
   },
   decommission: (id: string) => api.delete(`/api/devices/${id}`),
   uninstall: (id: string) => api.post(`/api/devices/${id}/uninstall`, {}),
+  checkUpdate: (id: string) =>
+    api.post<{ pushed: boolean }>(`/api/devices/${id}/check-update`, {}),
+  checkUpdateAll: () =>
+    api.post<{ pushed: number; total: number }>('/api/devices/check-update-all', {}),
   uninstallScriptInfo: () => api.get<UninstallScriptInfo>('/api/agent/uninstall-script-info'),
   listGroups: () => api.get<DeviceGroup[]>('/api/devicegroups'),
   createGroup: (req: SaveDeviceGroupRequest) =>

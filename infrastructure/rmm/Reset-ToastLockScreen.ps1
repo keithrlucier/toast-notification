@@ -1,85 +1,63 @@
 <#
 .SYNOPSIS
-    Reset-ToastLockScreen.ps1 -- hard-remove EVERY trace of a Toast Notification
-    (agent-applied) branded lock-screen image from a Windows endpoint and return
-    the lock screen to the Windows default. Standalone, idempotent, SYSTEM-context,
-    headless-safe. For use with an RMM (runs as SYSTEM) or PsExec -s -i.
+    Reset-ToastLockScreen.ps1 -- SURGICALLY remove a Toast-applied branded lock
+    screen and restore the Windows default, WITHOUT locking the lock screen and
+    WITHOUT deleting Windows' own default images. For use with an RMM (runs as
+    SYSTEM) or an elevated admin shell.
 
 .DESCRIPTION
-    The agent set the lock screen with the per-user WinRT LockScreen API
-    (LockScreen.SetImageFileAsync). That call makes Windows (a) COPY each image into
-    a protected per-SID cache and (b) record a per-USER slot index in the registry:
+    The agent applies the brand with the per-user WinRT LockScreen API. Windows
+    records a per-user slot: HKU\<SID>\...\CurrentVersion\Lock Screen\{ImageId_<x>,
+    OriginalFile_<x>, Details_<x>} plus a cache folder SystemData\<SID>\ReadOnly\
+    LockScreen_<x>. The Toast slot is identifiable -- its Details_<x> names the Toast
+    agent exe. This script:
 
-        a) %ProgramData%\Microsoft\Windows\SystemData\<SID>\ReadOnly\LockScreen_*
-        b) HKEY_USERS\<user-SID>\SOFTWARE\Microsoft\Windows\CurrentVersion\Lock Screen
-             -> ImageId_<x> / OriginalFile_<x> / Details_<x>  (one triplet per image)
+      1. Re-enables normal lock-screen behavior: clears the 3 Spotlight/camera/overlay
+         policy pins the installer sets, AND removes any PersonalizationCSP image a
+         prior (broken) version of this script may have pinned -- so it UN-locks a box
+         showing "Some of these settings are managed by your organization".
+      2. Sets the active lock screen back to the Windows default (img100) via the SAME
+         WinRT call the agent uses, for the logged-on user. Non-locking, no policy.
+      3. SURGICALLY deletes ONLY the Toast slots (Details_<x> names the Toast agent)
+         from every user hive + the matching SystemData cache folder. Windows' own
+         default slots are LEFT INTACT, so the device never goes black.
+      4. Deletes the agent's own lockscreen image files.
 
-    Both are what keep old branded images selectable in Settings > Personalization >
-    Lock screen, and NOTHING in the product ever cleared either -- which is why two
-    branded versions survived an uninstall, and why the registry still literally
-    named the agent exe + lockscreen.jpg afterward. This script closes both gaps,
-    in order:
+    IMPORTANT: while the Toast agent is installed AND lock-screen branding is enabled,
+    the agent RE-APPLIES the brand on every startup. Run this only AFTER the agent is
+    removed (uninstall) or branding is turned off in the dashboard -- otherwise the
+    agent simply re-brands. NO PersonalizationCSP lock. NO mass cache deletion.
 
-      1. Release machine-wide enforcement: delete PersonalizationCSP values and the
-         Personalization / Spotlight GPO pins the installer set.
-      2. HARD-DELETE the Windows SystemData lock-screen cache slots for EVERY user
-         SID (takeown + icacls + delete). Deletes ONLY the LockScreen_* CHILD folders
-         -- never the protected ReadOnly/<SID> parent (deleting the parent or wrecking
-         its ACLs can leave the lock screen blank). Windows rebuilds the slots cleanly
-         on the next image set.
-      2b. Clear the per-user Lock Screen slot INDEX (ImageId_*/OriginalFile_*/Details_*)
-         from every user hive -- loaded HKEY_USERS hives AND dormant profiles loaded
-         via reg load / ProfileList. This is the literal branded registry trace and
-         the backing index for the selectable-thumbnails strip.
-      3. HARD-DELETE the agent's own lockscreen.jpg / lockscreen_original.jpg /
-         lockscreen.hash from every profile, in BOTH the unpackaged (MSI) config dir
-         and the packaged (Store/MSIX) LocalState dir.
-      4. Clear the per-user Content Delivery Manager image cache (Spotlight belt).
-      5. Reset the ACTIVE image to the genuine Windows default -- immediately for the
-         logged-on user via a transient WinRT scheduled task (result logged), and
-         unconditionally at next logon because the cache + index are purged.
-
-    HEADLESS-SAFE: with no user logged on, steps 1-4 still fully clean the machine and
-    the device shows the default at next logon; step 5's live refresh simply no-ops.
-
-    EVERY step is best-effort + idempotent. The only non-zero exit is 3010 (a cache
-    slot was locked because the lock screen was on display) signalling a reboot is
-    needed to finalize -- wire that to an RMM reboot for a guaranteed-now result.
-
-.PARAMETER DefaultImage
-    Image to set as the post-removal default. Defaults to C:\Windows\Web\Screen\img100.jpg
-    when present, else the first existing img*.jpg there.
+    Idempotent + best-effort. ASCII-only (PowerShell 5.1 / RMM misreads non-ASCII).
 
 .PARAMETER NoUserRefresh
-    Skip the immediate per-user WinRT reset (step 5). The purge still yields default at
-    next logon. For testing / pure-headless runs.
+    Skip step 2 (the per-user WinRT repaint). The surgical slot removal still runs.
 
 .PARAMETER WorkDir
-    Log + scratch directory. Defaults to %ProgramData%\Toast2IT\Install.
+    Log + scratch dir. Defaults to %ProgramData%\Toast2IT\Install.
 
 .NOTES
-    Exit 0    = clean.
-    Exit 3010 = clean, but a locked cache slot needs a reboot to finalize.
-    Run as SYSTEM (via an RMM) or local admin elevated.
-
-    RUNBOOK: Step 2/2b reset the ENTIRE selectable lock-screen history (not just
-    Toast's images) to default -- this is the intended "clean slate"; the OS rebuilds
-    on the next image a user picks. Verified on Win10 + Win11.
+    Exit 0 = clean. Exit 3010 = a Toast slot folder was locked (in use) and a reboot
+    will finalize it. Run as SYSTEM (via an RMM) or local admin elevated.
 
     --- LOCK-SCREEN RESET CORE: keep in sync with the same block in
-        uninstall-toast-agent.ps1 (the uninstall embeds an identical reset). ---
+        uninstall-toast-agent.ps1. ---
 #>
 [CmdletBinding()]
 param(
-    [string] $DefaultImage,
     [switch] $NoUserRefresh,
     [string] $WorkDir = (Join-Path $env:ProgramData 'Toast2IT\Install')
 )
 
 $ErrorActionPreference = 'Stop'
 $script:RebootNeeded = $false
+# Do NOT delete a brand's CACHE folder until a default is CONFIRMED set as the active
+# image; otherwise a headless box could go black. Registry-triplet removal is always safe.
+$script:DeferCacheDelete = $true
+# A Lock Screen slot belongs to Toast when its Details_<x> (the exe that set the
+# image) names the Toast agent, or its OriginalFile path references Toast.
+$script:ToastSlotRegex = 'Toast2IT|ToastNotification|Toast Notification'
 
-# -- Logging (matches the install/uninstall scripts' style) ------------------
 if (-not (Test-Path -LiteralPath $WorkDir)) { [void](New-Item -ItemType Directory -Path $WorkDir -Force) }
 $script:LogFile = Join-Path $WorkDir 'reset-toast-lockscreen.log'
 function Write-Log {
@@ -92,27 +70,17 @@ function Write-Log {
 Write-Log "Reset-ToastLockScreen started. Running as: $([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
 Write-Log "OS: $([System.Environment]::OSVersion.VersionString)"
 
-# -- Resolve the default image (prefer img100.jpg, else enumerate). Reject a quoted
-#    operator path -- it is interpolated into the WinRT helper literal in step 5. --
-if ($DefaultImage -and ($DefaultImage -match "['""]")) {
-    Write-Log "Ignoring -DefaultImage containing a quote (unsafe to interpolate): $DefaultImage" 'WARN'
-    $DefaultImage = $null
+# Resolve the Windows default image (prefer img100.jpg).
+$DefaultImage = $null
+$screenDir = Join-Path $env:WINDIR 'Web\Screen'
+$preferred = Join-Path $screenDir 'img100.jpg'
+if (Test-Path -LiteralPath $preferred) { $DefaultImage = $preferred }
+else {
+    $cand = Get-ChildItem -LiteralPath $screenDir -Filter 'img*.jpg' -File -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -First 1
+    if ($cand) { $DefaultImage = $cand.FullName }
 }
-if (-not $DefaultImage -or -not (Test-Path -LiteralPath $DefaultImage)) {
-    $screenDir = Join-Path $env:WINDIR 'Web\Screen'
-    $preferred = Join-Path $screenDir 'img100.jpg'
-    if (Test-Path -LiteralPath $preferred) {
-        $DefaultImage = $preferred
-    } else {
-        $candidate = Get-ChildItem -LiteralPath $screenDir -Filter 'img*.jpg' -File -ErrorAction SilentlyContinue |
-            Sort-Object Name | Select-Object -First 1
-        if ($candidate) { $DefaultImage = $candidate.FullName }
-    }
-}
-if ($DefaultImage) { Write-Log "Default image target: $DefaultImage" }
-else { Write-Log "No C:\Windows\Web\Screen\img*.jpg found -- relying on OS fallback for the default." 'WARN' }
+if ($DefaultImage) { Write-Log "Default image: $DefaultImage" } else { Write-Log "No Web\Screen\img*.jpg default found." 'WARN' }
 
-# -- Helper: enumerate every real user profile dir (skips service/system profiles) --
 function Get-UserProfilePaths {
     $out = @()
     try {
@@ -123,112 +91,162 @@ function Get-UserProfilePaths {
     return $out
 }
 
-# -- Helper: XML-escape values interpolated into the scheduled-task XML -------
-function ConvertTo-XmlText([string]$s) {
-    return ($s -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;' -replace '"', '&quot;')
+# Take ownership of and delete ONE SystemData LockScreen_<letter> slot folder for a SID.
+function Remove-ToastSlotFolder {
+    param([string]$Sid, [string]$Letter)
+    $slot = Join-Path $env:ProgramData ("Microsoft\Windows\SystemData\$Sid\ReadOnly\LockScreen_$Letter")
+    if (-not (Test-Path -LiteralPath $slot)) { return }
+    if ($script:DeferCacheDelete) { Write-Log "  deferring cache slot delete to reboot (no confirmed default yet): $slot" 'WARN'; $script:RebootNeeded = $true; return }
+    & takeown.exe /F "$slot" /R /D Y > $null 2>&1
+    & icacls.exe "$slot" /grant "*S-1-5-18:(OI)(CI)F" /grant "*S-1-5-32-544:(OI)(CI)F" /T /C > $null 2>&1
+    try { Remove-Item -LiteralPath $slot -Recurse -Force -ErrorAction Stop; Write-Log "  deleted cache slot: $slot" }
+    catch { Write-Log "  cache slot locked (in use), clears on reboot: $slot" 'WARN'; $script:RebootNeeded = $true }
 }
 
-# -- Helper: delete only the ImageId_/OriginalFile_/Details_ slot triplets from one
-#    user hive's Lock Screen key. Never touches sibling values. ----------------
-$script:LockScreenRelKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Lock Screen'
-function Clear-LockScreenSlots([string]$hiveRoot) {
-    $p = Join-Path $hiveRoot $script:LockScreenRelKey
-    if (-not (Test-Path -LiteralPath $p)) { return }
+# Surgically remove Toast slots from ONE user hive. $Sid is the real user SID (for SystemData);
+# $HiveRoot is the registry root to read (Registry::HKEY_USERS\<sid-or-mount>).
+function Remove-ToastSlotsFromHive {
+    param([string]$HiveRoot, [string]$Sid)
+    $key = Join-Path $HiveRoot 'SOFTWARE\Microsoft\Windows\CurrentVersion\Lock Screen'
+    if (-not (Test-Path -LiteralPath $key)) { return }
     try {
-        $names = (Get-Item -LiteralPath $p -ErrorAction Stop).Property |
-            Where-Object { $_ -match '^(ImageId|OriginalFile|Details)_' }
-        foreach ($n in $names) {
-            Remove-ItemProperty -LiteralPath $p -Name $n -Force -ErrorAction SilentlyContinue
-            Write-Log "  cleared $p\$n"
+        $item  = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
+        $props = (Get-Item -LiteralPath $key).Property
+    } catch { return }
+    $brandLetters = @()
+    foreach ($n in $props) {
+        $letter = $null
+        if ($n -match '^Details_(.+)$') {
+            $cand = $Matches[1]   # capture the slot letter BEFORE the content -match clobbers $Matches
+            if (([string]$item.$n) -match $script:ToastSlotRegex) { $letter = $cand }
+        } elseif ($n -match '^OriginalFile_(.+)$') {
+            $cand = $Matches[1]
+            $v = $item.$n
+            if ($v -is [byte[]]) {
+                $ascii = -join ($v | ForEach-Object { if ($_ -ge 32 -and $_ -lt 127) { [char]$_ } else { ' ' } })
+                if ($ascii -match $script:ToastSlotRegex) { $letter = $cand }
+            }
         }
-    } catch { Write-Log "  slot sweep failed at ${p}: $($_.Exception.Message)" 'WARN' }
+        if ($letter) { $brandLetters += $letter }
+    }
+    foreach ($letter in ($brandLetters | Select-Object -Unique)) {
+        if ($letter -notmatch '^[A-Za-z0-9]{1,4}$') { Write-Log "  skipping non-standard slot id '$letter'" 'WARN'; continue }
+        foreach ($vn in @("ImageId_$letter", "OriginalFile_$letter", "Details_$letter")) {
+            Remove-ItemProperty -LiteralPath $key -Name $vn -Force -ErrorAction SilentlyContinue
+        }
+        Write-Log "  removed Toast slot index '$letter' (SID $Sid)"
+        Remove-ToastSlotFolder -Sid $Sid -Letter $letter
+    }
 }
 
 # ============================================================================
-# STEP 1 -- Release machine-wide lock-screen enforcement (HKLM). Deleting the
-# values returns control to the user / OS default. Idempotent (absent = success).
+# STEP 1 -- Re-enable normal lock-screen behavior. Clear the install's Spotlight
+# pins AND remove any PersonalizationCSP image a prior version pinned (un-lock
+# "managed by your organization"). NO new policy is written.
 # ============================================================================
-Write-Log "Step 1: releasing machine-wide lock-screen enforcement (HKLM)."
-$hklmValuesToClear = @(
-    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'; Name = 'LockScreenImageStatus' },
-    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'; Name = 'LockScreenImagePath' },
-    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'; Name = 'LockScreenImageUrl' },
-    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'LockScreenImage' },
-    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'NoChangingLockScreen' },
-    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'NoLockScreenSlideshow' },
+Write-Log "Step 1: clearing lock-screen policy pins + any prior CSP lock (HKLM)."
+$hklmClear = @(
+    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Lock Screen'; Name = 'HideSpotlightWindowsSpotlight' },
     @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'NoLockScreenCamera' },
     @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'LockScreenOverlaysDisabled' },
-    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Lock Screen'; Name = 'HideSpotlightWindowsSpotlight' }
+    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'LockScreenImage' },
+    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'NoChangingLockScreen' },
+    # Undo any PersonalizationCSP image a prior (broken) version of this script pinned.
+    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'; Name = 'LockScreenImageStatus' },
+    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'; Name = 'LockScreenImagePath' },
+    @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'; Name = 'LockScreenImageUrl' }
 )
-foreach ($v in $hklmValuesToClear) {
+foreach ($v in $hklmClear) {
     try {
-        if (Test-Path -LiteralPath $v.Path) {
-            $existing = Get-ItemProperty -LiteralPath $v.Path -Name $v.Name -ErrorAction SilentlyContinue
-            if ($null -ne $existing) {
-                Remove-ItemProperty -LiteralPath $v.Path -Name $v.Name -Force -ErrorAction SilentlyContinue
-                Write-Log "  cleared $($v.Path)\$($v.Name)"
-            }
+        if ((Test-Path -LiteralPath $v.Path) -and ($null -ne (Get-ItemProperty -LiteralPath $v.Path -Name $v.Name -ErrorAction SilentlyContinue))) {
+            Remove-ItemProperty -LiteralPath $v.Path -Name $v.Name -Force -ErrorAction SilentlyContinue
+            Write-Log "  cleared $($v.Path)\$($v.Name)"
         }
     } catch { Write-Log "  could not clear $($v.Path)\$($v.Name): $($_.Exception.Message)" 'WARN' }
 }
 
 # ============================================================================
-# STEP 2 -- HARD-DELETE the Windows SystemData lock-screen cache slots. Enumerate
-# EVERY SID incl. Azure AD/Entra (S-1-12-1-*); delete ONLY the LockScreen_* child folders; NEVER touch the
-# ReadOnly/<SID> parent.
+# STEP 2 -- Set the active lock screen back to the Windows default for the logged-on
+# user via the same per-user WinRT call the agent uses (non-locking). Best-effort.
 # ============================================================================
-Write-Log "Step 2: hard-deleting SystemData lock-screen cache slots."
-$systemDataRoot = Join-Path $env:ProgramData 'Microsoft\Windows\SystemData'
-if (Test-Path -LiteralPath $systemDataRoot) {
-    $sidDirs = Get-ChildItem -LiteralPath $systemDataRoot -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -like 'S-1-*' }
-    foreach ($sidDir in $sidDirs) {
-        $readOnly = Join-Path $sidDir.FullName 'ReadOnly'
-        if (-not (Test-Path -LiteralPath $readOnly)) { continue }
-        $slots = Get-ChildItem -LiteralPath $readOnly -Directory -Filter 'LockScreen_*' -ErrorAction SilentlyContinue
-        foreach ($slot in $slots) {
-            $p = $slot.FullName
-            # Take ownership + grant SYSTEM/Administrators (well-known SIDs = locale-independent),
-            # then delete. takeown/icacls output is noise -- swallow it.
-            & takeown.exe /F "$p" /R /D Y  > $null 2>&1
-            & icacls.exe  "$p" /grant "*S-1-5-18:(OI)(CI)F" /grant "*S-1-5-32-544:(OI)(CI)F" /T /C > $null 2>&1
-            try {
-                Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop
-                Write-Log "  deleted slot: $p"
-            } catch {
-                # Almost always the active slot held open by LogonUI while the lock
-                # screen is displayed. Cleared at reboot -- signal 3010. (Ownership was
-                # taken on this slot's files; the OS resets it on the next set/reboot.)
-                Write-Log "  slot locked (in use), will clear on reboot: $p -- $($_.Exception.Message)" 'WARN'
-                $script:RebootNeeded = $true
-            }
-        }
-    }
+if ($NoUserRefresh) {
+    Write-Log "Step 2: skipped (-NoUserRefresh)."
+} elseif (-not $DefaultImage) {
+    Write-Log "Step 2: skipped (no default image)." 'WARN'
 } else {
-    Write-Log "  $systemDataRoot not present -- nothing to purge."
+    $hasInteractive = $false
+    try { $hasInteractive = [bool](Get-CimInstance -ClassName Win32_Process -Filter "Name='explorer.exe'" -ErrorAction SilentlyContinue) } catch { }
+    if (-not $hasInteractive) {
+        Write-Log "Step 2: no interactive session; default applies after the brand slot is removed + next lock."
+    } else {
+        Write-Log "Step 2: setting active lock screen to default via user-session WinRT task."
+        $helperPath = Join-Path $WorkDir 'reset-lockscreen-winrt.ps1'
+        $resultPath = Join-Path $WorkDir 'reset-lockscreen-winrt.result'
+        $taskName   = '\Toast2IT\ToastLockScreenResetOnce'
+        $taskXmlPath = Join-Path $WorkDir 'reset-lockscreen-task.xml'
+        try { Set-Content -LiteralPath $resultPath -Value '' -Force -ErrorAction SilentlyContinue } catch { }
+        & icacls.exe "$resultPath" /grant "*S-1-5-32-545:(M)" > $null 2>&1
+        $winrtPs = @"
+`$result = '$resultPath'
+try {
+  Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction SilentlyContinue
+  Function Await(`$op, `$rt) {
+    `$as = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { `$_.Name -eq 'AsTask' -and `$_.GetParameters().Count -eq 1 -and `$_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation``1' })[0]
+    `$t = `$as.MakeGenericMethod(`$rt).Invoke(`$null, @(`$op)); `$t.Wait(-1) | Out-Null; `$t.Result
+  }
+  Function AwaitAction(`$action) {
+    `$as = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { `$_.Name -eq 'AsTask' -and `$_.GetParameters().Count -eq 1 -and `$_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' })[0]
+    `$t = `$as.Invoke(`$null, @(`$action)); `$t.Wait(-1) | Out-Null
+  }
+  [Windows.System.UserProfile.LockScreen,Windows.System.UserProfile,ContentType=WindowsRuntime] | Out-Null
+  [Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime] | Out-Null
+  `$file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync('$DefaultImage')) ([Windows.Storage.StorageFile])
+  AwaitAction ([Windows.System.UserProfile.LockScreen]::SetImageFileAsync(`$file))
+  try { Set-Content -LiteralPath `$result -Value 'SET_OK' -Force } catch { }
+} catch { try { Set-Content -LiteralPath `$result -Value ("ERR: " + `$_.Exception.Message) -Force } catch { } }
+"@
+        try {
+            [System.IO.File]::WriteAllText($helperPath, $winrtPs, (New-Object System.Text.UTF8Encoding($false)))
+            $cmd = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+            $psArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$helperPath`""
+            $taskXml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Author>Toast2IT, LLC</Author><URI>$taskName</URI></RegistrationInfo>
+  <Principals><Principal id="A"><GroupId>S-1-5-32-545</GroupId><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><AllowHardTerminate>true</AllowHardTerminate><AllowStartOnDemand>true</AllowStartOnDemand><StartWhenAvailable>true</StartWhenAvailable><Enabled>true</Enabled><Hidden>true</Hidden><UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine><ExecutionTimeLimit>PT2M</ExecutionTimeLimit></Settings>
+  <Actions Context="A"><Exec><Command>$cmd</Command><Arguments>$psArgs</Arguments><WorkingDirectory>$WorkDir</WorkingDirectory></Exec></Actions>
+</Task>
+"@
+            [System.IO.File]::WriteAllText($taskXmlPath, $taskXml, [System.Text.Encoding]::Unicode)
+            & schtasks.exe /Create /TN $taskName /XML $taskXmlPath /F > $null 2>&1
+            & schtasks.exe /Run /TN $taskName > $null 2>&1
+            Start-Sleep -Seconds 6
+            & schtasks.exe /Delete /TN $taskName /F > $null 2>&1
+            $outcome = ''
+            try { $outcome = (Get-Content -LiteralPath $resultPath -Raw -ErrorAction SilentlyContinue).Trim() } catch { }
+            if ($outcome -eq 'SET_OK') { Write-Log "  active lock screen set to default."; $script:DeferCacheDelete = $false }
+            elseif ($outcome) { Write-Log "  WinRT reset reported: $outcome" 'WARN' }
+            else { Write-Log "  WinRT reset produced no result (locked/disconnected session)." 'WARN' }
+            Remove-Item -LiteralPath $taskXmlPath, $helperPath, $resultPath -Force -ErrorAction SilentlyContinue
+        } catch { Write-Log "  WinRT reset failed (non-fatal): $($_.Exception.Message)" 'WARN' }
+    }
 }
 
 # ============================================================================
-# STEP 2b -- Clear the per-user Lock Screen slot INDEX (ImageId_/OriginalFile_/
-# Details_) from every user hive: loaded HKEY_USERS hives + dormant profiles via
-# reg load / ProfileList. This removes the literal branded registry trace and the
-# backing index for the selectable-thumbnails strip. Real users + Azure AD (S-1-5-21-* / S-1-12-1-*).
+# STEP 3 -- SURGICALLY remove ONLY Toast slots (Details names the Toast agent) from
+# every real-user hive (loaded HKEY_USERS + dormant via reg load) + the matching
+# SystemData cache folder. Windows defaults are left intact (no black).
 # ============================================================================
-Write-Log "Step 2b: clearing per-user Lock Screen slot index (all hives)."
+Write-Log "Step 3: surgically removing Toast lock-screen slots (Toast-only)."
 $loadedSids = @()
 try {
     Get-ChildItem -Path 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue |
         Where-Object { ($_.PSChildName -like 'S-1-5-21-*' -or $_.PSChildName -like 'S-1-12-1-*') -and $_.PSChildName -notmatch '_Classes$' } |
-        ForEach-Object {
-            $loadedSids += $_.PSChildName
-            Clear-LockScreenSlots "Registry::HKEY_USERS\$($_.PSChildName)"
-        }
-} catch { Write-Log "  loaded-hive sweep raised (non-fatal): $($_.Exception.Message)" 'WARN' }
-
-# Dormant profiles: load NTUSER.DAT, clear, unload. Never unload a hive we did not load.
-$profileListKey = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList'
+        ForEach-Object { $loadedSids += $_.PSChildName; Remove-ToastSlotsFromHive -HiveRoot "Registry::HKEY_USERS\$($_.PSChildName)" -Sid $_.PSChildName }
+} catch { Write-Log "  loaded-hive sweep raised: $($_.Exception.Message)" 'WARN' }
 try {
-    Get-ChildItem -LiteralPath $profileListKey -ErrorAction SilentlyContinue |
+    Get-ChildItem -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' -ErrorAction SilentlyContinue |
         Where-Object { ($_.PSChildName -like 'S-1-5-21-*' -or $_.PSChildName -like 'S-1-12-1-*') -and $_.PSChildName -notin $loadedSids } |
         ForEach-Object {
             $sid = $_.PSChildName
@@ -237,209 +255,40 @@ try {
             if (-not $profPath) { return }
             $dat = Join-Path $profPath 'NTUSER.DAT'
             if (-not (Test-Path -LiteralPath $dat)) { return }
-            $mount = "TempToast_$sid"
-            $loaded = $false
+            $mount = "TempToast_$sid"; $loaded = $false
             try {
                 & reg.exe load "HKU\$mount" "$dat" > $null 2>&1
-                if ($LASTEXITCODE -eq 0) {
-                    $loaded = $true
-                    Clear-LockScreenSlots "Registry::HKEY_USERS\$mount"
-                }
+                if ($LASTEXITCODE -eq 0) { $loaded = $true; Remove-ToastSlotsFromHive -HiveRoot "Registry::HKEY_USERS\$mount" -Sid $sid }
             } catch { Write-Log "  hive load failed for ${sid}: $($_.Exception.Message)" 'WARN' }
-            finally {
-                if ($loaded) {
-                    [gc]::Collect()   # release the PS registry-provider handle before unload
-                    & reg.exe unload "HKU\$mount" > $null 2>&1
-                }
-            }
+            finally { if ($loaded) { [gc]::Collect(); & reg.exe unload "HKU\$mount" > $null 2>&1 } }
         }
-} catch { Write-Log "  dormant-hive sweep raised (non-fatal): $($_.Exception.Message)" 'WARN' }
+} catch { Write-Log "  dormant-hive sweep raised: $($_.Exception.Message)" 'WARN' }
 
 # ============================================================================
-# STEP 3 -- HARD-DELETE the agent's branded image files from every profile, in both
-# the unpackaged (MSI) config dir and the packaged (Store/MSIX) LocalState dir.
+# STEP 4 -- Delete the agent's own lockscreen image files (all profiles).
 # ============================================================================
-Write-Log "Step 3: hard-deleting agent lock-screen image files (all profiles)."
+Write-Log "Step 4: deleting agent lock-screen image files (all profiles)."
 $agentFiles = @('lockscreen.jpg', 'lockscreen_original.jpg', 'lockscreen.hash', 'lockscreen.jpg.tmp')
 foreach ($profilePath in (Get-UserProfilePaths)) {
-    $localAppData = Join-Path $profilePath 'AppData\Local'
-    $unpackaged = Join-Path $localAppData 'Toast2IT\Toast Notification'
-    $packagedRoots = @()
+    $lad = Join-Path $profilePath 'AppData\Local'
+    $dirs = @(Join-Path $lad 'Toast2IT\Toast Notification')
     try {
-        $packagedRoots = Get-ChildItem -LiteralPath (Join-Path $localAppData 'Packages') -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -like 'FileUnityCloud.ToastNotification_*' } |
-            ForEach-Object { Join-Path $_.FullName 'LocalState' }
+        $dirs += Get-ChildItem -LiteralPath (Join-Path $lad 'Packages') -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like 'FileUnityCloud.ToastNotification_*' } | ForEach-Object { Join-Path $_.FullName 'LocalState' }
     } catch { }
-    foreach ($dir in (@($unpackaged) + $packagedRoots)) {
+    foreach ($dir in $dirs) {
         if (-not (Test-Path -LiteralPath $dir)) { continue }
         foreach ($f in $agentFiles) {
             $fp = Join-Path $dir $f
-            try {
-                if (Test-Path -LiteralPath $fp) {
-                    Remove-Item -LiteralPath $fp -Force -ErrorAction SilentlyContinue
-                    Write-Log "  deleted: $fp"
-                }
-            } catch { Write-Log "  could not delete ${fp}: $($_.Exception.Message)" 'WARN' }
+            try { if (Test-Path -LiteralPath $fp) { Remove-Item -LiteralPath $fp -Force -ErrorAction SilentlyContinue; Write-Log "  deleted: $fp" } } catch { }
         }
     }
-}
-
-# ============================================================================
-# STEP 4 -- Clear the per-user Content Delivery Manager image cache (Spotlight
-# belt-and-suspenders). Delete cached asset files only; impose no new restrictions.
-# ============================================================================
-Write-Log "Step 4: clearing per-user Content Delivery Manager image cache."
-foreach ($profilePath in (Get-UserProfilePaths)) {
-    $cdmState = Join-Path $profilePath 'AppData\Local\Packages\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\LocalState'
-    foreach ($sub in @('Assets', 'Settings')) {
-        $dir = Join-Path $cdmState $sub
-        if (Test-Path -LiteralPath $dir) {
-            try {
-                Get-ChildItem -LiteralPath $dir -File -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-                Write-Log "  cleared CDM $sub for $(Split-Path $profilePath -Leaf)"
-            } catch { Write-Log "  CDM $sub clear raised (non-fatal): $($_.Exception.Message)" 'WARN' }
-        }
-    }
-}
-
-# ============================================================================
-# STEP 5 -- Reset the ACTIVE image to the Windows default for the logged-on user,
-# immediately, via a transient WinRT scheduled task in the interactive session.
-# Best-effort + OBSERVABLE (writes a result the parent logs). If no user is logged
-# on, the purged cache + index already guarantee default at next logon.
-# ============================================================================
-if ($NoUserRefresh) {
-    Write-Log "Step 5: skipped (-NoUserRefresh). Default applies at next logon."
-} elseif (-not $DefaultImage) {
-    Write-Log "Step 5: skipped (no default image resolved). Default applies at next logon." 'WARN'
-} else {
-    $hasInteractive = $false
-    try {
-        $explorers = Get-CimInstance -ClassName Win32_Process -Filter "Name='explorer.exe'" -ErrorAction SilentlyContinue
-        $hasInteractive = [bool]$explorers
-    } catch { }
-
-    if (-not $hasInteractive) {
-        Write-Log "Step 5: no interactive session -- skipping live WinRT reset; default applies at next logon."
-    } else {
-        Write-Log "Step 5: resetting active lock screen to default via user-session WinRT task."
-        $helperPath  = Join-Path $WorkDir 'reset-lockscreen-winrt.ps1'
-        $resultPath  = Join-Path $WorkDir 'reset-lockscreen-winrt.result'
-        $taskName    = '\Toast2IT\ToastLockScreenResetOnce'
-        $taskXmlPath = Join-Path $WorkDir 'reset-lockscreen-task.xml'
-        # Pre-create the result file as SYSTEM and grant the interactive user (Users)
-        # modify on THAT FILE ONLY -- so the user-session helper can report back without
-        # making WorkDir itself user-writable (which would let a user pre-plant the helper).
-        try { Set-Content -LiteralPath $resultPath -Value '' -Force -ErrorAction SilentlyContinue } catch { }
-        & icacls.exe "$resultPath" /grant "*S-1-5-32-545:(M)" > $null 2>&1
-
-        # Helper run in the user's session. Uses the canonical Await pattern for WinRT;
-        # SetImageFileAsync returns IAsyncAction (void) so it needs the non-generic awaiter.
-        $winrtPs = @"
-`$result = '$resultPath'
-try {
-  Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction SilentlyContinue
-  Function Await(`$op, `$rt) {
-    `$as = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { `$_.Name -eq 'AsTask' -and `$_.GetParameters().Count -eq 1 -and `$_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation``1' })[0]
-    `$t = `$as.MakeGenericMethod(`$rt).Invoke(`$null, @(`$op))
-    `$t.Wait(-1) | Out-Null
-    `$t.Result
-  }
-  Function AwaitAction(`$action) {
-    `$as = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { `$_.Name -eq 'AsTask' -and `$_.GetParameters().Count -eq 1 -and `$_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' })[0]
-    `$t = `$as.Invoke(`$null, @(`$action))
-    `$t.Wait(-1) | Out-Null
-  }
-  [Windows.System.UserProfile.LockScreen,Windows.System.UserProfile,ContentType=WindowsRuntime] | Out-Null
-  [Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime] | Out-Null
-  `$file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync('$DefaultImage')) ([Windows.Storage.StorageFile])
-  AwaitAction ([Windows.System.UserProfile.LockScreen]::SetImageFileAsync(`$file))
-  try { Set-Content -LiteralPath `$result -Value 'SET_OK' -Force } catch { }
-} catch {
-  try { Set-Content -LiteralPath `$result -Value ("ERR: " + `$_.Exception.Message) -Force } catch { }
-}
-"@
-        try {
-            [System.IO.File]::WriteAllText($helperPath, $winrtPs, (New-Object System.Text.UTF8Encoding($false)))
-            $cmd    = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
-            $psArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $helperPath"
-            $taskXml = @"
-<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo>
-    <Author>Toast2IT, LLC</Author>
-    <Description>One-shot: reset the lock screen to the Windows default.</Description>
-    <URI>$(ConvertTo-XmlText $taskName)</URI>
-  </RegistrationInfo>
-  <Principals>
-    <Principal id="Author">
-      <GroupId>S-1-5-32-545</GroupId>
-      <RunLevel>LeastPrivilege</RunLevel>
-    </Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <AllowHardTerminate>true</AllowHardTerminate>
-    <AllowStartOnDemand>true</AllowStartOnDemand>
-    <StartWhenAvailable>true</StartWhenAvailable>
-    <Enabled>true</Enabled>
-    <Hidden>true</Hidden>
-    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
-    <ExecutionTimeLimit>PT2M</ExecutionTimeLimit>
-  </Settings>
-  <Actions Context="Author">
-    <Exec>
-      <Command>$(ConvertTo-XmlText $cmd)</Command>
-      <Arguments>$(ConvertTo-XmlText $psArgs)</Arguments>
-      <WorkingDirectory>$(ConvertTo-XmlText $WorkDir)</WorkingDirectory>
-    </Exec>
-  </Actions>
-</Task>
-"@
-            [System.IO.File]::WriteAllText($taskXmlPath, $taskXml, [System.Text.Encoding]::Unicode)
-            & schtasks.exe /Create /TN $taskName /XML $taskXmlPath /F > $null 2>&1
-            & schtasks.exe /Run /TN $taskName > $null 2>&1
-            Start-Sleep -Seconds 6
-            & schtasks.exe /Delete /TN $taskName /F > $null 2>&1
-
-            $outcome = ''
-            try { $outcome = (Get-Content -LiteralPath $resultPath -Raw -ErrorAction SilentlyContinue).Trim() } catch { }
-            if ($outcome -eq 'SET_OK') { Write-Log "  user-session WinRT reset succeeded (lock screen set to default now)." }
-            elseif ($outcome) { Write-Log "  user-session WinRT reset reported: $outcome (default still applies at next logon)." 'WARN' }
-            else { Write-Log "  user-session WinRT reset produced no result (likely locked/disconnected session); default applies at next logon." 'WARN' }
-
-            Remove-Item -LiteralPath $taskXmlPath, $helperPath, $resultPath -Force -ErrorAction SilentlyContinue
-        } catch {
-            Write-Log "  user-session WinRT reset failed (non-fatal): $($_.Exception.Message)" 'WARN'
-        }
-    }
-}
-
-# ============================================================================
-# STEP 6 -- Set the genuine Windows DEFAULT as the active lock screen so the device
-# is NEVER left black after the brand cache is deleted. PersonalizationCSP (the same
-# machine-wide surface Intune uses) works with NO user logged on and survives reboot.
-# This is what actually repaints the sign-in screen; the per-user WinRT step above
-# only fires when someone is logged in. If your Intune pushes its own lock-screen
-# policy it re-applies on next sync and wins; the Toast install script clears this
-# before branding, so a future re-deploy is unaffected.
-# ============================================================================
-if (-not $NoUserRefresh -and $DefaultImage) {
-    Write-Log "Step 6: setting the Windows default lock screen via PersonalizationCSP -> $DefaultImage"
-    $cspKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'
-    try {
-        if (-not (Test-Path -LiteralPath $cspKey)) { New-Item -Path $cspKey -Force | Out-Null }
-        New-ItemProperty -LiteralPath $cspKey -Name 'LockScreenImageUrl'    -Value $DefaultImage -PropertyType String -Force | Out-Null
-        New-ItemProperty -LiteralPath $cspKey -Name 'LockScreenImagePath'   -Value $DefaultImage -PropertyType String -Force | Out-Null
-        New-ItemProperty -LiteralPath $cspKey -Name 'LockScreenImageStatus' -Value 1 -PropertyType DWord -Force | Out-Null
-        Write-Log "  default lock screen set; device shows the Windows default at next lock/sign-in."
-    } catch { Write-Log "  could not set default lock screen: $($_.Exception.Message)" 'WARN' }
 }
 
 # -- Result ------------------------------------------------------------------
 if ($script:RebootNeeded) {
-    Write-Log "Lock-screen reset complete; a cache slot was locked -- REBOOT to finalize (exit 3010)."
+    Write-Log "Reset complete; a Toast cache slot was locked -- REBOOT to finalize (exit 3010)."
     exit 3010
 }
-Write-Log "Lock-screen reset complete. Device returns to the Windows default."
+Write-Log "Reset complete. Toast brand removed; Windows defaults left intact."
 exit 0

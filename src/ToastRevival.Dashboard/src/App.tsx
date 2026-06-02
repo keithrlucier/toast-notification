@@ -19,7 +19,6 @@ import Templates from './pages/Templates';
 import Compose from './pages/Compose';
 import History from './pages/History';
 import Moderation from './pages/Moderation';
-import ApiKeys from './pages/ApiKeys';
 import Users from './pages/Users';
 import Analytics from './pages/Analytics';
 import TenantSettings from './pages/TenantSettings';
@@ -107,6 +106,7 @@ const router = createBrowserRouter([
       { path: '/security',       element: <Suspense fallback={<MarketingFallback />}><Security /></Suspense> },
       { path: '/llms',           element: <Suspense fallback={<MarketingFallback />}><Llms /></Suspense> },
       { path: '/legal/privacy',  element: <Suspense fallback={<MarketingFallback />}><Privacy /></Suspense> },
+      { path: '/privacy-policy', element: <Suspense fallback={<MarketingFallback />}><Privacy /></Suspense> },
       { path: '/legal/terms',    element: <Suspense fallback={<MarketingFallback />}><Terms /></Suspense> },
       {
         element: (
@@ -155,14 +155,6 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute requireAdmin>
             <Moderation />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: '/settings/api-keys',
-        element: (
-          <ProtectedRoute requireAdmin>
-            <ApiKeys />
           </ProtectedRoute>
         ),
       },

@@ -28,16 +28,13 @@ namespace ToastRevival.Api.Services;
 /// ContentSafetyClient is cached by (endpoint, key-hash) to avoid the
 /// construction cost on every send.
 ///
-/// MOD-1 (anchor, 2026-06-01 — OPEN, owner Keith): every scan path below FAILS OPEN
-/// (returns Pass) when the Azure call throws or no client is configured. This is a
-/// DELIBERATE availability tradeoff — a transient Azure outage must not block every
-/// tenant's sends — and a security-conscious tenant already has a fail-closed knob:
-/// ModerationRequireApprovalAll routes all Pass results to human Review
-/// (NotificationsController.Send). The open product decision Keith owns: should an
-/// Azure *exception* (as opposed to "not configured") degrade to Review instead of
-/// Pass for moderation-ENABLED tenants? That trades a silent passthrough for a
-/// review-queue flood during an outage. One-line change either way once decided.
-/// Anchored so the next sweep does not re-flag the fail-open as an oversight.
+/// MOD-1 (resolved 2026-06-01 — Keith: FAIL CLOSED): when an Azure scan call THROWS,
+/// every scan path below now returns Block so the send pipeline STOPS — moderation
+/// failing must not let unmoderated content through. The "not configured / disabled"
+/// path still returns Pass (so dev/staging and tenants with moderation turned off keep
+/// working); that is moderation deliberately *off*, not moderation *failing*. If Keith
+/// later wants enabled-but-unconfigured in production to also fail closed, gate that on
+/// IHostEnvironment.IsDevelopment() at the `client is null` checks.
 /// </summary>
 public class ContentSafetyService : IContentModerationService
 {
@@ -84,11 +81,10 @@ public class ContentSafetyService : IContentModerationService
         }
         catch (Exception ex)
         {
-            // MOD-1 (anchor): fail-open is deliberate — see class doc. A transient
-            // Azure outage should not block every send; tenants needing fail-closed
-            // enable ModerationRequireApprovalAll.
+            // MOD-1: FAIL CLOSED (Keith 2026-06-01). Moderation failing must stop the
+            // send, not pass unmoderated content through.
             _logger.LogError(ex, "[ContentSafety] text scan failed: {ExType}", ex.GetType().Name);
-            return Pass();
+            return FailClosed();
         }
     }
 
@@ -113,9 +109,9 @@ public class ContentSafetyService : IContentModerationService
         }
         catch (Exception ex)
         {
-            // MOD-1 (anchor): fail-open is deliberate — see class doc.
+            // MOD-1: FAIL CLOSED (Keith 2026-06-01).
             _logger.LogError(ex, "[ContentSafety] image scan failed: {ExType}", ex.GetType().Name);
-            return Pass();
+            return FailClosed();
         }
     }
 
@@ -140,9 +136,9 @@ public class ContentSafetyService : IContentModerationService
         }
         catch (Exception ex)
         {
-            // MOD-1 (anchor): fail-open is deliberate — see class doc.
+            // MOD-1: FAIL CLOSED (Keith 2026-06-01).
             _logger.LogError(ex, "[ContentSafety] image bytes scan failed: {ExType}", ex.GetType().Name);
-            return Pass();
+            return FailClosed();
         }
     }
 
@@ -227,6 +223,10 @@ public class ContentSafetyService : IContentModerationService
 
     private static ModerationResult Pass() =>
         new(ModerationDecision.Pass, null, null, null);
+
+    // MOD-1: moderation could not run to completion → Block so the send pipeline stops.
+    private static ModerationResult FailClosed() =>
+        new(ModerationDecision.Block, null, null, null);
 
     /// <summary>
     /// Resolved per-call moderation policy — combines tenant overrides with platform defaults.

@@ -73,6 +73,9 @@ public class Tenant
     public int DesktopOverlayOpacityPercent { get; set; } = 85;
     public bool LockScreenEnabled { get; set; }
     public string? LockScreenImageUrl { get; set; }
+    // DASH-L1: server-provided cache-bust — stamped whenever the lock-screen image changes,
+    // surfaced to agents/dashboard as the ?v= so a replaced image is re-fetched everywhere.
+    public DateTime? LockScreenImageUpdatedAt { get; set; }
 
     // ─── M14 — Microsoft SSO (Entra / Azure AD) ──────────────────────────────
     // Per-tenant federation opt-in. A tenant admin enables Microsoft sign-in by

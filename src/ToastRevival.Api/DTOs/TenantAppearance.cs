@@ -81,6 +81,7 @@ public static class TenantAppearance
     }
 
     public static LockScreenConfigResponse BuildLockScreen(Tenant t) => new(
-        Enabled:  t.LockScreenEnabled,
-        ImageUrl: t.LockScreenImageUrl);
+        Enabled:           t.LockScreenEnabled,
+        ImageUrl:          t.LockScreenImageUrl,
+        ImageUpdatedAtUtc: t.LockScreenImageUpdatedAt);
 }

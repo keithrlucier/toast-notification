@@ -178,20 +178,15 @@ builder.Services.AddRateLimiter(opts =>
     });
 
     // Login brute-force protection: 10 attempts / 5 min per IP.
-    // CF-Connecting-IP is the real client IP behind Cloudflare; fall back to
-    // RemoteIpAddress for non-Cloudflare traffic (dev/staging).
-    //
-    // ANCHOR BF-2 (owner: Keith — DEPLOY-TOPOLOGY decision; applies to login-sms-per-ip
-    // and trial-register-per-ip too). The correct hardening of this partition key is
-    // deployment-topology-dependent and must not be applied blind; per-account abuse is
-    // already mitigated out-of-band by BF-1 (Identity account lockout). Held for Keith's
-    // call on the gateway topology. Rationale + options recorded in the private review
-    // ledger; anchored so the next sweep does not re-flag.
+    // BF-2 (Keith 2026-06-01 — RESOLVED): the partition key now trusts CF-Connecting-IP
+    // ONLY when the socket peer is a verified Cloudflare egress IP (or a loopback reverse
+    // proxy that forwarded it) — see CloudflareIpValidator.ResolveTrustedClientIp. A direct
+    // hit on the origin can no longer forge the header to reset its bucket. Applies to
+    // login-sms-per-ip and trial-register-per-ip too. Ops follow-up (Keith): ensure the
+    // origin firewall only admits Cloudflare ranges in production.
     opts.AddPolicy("login-per-ip", ctx =>
     {
-        var partitionKey = ctx.Request.Headers["CF-Connecting-IP"].FirstOrDefault()
-            ?? ctx.Connection.RemoteIpAddress?.ToString()
-            ?? "anon";
+        var partitionKey = CloudflareIpValidator.ResolveTrustedClientIp(ctx);
         return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
@@ -205,9 +200,7 @@ builder.Services.AddRateLimiter(opts =>
     // Same CF-Connecting-IP pattern as login-per-ip.
     opts.AddPolicy("login-sms-per-ip", ctx =>
     {
-        var partitionKey = ctx.Request.Headers["CF-Connecting-IP"].FirstOrDefault()
-            ?? ctx.Connection.RemoteIpAddress?.ToString()
-            ?? "anon";
+        var partitionKey = CloudflareIpValidator.ResolveTrustedClientIp(ctx);
         return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 5,
@@ -221,9 +214,7 @@ builder.Services.AddRateLimiter(opts =>
     // validation flooding before any tenant or user is created.
     opts.AddPolicy("trial-register-per-ip", ctx =>
     {
-        var partitionKey = ctx.Request.Headers["CF-Connecting-IP"].FirstOrDefault()
-            ?? ctx.Connection.RemoteIpAddress?.ToString()
-            ?? "anon";
+        var partitionKey = CloudflareIpValidator.ResolveTrustedClientIp(ctx);
         return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 5,
@@ -255,6 +246,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationQueueS
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IContentModerationService, ContentSafetyService>();
 builder.Services.AddScoped<IBlocklistService, BlocklistService>();
+builder.Services.AddSingleton<ICloudflareIpValidator, CloudflareIpValidator>();
 builder.Services.AddSingleton<MfaService>();
 
 // PDF export

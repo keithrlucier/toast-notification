@@ -105,7 +105,8 @@ public class UpdateOverlayConfigRequest
 /// </summary>
 public record LockScreenConfigResponse(
     bool Enabled,
-    string? ImageUrl);
+    string? ImageUrl,
+    DateTime? ImageUpdatedAtUtc);
 
 public class UpdateLockScreenConfigRequest
 {

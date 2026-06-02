@@ -465,6 +465,13 @@ const routes = [
   },
 ];
 
+// Microsoft Store policy 10.5.1: the app-listing privacy URL is /privacy-policy/.
+// Emit an alias page with the SAME content as /legal/privacy so that exact URL renders
+// the policy (prerendered HTML, not a blank SPA shell) and lands in the sitemap below.
+// Single source of truth — no duplicated legal text. Matching SPA route alias lives in App.tsx.
+const privacySource = routes.find((r) => r.path === '/legal/privacy');
+if (privacySource) routes.push({ ...privacySource, path: '/privacy-policy' });
+
 for (const route of routes) {
   route.jsonLd ??= [
     articleLd(route),

@@ -31,9 +31,17 @@ Everything else green-lit on the 2026-06-01 call shipped this session (see **Clo
 |----|-----|--------|-------|---------------|---------------------|
 | XT-1 | High | OPEN | Keith | `DevicesController.Register` + `Setup.wxs` | Per-device single-use enrollment tokens (replacing the reusable HKLM key). Scoped: a non-breaking SERVER-FIRST phase (EnrollmentToken model + issue/list/revoke endpoints + Register accepting single-use tokens; the legacy key keeps working) then an MSI phase (agent + WiX read the token) needing an MSI bump + your code-signing token + reinstall push. |
 | MFA-7 | Medium | OPEN | Keith | `AuthController.MfaVerifySms` | REVIEW (you're holding this): confirmed the TOTP step-up IS already a distinct enrolled-secret factor. Remaining — a TOTP-enrolled user can still downgrade to the weaker SMS step-up, and removing SMS outright would lock out SMS-only / SSO / legacy users until they enroll TOTP. Approve the safe hardening (block SMS step-up when TOTP is enrolled) + the user-migration plan before ClickSend SMS is retired. |
-| AGT-4-R | Low | OPEN | Keith | appearance config / `LockScreenService` | End-to-end HMAC-sign the appearance config (mirrors the existing toast HMAC). Scoped as a 3-phase versioned rollout (server signs → agent verifies → enforce) needing a signed MSI to reach the fleet; the image host-pin already shipped. |
 
 ---
+
+## SHIPPED TO PRODUCTION — 2026-06-02 (LIVE on TOASTWEB1)
+
+The entire session's work is deployed + verified on prod, not just committed:
+- **API** redeployed (`/opt/toast/api`, `toast-api` active, `/api/health` healthy) — live: BF-2, MOD-1, API-1, DASH-L1, billing-disable, SES-2-R, and AGT-4-R server-side signing. **M16 migration applied on startup** (`Tenant.LockScreenImageUpdatedAt`). Prior build backed up at `api.bak.prev` for rollback.
+- **Dashboard** redeployed — `/privacy-policy/` renders the policy LIVE (Store 10.5.1 fix verified; `/login` + marketing Playwright screenshots clean, 0 console errors).
+- **Signed agent MSI 0.4.35** hosted at `https://toastnotification.com/downloads/ToastNotification.msi` — **Authenticode Valid (Toast2IT, LLC)** over the public URL; versioned copy 200; Velopack feed `releases.win.json` 200; signed Setup.exe published.
+- **`Agent:LatestVersion` → 0.4.35** (`/api/agent/version` confirms) — fleet self-updates on next 24h poll; **Keith pushes the RMM reinstall for immediate**. Delivers Agent-H1 (LPE/TOCTOU), AGT-LOG-1 (enrollment-key log redaction), and AGT-4-R to the fleet.
+- **MSIX 0.4.35.0** built unsigned + codename-audited clean — **ready for Keith to upload to Partner Center** (resubmit the Store app; the privacy URL is now live).
 
 ## Closed this session — post-call execution (2026-06-01)
 
@@ -45,7 +53,8 @@ All green-lit on the call, built + verified + shipped to private `main` + the pu
 - **API-1** — FIXED-VERIFIED (v0.5.22) — the inert per-tenant API-key UI was removed (page/route/nav + controller/DTOs). DbSet/model/table retained (no EF drift, no data loss).
 - **BILL-ENF-1** — REMEDIATED (v0.5.23) — moot: billing is DISABLED platform-wide via `Billing:Enabled` (default off). No billable seats exist, so the PastDue-grace question does not arise until billing is re-enabled. Keith's scope call on the call.
 - **SES-2-R** — FIXED-VERIFIED (v0.5.24) — token-epoch session revocation: user tokens carry `tokenEpoch` (= Identity SecurityStamp); the `OnTokenValidated` hook rejects a token when the tenant is suspended or the stamp rotated (30s cache, fail-open on a DB blip, legacy-token-safe). SecurityStamp rotates on password reset (Identity) and role change. Tenant suspend now kills live operator sessions, not just device/send/hub paths.
-- **Store privacy (10.5.1)** — FIXED-VERIFIED (v0.5.22) — `/privacy-policy` route alias + prerender + sitemap so the Store-listing URL renders the policy (was a blank shell). **Action for Keith: resubmit the app in Partner Center.**
+- **AGT-4-R** — FIXED-VERIFIED (v0.5.25, agent 0.4.35, LIVE) — appearance/lock-screen config HMAC-signed end-to-end (server `AppearanceConfigBuilder` + agent verify, **fail-closed**). QA-gated by 4 adversarial reviewers (enforced signatures over the original graceful-unsigned fallback to kill the strip-the-signature downgrade) + unit-tested 5/5. Server signs in prod now; agents enforce after self-update to 0.4.35.
+- **Store privacy (10.5.1)** — FIXED-VERIFIED (v0.5.22, LIVE 2026-06-02) — `/privacy-policy` route alias + prerender + sitemap; verified rendering live at the Store-listing URL. **Action for Keith: resubmit the app in Partner Center with the new unsigned MSIX 0.4.35.0.**
 
 ---
 
@@ -57,7 +66,7 @@ Method: 3 parallel refute-first finder agents, every claim `git grep`-anchored, 
 re-verified personally. Builds: `ToastRevival.Api` + `ToastRevival.Agent` → 0 warnings / 0 errors.
 
 - **BLK-1** — FIXED-VERIFIED — `BlocklistService.cs:31-39`. Tenant custom-blocklist matching did raw `ToLowerInvariant()` + `Contains()` with no Unicode normalization, so a sender could split a banned term with a zero-width char (`b​adword`) or use full-width/ligature look-alikes to evade it. Fix: added `NormalizeForMatch` (NFKC + strip Unicode `Format`-category code points) on both the message and each term. Anchored. Residual: cross-script homoglyphs (Cyrillic 'а' vs Latin 'a') not folded — needs a confusables map; Azure CS remains the severity gate.
-- **AGT-LOG-1** — FIXED-VERIFIED — `Program.cs:55,301`. The agent wrote its full command line (including the optional `[enrollmentKey]` the MSI passes to `--setup-bootstrap`) to `agent.log` — a secret that an RMM/support log bundle could carry off-box. Fix: `DiagLog.RedactArgs` masks the key at both log sites. Anchored. **Ships to the fleet on the next signed MSI build + `Agent:LatestVersion` bump** (a source fix alone does not reach installed agents).
+- **AGT-LOG-1** — FIXED-VERIFIED (LIVE in agent 0.4.35) — `Program.cs:55,301`. The agent wrote its full command line (including the optional `[enrollmentKey]` the MSI passes to `--setup-bootstrap`) to `agent.log` — a secret that an RMM/support log bundle could carry off-box. Fix: `DiagLog.RedactArgs` masks the key at both log sites. Anchored. **Shipped to the fleet in the signed MSI 0.4.35 (`Agent:LatestVersion` bumped 2026-06-02).**
 
 ## Verified clean this audit (off gauge)
 

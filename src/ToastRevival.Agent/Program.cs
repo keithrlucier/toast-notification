@@ -52,7 +52,7 @@ namespace ToastRevival.Agent
         public static async Task<int> RunAsync(string[] args)
         {
             DiagLog.Init();
-            DiagLog.Write($"==> Toast Notification agent start; pid={Environment.ProcessId}; args=[{string.Join(' ', args)}]; baseDir={AppContext.BaseDirectory}; packaged={DiagLog.IsPackaged}; logPath={DiagLog.LogFilePath}");
+            DiagLog.Write($"==> Toast Notification agent start; pid={Environment.ProcessId}; args=[{DiagLog.RedactArgs(args)}]; baseDir={AppContext.BaseDirectory}; packaged={DiagLog.IsPackaged}; logPath={DiagLog.LogFilePath}");
 
             if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
             {
@@ -298,7 +298,7 @@ namespace ToastRevival.Agent
     {
         public static Task<int> RunAsync(string[] args)
         {
-            DiagLog.Write($"SetupMode: args=[{string.Join(' ', args)}]; baseDir={AppContext.BaseDirectory}");
+            DiagLog.Write($"SetupMode: args=[{DiagLog.RedactArgs(args)}]; baseDir={AppContext.BaseDirectory}");
 
             // Expect: --setup-bootstrap <tenantId> <serverUrl> [enrollmentKey]
             var idx = Array.IndexOf(args, "--setup-bootstrap");
@@ -792,6 +792,20 @@ namespace ToastRevival.Agent
         private static readonly object _lock = new();
         public static string LogFilePath { get; private set; } = "";
         public static bool IsPackaged { get; private set; }
+
+        // AGT-LOG-1 (2026-06-01): never write the per-tenant enrollment key to the
+        // diagnostic log. The MSI passes it as the optional positional after
+        // "--setup-bootstrap <tenantId> <serverUrl>"; mask it so a collected log
+        // bundle (RMM/support upload) can't carry the enrollment secret off-box.
+        // Parsing mirrors SetupMode.RunAsync (positional args[idx+3]).
+        public static string RedactArgs(string[] args)
+        {
+            var copy = (string[])args.Clone();
+            var idx = Array.IndexOf(copy, "--setup-bootstrap");
+            if (idx >= 0 && idx + 3 < copy.Length)
+                copy[idx + 3] = "***";
+            return string.Join(' ', copy);
+        }
 
         public static void Init()
         {

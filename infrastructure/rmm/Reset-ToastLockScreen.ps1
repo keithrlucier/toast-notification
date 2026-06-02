@@ -3,7 +3,7 @@
     Reset-ToastLockScreen.ps1 -- hard-remove EVERY trace of a Toast Notification
     (agent-applied) branded lock-screen image from a Windows endpoint and return
     the lock screen to the Windows default. Standalone, idempotent, SYSTEM-context,
-    headless-safe. Built for Tactical RMM (runs as SYSTEM) or PsExec -s -i.
+    headless-safe. For use with an RMM (runs as SYSTEM) or PsExec -s -i.
 
 .DESCRIPTION
     The agent set the lock screen with the per-user WinRT LockScreen API
@@ -44,7 +44,7 @@
 
     EVERY step is best-effort + idempotent. The only non-zero exit is 3010 (a cache
     slot was locked because the lock screen was on display) signalling a reboot is
-    needed to finalize -- wire that to a Tactical RMM reboot for a guaranteed-now result.
+    needed to finalize -- wire that to an RMM reboot for a guaranteed-now result.
 
 .PARAMETER DefaultImage
     Image to set as the post-removal default. Defaults to C:\Windows\Web\Screen\img100.jpg
@@ -60,7 +60,7 @@
 .NOTES
     Exit 0    = clean.
     Exit 3010 = clean, but a locked cache slot needs a reboot to finalize.
-    Run as SYSTEM (Tactical RMM default) or local admin elevated.
+    Run as SYSTEM (via an RMM) or local admin elevated.
 
     RUNBOOK: Step 2/2b reset the ENTIRE selectable lock-screen history (not just
     Toast's images) to default -- this is the intended "clean slate"; the OS rebuilds

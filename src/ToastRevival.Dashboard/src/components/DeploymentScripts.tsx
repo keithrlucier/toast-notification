@@ -91,7 +91,7 @@ export default function DeploymentScripts() {
     <div className="card" style={{ marginBottom: 24 }}>
       <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Deployment scripts</h2>
       <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>
-        PowerShell scripts for Tactical RMM (or any RMM that runs scripts as SYSTEM). Run <strong>one</strong> per
+        PowerShell scripts for use with an RMM (any tool that runs scripts as SYSTEM). Run <strong>one</strong> per
         device, picked by what you are doing. The uninstall script removes the agent and resets the lock screen in
         one pass, so you never run it together with the reset script.
       </p>
@@ -131,7 +131,7 @@ export default function DeploymentScripts() {
       )}
 
       <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12 }}>
-        Run as SYSTEM (Tactical RMM default) or an elevated admin shell. The uninstall and reset scripts may return
+        Run as SYSTEM (via an RMM) or an elevated admin shell. The uninstall and reset scripts may return
         exit code 3010 — that means a reboot will finalize the lock-screen change; everything else is already done.
       </p>
     </div>

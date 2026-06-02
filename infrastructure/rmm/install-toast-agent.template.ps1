@@ -1,7 +1,7 @@
 # ============================================================================
-#  Toast Notification -- Tactical RMM install script
+#  Toast Notification -- agent install script (for use with an RMM)
 #  Downloaded per-tenant from the Install Agent page (values pre-filled).
-#  Paste into Tactical RMM (runs as SYSTEM) and run. Downloads the signed MSI,
+#  Run via an RMM (as SYSTEM) or an elevated shell. Downloads the signed MSI,
 #  installs silently, registers the device, and (optionally) pins the lock
 #  screen branding policy.
 #  ASCII-only on purpose: a BOM-less UTF-8 .ps1 is misread by PowerShell 5.1.
@@ -46,7 +46,7 @@ if ($stillRunning) {
 }
 
 # -- Download -----------------------------------------------------------------
-$f = "C:\ProgramData\TacticalRMM\ToastNotification.msi"
+$f = "$env:TEMP\ToastNotification.msi"
 Write-Log "Downloading MSI to: $f"
 
 try {

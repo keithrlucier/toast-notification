@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
-    One-shot clean removal of the Toast Notification Windows agent for Tactical RMM
-    (runs as SYSTEM) or a local admin. Removes BOTH channels (MSI and Store/MSIX) by
+    One-shot clean removal of the Toast Notification Windows agent, for use with an
+    RMM (runs as SYSTEM) or a local admin. Removes BOTH channels (MSI and Store/MSIX) by
     name, and HARD-DELETES every trace of the branded lock screen, returning the
     device to the Windows default.
 
@@ -41,7 +41,7 @@
     Exit 0    = removal complete (or not installed).
     Exit 3010 = complete, but a locked lock-screen slot needs a reboot to finalize.
     Exit 4+   = msiexec exit code (passed through).
-    Run as SYSTEM (Tactical RMM) or local admin elevated.
+    Run as SYSTEM (via an RMM) or local admin elevated.
 
     RUNBOOK: the lock-screen reset clears the ENTIRE selectable lock-screen history
     (not only Toast's images) to default -- intended clean slate; the OS rebuilds on

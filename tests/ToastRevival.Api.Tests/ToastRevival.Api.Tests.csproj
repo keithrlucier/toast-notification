@@ -26,6 +26,10 @@
          Explicit refs force the transitive version up so the test gate builds again. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.16" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.16" />
+    <!-- Same reason: the API (via Npgsql/EF Core 9.x) depends on System.Text.Json 9.0, but a
+         net8.0 test host otherwise resolves the 8.0 framework copy and throws FileNotFound for
+         9.0.0.0 at runtime. Pin it so the 9.0 assembly is in the test output. -->
+    <PackageReference Include="System.Text.Json" Version="9.0.16" />
   </ItemGroup>
 
   <ItemGroup>

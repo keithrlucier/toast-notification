@@ -123,7 +123,11 @@ public class UpdateLockScreenConfigRequest
 /// </summary>
 public record AppearanceConfigResponse(
     OverlayConfigResponse Overlay,
-    LockScreenConfigResponse LockScreen);
+    LockScreenConfigResponse LockScreen,
+    // AGT-4-R: HMAC over the canonical {overlay, lockScreen} JSON, signed with the
+    // per-tenant SigningKey. Nullable + defaulted so the shape stays backward-compatible.
+    string? SignedPayload = null,
+    string? Signature = null);
 
 // ── M14 Microsoft SSO (per-tenant directory mapping) ─────────────────────────
 // The platform owns the Entra app credentials (managed under System SSO config);

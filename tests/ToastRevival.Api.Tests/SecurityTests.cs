@@ -467,6 +467,70 @@ public sealed class SecurityTests
         Assert.Contains("mfa_required", body);
     }
 
+    [Fact]
+    public async Task MfaStepUp_TotpEnrolledUser_SmsPathBlocked_ForcesAuthenticator()
+    {
+        // MFA-7: a user with an enrolled TOTP authenticator must not be able to
+        // downgrade step-up elevation to the weaker SMS channel. Both the send and the
+        // verify SMS endpoints refuse with 403 { error: "totp_required" }, forcing the
+        // authenticator path. The step-up modal treats that 403 as "no SMS available"
+        // and falls back to the TOTP code automatically — no frontend change required.
+        await _load.ResetAsync();
+        var factory = _load.Factory;
+
+        var t = await SecurityHarness.SeedTenantAsync(factory, role: UserRole.SuperAdmin, deviceCount: 0);
+
+        // Enroll the caller in TOTP and give them a confirmed phone, so the only thing
+        // standing between them and the SMS path is the new guard.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var u  = await db.Users.IgnoreQueryFilters().FirstAsync(x => x.Id == t.AdminUser.Id);
+            u.MfaSecret            = "JBSWY3DPEHPK3PXP"; // any non-empty enrolled secret
+            u.PhoneNumber          = "+15555550123";
+            u.PhoneNumberConfirmed = true;
+            await db.SaveChangesAsync();
+        }
+
+        using var http = SecurityHarness.AuthedClient(factory, t.AdminToken);
+
+        // send-sms refuses before generating/sending any ClickSend SMS.
+        var sendResp = await http.PostAsync("/api/auth/mfa/send-sms", null);
+        Assert.Equal(HttpStatusCode.Forbidden, sendResp.StatusCode);
+        Assert.Contains("totp_required", await sendResp.Content.ReadAsStringAsync());
+
+        // verify-sms refuses too (defense in depth — a code minted before enrollment,
+        // or a direct API call, still can't elevate a TOTP user over SMS).
+        var verifyResp = await http.PostAsJsonAsync("/api/auth/mfa/verify-sms", new { code = "000000" });
+        Assert.Equal(HttpStatusCode.Forbidden, verifyResp.StatusCode);
+        Assert.Contains("totp_required", await verifyResp.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task MfaStepUp_NonTotpUser_SmsGuardIsInert()
+    {
+        // MFA-7 non-breaking guarantee: the TOTP guard must be inert for SMS-only /
+        // SSO / legacy users (no MfaSecret). Proven hermetically without an external
+        // SMS send — with no enrolled TOTP and no confirmed phone, send-sms falls
+        // through the guard to the phone check (400, not 403 totp_required), and
+        // verify-sms falls through to the code-expiry check (401, not 403).
+        await _load.ResetAsync();
+        var factory = _load.Factory;
+
+        // Seeded admin has no MfaSecret and no confirmed phone — the guard must not fire.
+        var t = await SecurityHarness.SeedTenantAsync(factory, role: UserRole.SuperAdmin, deviceCount: 0);
+
+        using var http = SecurityHarness.AuthedClient(factory, t.AdminToken);
+
+        var sendResp = await http.PostAsync("/api/auth/mfa/send-sms", null);
+        Assert.Equal(HttpStatusCode.BadRequest, sendResp.StatusCode);
+        Assert.DoesNotContain("totp_required", await sendResp.Content.ReadAsStringAsync());
+
+        var verifyResp = await http.PostAsJsonAsync("/api/auth/mfa/verify-sms", new { code = "000000" });
+        Assert.Equal(HttpStatusCode.Unauthorized, verifyResp.StatusCode);
+        Assert.DoesNotContain("totp_required", await verifyResp.Content.ReadAsStringAsync());
+    }
+
     // ─── Content Injection ───────────────────────────────────────────────────
 
     [Fact]

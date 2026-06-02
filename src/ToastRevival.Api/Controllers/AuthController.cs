@@ -642,6 +642,21 @@ public class AuthController : ControllerBase
         var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
         if (user is null) return Unauthorized();
 
+        // MFA-7 (FIXED): block the SMS step-up downgrade. When the caller has an
+        // enrolled TOTP authenticator (a separately-enrolled secret factor), refuse
+        // the weaker SMS channel and force the authenticator path — and never spend a
+        // ClickSend SMS doing it. SMS-only / SSO / legacy users (no MfaSecret) are
+        // unaffected and keep using SMS. The step-up modal treats this 403 as
+        // "no SMS available" and falls back to the authenticator code automatically
+        // (MfaStepUpModal.tsx). Retiring SMS outright — which would affect SMS-only
+        // users — remains Keith's migration call (tracked separately, not this finding).
+        if (!string.IsNullOrWhiteSpace(user.MfaSecret))
+            return StatusCode(403, new
+            {
+                error = "totp_required",
+                message = "Your account has an authenticator app enabled. Use your authenticator app to verify instead."
+            });
+
         if (!user.PhoneNumberConfirmed || string.IsNullOrWhiteSpace(user.PhoneNumber))
             return BadRequest("No verified phone number on this account.");
 
@@ -664,18 +679,24 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("login-sms-per-ip")]
     public async Task<ActionResult<MfaVerifyResponse>> MfaVerifySms([FromBody] MfaVerifyRequest req)
     {
-        // ANCHOR MFA-7 (owner: Keith — PRODUCT/UX decision, not a code defect to fix blind).
-        // This SMS step-up re-uses the same channel that already authenticates an SMS-login
-        // user, so it is not a factor DISTINCT from the login factor (contrast mfa/verify,
-        // which requires a separately enrolled TOTP MfaSecret). The fix is a design call:
-        // (a) require an enrolled TOTP authenticator for step-up (M15 shipped native TOTP for
-        // every role), or (b) add a distinct SMS-elevation secret. Held for Keith; rationale
-        // in the private review ledger. Anchored so the next sweep does not re-flag.
         var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
 
         var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == uid);
         if (user is null) return Unauthorized();
+
+        // MFA-7 (FIXED): SMS step-up re-uses the SMS-login channel, so a TOTP-enrolled
+        // user elevating via SMS is a downgrade to the weaker factor. The send-sms guard
+        // above stops the common path; this is defense in depth — a code minted before
+        // enrollment, or a direct API call, still can't elevate a TOTP user over SMS.
+        // SMS-only / SSO / legacy users (no MfaSecret) are unaffected. Retiring SMS
+        // outright remains Keith's migration call (tracked separately, not this finding).
+        if (!string.IsNullOrWhiteSpace(user.MfaSecret))
+            return StatusCode(403, new
+            {
+                error = "totp_required",
+                message = "Your account has an authenticator app enabled. Use your authenticator app to verify instead."
+            });
 
         if (await _userManager.IsLockedOutAsync(user))
             return Unauthorized("Too many attempts. Please try again later.");

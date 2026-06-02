@@ -19,8 +19,11 @@ if (-not (Test-Path $manifestPath)) {
 
 if (-not $SkipAssetGeneration) {
     Write-Host "==> Generating MSIX tile assets..."
+    # generate-msix-tile-assets.ps1 is a PowerShell script (ErrorActionPreference=Stop), so it
+    # THROWS on real failure. $LASTEXITCODE is NOT set by a PS-script call (only native exes),
+    # so branching on it here produced a false "failed (exit )" even on success. The
+    # required-asset existence check immediately below is the authoritative gate.
     & (Join-Path $PSScriptRoot "generate-msix-tile-assets.ps1") -OutputDir $imagesDir
-    if ($LASTEXITCODE -ne 0) { throw "Tile asset generation failed (exit $LASTEXITCODE)" }
 }
 
 $expectedAssets = @(

@@ -66,6 +66,7 @@ public class BillingController : ControllerBase
             licenseEnd       = tenant.LicenseEnd,
             trialEnd         = tenant.BillingStatus == BillingStatus.Trialing ? tenant.LicenseEnd : null,
             stripeCustomerId = tenant.StripeCustomerId,
+            billingEnabled   = _config.GetValue<bool>("Billing:Enabled"),
         });
     }
 
@@ -101,6 +102,8 @@ public class BillingController : ControllerBase
     public async Task<IActionResult> CreateCheckout()
     {
         if (!IsAdmin()) return Forbid();
+        if (!_config.GetValue<bool>("Billing:Enabled"))
+            return StatusCode(503, new { message = "Billing is currently disabled on this platform." });
 
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var tenant = await _db.Tenants.IgnoreQueryFilters()
@@ -162,6 +165,8 @@ public class BillingController : ControllerBase
     public async Task<IActionResult> CreatePortal()
     {
         if (!IsAdmin()) return Forbid();
+        if (!_config.GetValue<bool>("Billing:Enabled"))
+            return StatusCode(503, new { message = "Billing is currently disabled on this platform." });
 
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var tenant = await _db.Tenants.IgnoreQueryFilters()
@@ -239,6 +244,12 @@ public class BillingController : ControllerBase
     [DisableRateLimiting]
     public async Task<IActionResult> Webhook()
     {
+        if (!_config.GetValue<bool>("Billing:Enabled"))
+        {
+            _logger.LogInformation("Billing disabled — ignoring Stripe webhook.");
+            return Ok();
+        }
+
         var webhookSecret = _config["Stripe:WebhookSecret"];
         if (string.IsNullOrWhiteSpace(webhookSecret) || webhookSecret.StartsWith("whsec_REPLACE"))
         {

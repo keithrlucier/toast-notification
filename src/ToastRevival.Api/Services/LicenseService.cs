@@ -9,11 +9,16 @@ public class LicenseService : ILicenseService
 {
     private readonly AppDbContext _db;
     private readonly bool _requireBilling;
+    private readonly bool _billingEnabled;
 
     public LicenseService(AppDbContext db, IConfiguration config)
     {
         _db = db;
         _requireBilling = config.GetValue<bool>("TOAST_REQUIRE_BILLING");
+        // Billing disabled platform-wide (Keith 2026-06-01) — default OFF. When off,
+        // no device caps apply and no tenant can be charged. Flip Billing:Enabled=true
+        // (with TOAST_REQUIRE_BILLING) to re-enable.
+        _billingEnabled = config.GetValue<bool>("Billing:Enabled");
     }
 
     public async Task<bool> CanRegisterDeviceAsync(Guid tenantId, CancellationToken ct = default)
@@ -95,6 +100,9 @@ public class LicenseService : ILicenseService
     {
         // Suspended tenants can't register new devices regardless of billing mode.
         if (tenant.SuspendedAt.HasValue) return false;
+
+        // Billing disabled platform-wide → no caps, no Stripe requirement.
+        if (!_billingEnabled) return true;
 
         if (!_requireBilling) return true;
 

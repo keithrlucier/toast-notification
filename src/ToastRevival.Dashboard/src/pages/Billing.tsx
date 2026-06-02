@@ -245,7 +245,7 @@ export default function Billing() {
             Single enterprise plan with a device-based monthly subscription.
           </p>
         </div>
-        {plan?.stripeCustomerId ? (
+        {plan?.billingEnabled === false ? null : plan?.stripeCustomerId ? (
           <button className="btn btn-secondary" onClick={handlePortal} disabled={portalLoading}>
             {portalLoading ? 'Opening...' : 'Manage Billing'}
           </button>
@@ -257,6 +257,13 @@ export default function Billing() {
       </div>
 
       {error && <div className="error-banner" style={{ marginBottom: 24 }}>{error}</div>}
+
+      {plan?.billingEnabled === false && (
+        <div className="card" style={{ marginBottom: 24, color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.55 }}>
+          Billing is currently disabled on this platform. There are no charges and no device limits.
+          Contact your administrator if you believe this is in error.
+        </div>
+      )}
 
       {plan && (
         <>
@@ -309,7 +316,7 @@ export default function Billing() {
             <Metric label={plan.trialEnd ? 'Trial Ends' : 'Renews'} value={formatDate(plan.trialEnd ?? plan.licenseEnd)} />
           </div>
 
-          {!plan.stripeCustomerId && (
+          {!plan.stripeCustomerId && plan.billingEnabled !== false && (
             <div className="card" style={{ marginBottom: 24 }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 8px' }}>
                 Activate Billing

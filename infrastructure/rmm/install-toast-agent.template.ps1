@@ -181,6 +181,13 @@ try {
 # -- Lock Screen Registry (3 HKLM pins only, gated) ---------------------------
 if ($PinLockScreen) {
     Write-Log "Applying lock screen branding policy (PinLockScreen=$PinLockScreen)"
+    # Clear any default lock-screen image a prior Toast removal pinned (PersonalizationCSP),
+    # so the agent's per-user lock-screen branding is not blocked by an enforced image.
+    $cspKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP"
+    foreach ($cv in 'LockScreenImageUrl','LockScreenImagePath','LockScreenImageStatus') {
+        Remove-ItemProperty -Path $cspKey -Name $cv -Force -ErrorAction SilentlyContinue
+    }
+    Write-Log "Cleared any pinned default lock-screen image so branding can apply."
     $registryPaths = @(
         @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Lock Screen"; Name = "HideSpotlightWindowsSpotlight"; Value = 1; Type = "DWord" },
         @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization";            Name = "NoLockScreenCamera";          Value = 1; Type = "DWord" },

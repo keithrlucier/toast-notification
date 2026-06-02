@@ -138,7 +138,7 @@ function Invoke-ToastLockScreenReset {
     Write-Log "LockScreen 2: hard-deleting SystemData cache slots."
     $systemDataRoot = Join-Path $env:ProgramData 'Microsoft\Windows\SystemData'
     if (Test-Path -LiteralPath $systemDataRoot) {
-        $sidDirs = Get-ChildItem -LiteralPath $systemDataRoot -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'S-1-5-*' }
+        $sidDirs = Get-ChildItem -LiteralPath $systemDataRoot -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'S-1-*' }
         foreach ($sidDir in $sidDirs) {
             $readOnly = Join-Path $sidDir.FullName 'ReadOnly'
             if (-not (Test-Path -LiteralPath $readOnly)) { continue }
@@ -157,12 +157,12 @@ function Invoke-ToastLockScreenReset {
     $loadedSids = @()
     try {
         Get-ChildItem -Path 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue |
-            Where-Object { $_.PSChildName -like 'S-1-5-21-*' -and $_.PSChildName -notmatch '_Classes$' } |
+            Where-Object { ($_.PSChildName -like 'S-1-5-21-*' -or $_.PSChildName -like 'S-1-12-1-*') -and $_.PSChildName -notmatch '_Classes$' } |
             ForEach-Object { $loadedSids += $_.PSChildName; Clear-LockScreenSlots "Registry::HKEY_USERS\$($_.PSChildName)" }
     } catch { Write-Log "  loaded-hive sweep raised: $($_.Exception.Message)" 'WARN' }
     try {
         Get-ChildItem -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' -ErrorAction SilentlyContinue |
-            Where-Object { $_.PSChildName -like 'S-1-5-21-*' -and $_.PSChildName -notin $loadedSids } |
+            Where-Object { ($_.PSChildName -like 'S-1-5-21-*' -or $_.PSChildName -like 'S-1-12-1-*') -and $_.PSChildName -notin $loadedSids } |
             ForEach-Object {
                 $sid = $_.PSChildName
                 $profPath = $null
@@ -210,6 +210,21 @@ function Invoke-ToastLockScreenReset {
         }
     }
 
+    # 4b. Set the genuine Windows DEFAULT as the active lock screen (PersonalizationCSP,
+    # machine-wide) so the device is NEVER black after the cache delete -- works headless,
+    # survives reboot. The Toast install clears this before branding so re-deploy is fine.
+    if ($DefaultImage) {
+        Write-Log "LockScreen 4b: setting Windows default lock screen via PersonalizationCSP -> $DefaultImage"
+        $cspKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'
+        try {
+            if (-not (Test-Path -LiteralPath $cspKey)) { New-Item -Path $cspKey -Force | Out-Null }
+            New-ItemProperty -LiteralPath $cspKey -Name 'LockScreenImageUrl'    -Value $DefaultImage -PropertyType String -Force | Out-Null
+            New-ItemProperty -LiteralPath $cspKey -Name 'LockScreenImagePath'   -Value $DefaultImage -PropertyType String -Force | Out-Null
+            New-ItemProperty -LiteralPath $cspKey -Name 'LockScreenImageStatus' -Value 1 -PropertyType DWord -Force | Out-Null
+            Write-Log "  default lock screen set."
+        } catch { Write-Log "  could not set default lock screen: $($_.Exception.Message)" 'WARN' }
+    }
+
     # 5. Reset the active image to default for the logged-on user (best-effort, observable).
     if (-not $DefaultImage) { Write-Log "LockScreen 5: no default image found; default applies at next logon." 'WARN'; return }
     $hasInteractive = $false
@@ -226,6 +241,7 @@ function Invoke-ToastLockScreenReset {
     $winrtPs = @"
 `$result = '$resultPath'
 try {
+  Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction SilentlyContinue
   Function Await(`$op, `$rt) {
     `$as = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { `$_.Name -eq 'AsTask' -and `$_.GetParameters().Count -eq 1 -and `$_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation``1' })[0]
     `$t = `$as.MakeGenericMethod(`$rt).Invoke(`$null, @(`$op))

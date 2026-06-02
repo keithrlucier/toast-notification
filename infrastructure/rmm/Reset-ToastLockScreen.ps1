@@ -174,14 +174,14 @@ foreach ($v in $hklmValuesToClear) {
 
 # ============================================================================
 # STEP 2 -- HARD-DELETE the Windows SystemData lock-screen cache slots. Enumerate
-# EVERY S-1-5-* SID; delete ONLY the LockScreen_* child folders; NEVER touch the
+# EVERY SID incl. Azure AD/Entra (S-1-12-1-*); delete ONLY the LockScreen_* child folders; NEVER touch the
 # ReadOnly/<SID> parent.
 # ============================================================================
 Write-Log "Step 2: hard-deleting SystemData lock-screen cache slots."
 $systemDataRoot = Join-Path $env:ProgramData 'Microsoft\Windows\SystemData'
 if (Test-Path -LiteralPath $systemDataRoot) {
     $sidDirs = Get-ChildItem -LiteralPath $systemDataRoot -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -like 'S-1-5-*' }
+        Where-Object { $_.Name -like 'S-1-*' }
     foreach ($sidDir in $sidDirs) {
         $readOnly = Join-Path $sidDir.FullName 'ReadOnly'
         if (-not (Test-Path -LiteralPath $readOnly)) { continue }
@@ -212,13 +212,13 @@ if (Test-Path -LiteralPath $systemDataRoot) {
 # STEP 2b -- Clear the per-user Lock Screen slot INDEX (ImageId_/OriginalFile_/
 # Details_) from every user hive: loaded HKEY_USERS hives + dormant profiles via
 # reg load / ProfileList. This removes the literal branded registry trace and the
-# backing index for the selectable-thumbnails strip. Real users only (S-1-5-21-*).
+# backing index for the selectable-thumbnails strip. Real users + Azure AD (S-1-5-21-* / S-1-12-1-*).
 # ============================================================================
 Write-Log "Step 2b: clearing per-user Lock Screen slot index (all hives)."
 $loadedSids = @()
 try {
     Get-ChildItem -Path 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue |
-        Where-Object { $_.PSChildName -like 'S-1-5-21-*' -and $_.PSChildName -notmatch '_Classes$' } |
+        Where-Object { ($_.PSChildName -like 'S-1-5-21-*' -or $_.PSChildName -like 'S-1-12-1-*') -and $_.PSChildName -notmatch '_Classes$' } |
         ForEach-Object {
             $loadedSids += $_.PSChildName
             Clear-LockScreenSlots "Registry::HKEY_USERS\$($_.PSChildName)"
@@ -229,7 +229,7 @@ try {
 $profileListKey = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList'
 try {
     Get-ChildItem -LiteralPath $profileListKey -ErrorAction SilentlyContinue |
-        Where-Object { $_.PSChildName -like 'S-1-5-21-*' -and $_.PSChildName -notin $loadedSids } |
+        Where-Object { ($_.PSChildName -like 'S-1-5-21-*' -or $_.PSChildName -like 'S-1-12-1-*') -and $_.PSChildName -notin $loadedSids } |
         ForEach-Object {
             $sid = $_.PSChildName
             $profPath = $null
@@ -338,6 +338,7 @@ if ($NoUserRefresh) {
         $winrtPs = @"
 `$result = '$resultPath'
 try {
+  Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction SilentlyContinue
   Function Await(`$op, `$rt) {
     `$as = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { `$_.Name -eq 'AsTask' -and `$_.GetParameters().Count -eq 1 -and `$_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation``1' })[0]
     `$t = `$as.MakeGenericMethod(`$rt).Invoke(`$null, @(`$op))
@@ -412,6 +413,27 @@ try {
             Write-Log "  user-session WinRT reset failed (non-fatal): $($_.Exception.Message)" 'WARN'
         }
     }
+}
+
+# ============================================================================
+# STEP 6 -- Set the genuine Windows DEFAULT as the active lock screen so the device
+# is NEVER left black after the brand cache is deleted. PersonalizationCSP (the same
+# machine-wide surface Intune uses) works with NO user logged on and survives reboot.
+# This is what actually repaints the sign-in screen; the per-user WinRT step above
+# only fires when someone is logged in. If your Intune pushes its own lock-screen
+# policy it re-applies on next sync and wins; the Toast install script clears this
+# before branding, so a future re-deploy is unaffected.
+# ============================================================================
+if (-not $NoUserRefresh -and $DefaultImage) {
+    Write-Log "Step 6: setting the Windows default lock screen via PersonalizationCSP -> $DefaultImage"
+    $cspKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'
+    try {
+        if (-not (Test-Path -LiteralPath $cspKey)) { New-Item -Path $cspKey -Force | Out-Null }
+        New-ItemProperty -LiteralPath $cspKey -Name 'LockScreenImageUrl'    -Value $DefaultImage -PropertyType String -Force | Out-Null
+        New-ItemProperty -LiteralPath $cspKey -Name 'LockScreenImagePath'   -Value $DefaultImage -PropertyType String -Force | Out-Null
+        New-ItemProperty -LiteralPath $cspKey -Name 'LockScreenImageStatus' -Value 1 -PropertyType DWord -Force | Out-Null
+        Write-Log "  default lock screen set; device shows the Windows default at next lock/sign-in."
+    } catch { Write-Log "  could not set default lock screen: $($_.Exception.Message)" 'WARN' }
 }
 
 # -- Result ------------------------------------------------------------------

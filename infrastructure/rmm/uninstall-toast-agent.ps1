@@ -1,330 +1,381 @@
 <#
 .SYNOPSIS
-    One-shot clean removal of the Toast Notification Windows agent. Designed
-    to be invoked by RMM tools when decommissioning an endpoint or migrating
-    away from the platform — and surfaced verbatim in the dashboard's
-    "Remove agent" modal for an admin to run by hand.
+    One-shot clean removal of the Toast Notification Windows agent for Tactical RMM
+    (runs as SYSTEM) or a local admin. Removes BOTH channels (MSI and Store/MSIX) by
+    name, and HARD-DELETES every trace of the branded lock screen, returning the
+    device to the Windows default.
 
 .DESCRIPTION
-    Reverses everything the install side does, in the correct order, so the
-    endpoint is left exactly as it was before Toast Notification touched it
-    ("do no harm"):
+    Reverses everything the install side does, in the correct order ("do no harm"):
 
-      1. Stops the running agent.
-      2. Restores the per-user lock screen to its original image (or the
-         Windows default if the snapshot was lost) by running the agent's
-         --revert-appearance mode in the interactive user's session via a
-         transient scheduled task. This is the ONLY way to touch the per-user
-         WinRT lock screen from a SYSTEM/RMM context — the same InteractiveToken
-         principal the install-time logon task uses, so no password is needed.
-      3. Removes the machine-wide lock screen policy values the install script
-         pins (Spotlight / lock screen camera / lock screen overlays). These
-         outlive the product otherwise.
-      4. Clears the per-user Spotlight toggles (ContentDeliveryManager) from
-         every loaded user hive AND the SYSTEM hive — older install scripts ran
-         as SYSTEM and wrote HKCU into the wrong profile, so we sweep both.
-      5a. Removes every MSI install matched BY NAME in Add/Remove Programs
-          (DisplayName -like 'Toast Notification*'). msiexec /x needs a
-          ProductCode, so it's read off the matched ARP key — discovered from the
-          name, never hardcoded, so it works for any build/version on the fleet.
-      5b. Removes the Microsoft Store / MSIX install BY NAME
-          (Get-AppxPackage Name -like '*ToastNotification*'), for all users, plus
-          the provisioned copy so it doesn't reinstall for new profiles.
-      6. Purges the per-user config (%LocalAppData%\Toast2IT\Toast Notification)
-         from every user profile so a future reinstall registers fresh.
+      1. Discover + stop the agent.
+      2. Remove the product: every MSI matched by name (ProductCode read off the ARP
+         key, never hardcoded) AND the Store/MSIX package + its provisioned copy.
+      3. Purge SYSTEM-side residuals: \Toast2IT scheduled tasks + HKLM bootstrap key.
+      4. HARD-RESET the lock screen (Invoke-ToastLockScreenReset): release HKLM
+         enforcement, delete the SystemData cache slots (the selectable thumbnails),
+         clear the per-user Lock Screen registry slot index across all hives, delete
+         the agent image files, clear the CDM cache, and set the Windows default.
+         Runs AFTER the agent is gone so it cannot re-brand; headless-safe.
+      5. Purge per-user config from every profile.
 
-    Handles both deployment channels (MSI/RMM and Store/MSIX) in one pass, by
-    name — no per-build ProductCode GUIDs anywhere.
+    MSIX has no uninstall custom actions, so this script is the authoritative cleanup
+    for both channels. Idempotent + best-effort: a missing value / absent task /
+    already-removed product is success. Non-zero exits: a real msiexec error, or 3010
+    when a locked lock-screen cache slot needs a reboot to finalize.
 
-    Idempotent and best-effort throughout: a missing value, absent task, or
-    already-uninstalled product is treated as success. The only failure that
-    propagates a non-zero exit is a genuine msiexec error.
+    --- LOCK-SCREEN RESET CORE: keep Invoke-ToastLockScreenReset in sync with the
+        standalone Reset-ToastLockScreen.ps1 (identical logic). ASCII-only on purpose:
+        a BOM-less UTF-8 .ps1 is misread by PowerShell 5.1 / RMM as CP1252. ---
 
 .PARAMETER WorkDir
-    Optional. Local directory for the uninstall log. Defaults to
-    %ProgramData%\Toast2IT\Install (same as the installer log location).
+    Log + scratch directory. Defaults to %ProgramData%\Toast2IT\Install.
 
 .PARAMETER TimeoutSeconds
-    Optional. msiexec wall-clock timeout. Default 180 (3 minutes).
+    msiexec wall-clock timeout. Default 180.
 
 .PARAMETER KeepUserConfig
-    Optional switch. Skip step 6 (per-user config purge) — leave the inert
-    config.json in place. Rarely needed.
-
-.EXAMPLE
-    .\uninstall-toast-agent.ps1
+    Skip the per-user config purge (step 5).
 
 .NOTES
-    Exit codes:
-       0  uninstall completed (or agent was not installed)
-       4+ msiexec exit code (passed through)
-     124  msiexec hung past TimeoutSeconds and was killed
+    Exit 0    = removal complete (or not installed).
+    Exit 3010 = complete, but a locked lock-screen slot needs a reboot to finalize.
+    Exit 4+   = msiexec exit code (passed through).
+    Run as SYSTEM (Tactical RMM) or local admin elevated.
 
-    Run as SYSTEM (RMM agent context) or any user with local admin.
+    RUNBOOK: the lock-screen reset clears the ENTIRE selectable lock-screen history
+    (not only Toast's images) to default -- intended clean slate; the OS rebuilds on
+    the next image a user picks. Verified Win10 + Win11.
 #>
 [CmdletBinding()]
 param(
     [string] $WorkDir = (Join-Path $env:ProgramData 'Toast2IT\Install'),
-
     [int] $TimeoutSeconds = 180,
-
     [switch] $KeepUserConfig
 )
 
 $ErrorActionPreference = 'Stop'
+$script:RebootNeeded = $false
 
-function Write-Log {
-    param([string] $Message, [string] $Level = 'INFO')
-    $ts = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ssK')
-    $line = "[$ts] [$Level] $Message"
-    Write-Host $line
-    if ($script:LogFile) {
-        try { Add-Content -Path $script:LogFile -Value $line -Encoding utf8 } catch { }
-    }
-}
-
-if (-not (Test-Path -LiteralPath $WorkDir)) {
-    [void] (New-Item -ItemType Directory -Path $WorkDir -Force)
-}
+if (-not (Test-Path -LiteralPath $WorkDir)) { [void](New-Item -ItemType Directory -Path $WorkDir -Force) }
 $script:LogFile = Join-Path $WorkDir 'uninstall-toast-agent.log'
-Write-Log "Toast Notification agent uninstaller started. WorkDir=$WorkDir"
-
-# ── Find the installed product code + install path ─────────────────────────
-
-# Name-driven removal — no hardcoded GUIDs. We match our product BY NAME in both
-# channels and remove every match:
-#   MSI   : Add/Remove Programs DisplayName -like $NameLike. msiexec /x needs the
-#           ProductCode, so we read it off the matched ARP key (PSChildName) — the
-#           code is DISCOVERED from the name, never hardcoded, so any build works.
-#   MSIX  : the Store/sideload package, Name -like $AppxLike (Remove-AppxPackage).
-$NameLike = 'Toast Notification*'   # ARP entry is "Toast Notification Agent"
-$AppxLike = '*ToastNotification*'   # MSIX Package.Identity.Name is FileUnityCloud.ToastNotification
-
-# Collect every MSI ProductCode whose Add/Remove Programs name matches (handles
-# multiple/side-by-side installs and any version — all by name).
-$productCodes = @()
-try {
-    $arpMatches = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -like $NameLike -and $_.Publisher -like '*Toast2IT*' }
-    foreach ($m in $arpMatches) { $productCodes += $m.PSChildName; Write-Log "MSI match by name: '$($m.DisplayName)' $($m.DisplayVersion) -> $($m.PSChildName)" }
-} catch {
-    Write-Log "Could not query Add/Remove Programs: $($_.Exception.Message)" 'WARN'
+function Write-Log {
+    param([string]$Message, [string]$Level = 'INFO')
+    $line = "[$((Get-Date).ToString('yyyy-MM-ddTHH:mm:ssK'))] [$Level] $Message"
+    Write-Host $line
+    try { Add-Content -Path $script:LogFile -Value $line -Encoding utf8 } catch { }
 }
 
-# Resolve the agent exe path from the MSI-written InstallPath, falling back to
-# the default per-machine location.
-$installPath = $null
-try {
-    $installPath = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Toast2IT\Toast Notification' -Name 'InstallPath' -ErrorAction Stop).InstallPath
-} catch { }
-if (-not $installPath) { $installPath = Join-Path $env:ProgramFiles 'Toast Notification' }
-$agentExe = Join-Path $installPath 'ToastNotification.Agent.exe'
-
-# ── Step 1: stop the running agent ─────────────────────────────────────────
-
-Write-Log "Stopping the Toast Notification agent if running."
-try {
-    Get-Process -Name 'ToastNotification.Agent' -ErrorAction SilentlyContinue |
-        Stop-Process -Force -ErrorAction SilentlyContinue
-} catch { Write-Log "Stop-Process raised: $($_.Exception.Message)" 'WARN' }
-
-# ── Step 2: restore the per-user lock screen (user context, no password) ───
-
-# WinRT LockScreen is a per-user API; SYSTEM cannot call it. We import a
-# transient scheduled task that runs the agent's --revert-appearance mode under
-# the BUILTIN\Users group with an InteractiveToken (S-1-5-32-545, RunLevel
-# LeastPrivilege) — identical to the install-time logon task, so it fires in the
-# logged-on user's session with no credentials required. Best-effort: on an
-# endpoint with no interactive session, the task simply produces no run and the
-# policy revert below (re-enabling Spotlight) is what un-brands the device.
-if (Test-Path -LiteralPath $agentExe) {
-    Write-Log "Restoring lock screen via agent --revert-appearance (user context)."
-    $revertTaskName = '\Toast2IT\ToastNotificationRevertOnce'
-    $taskXmlPath = Join-Path $WorkDir 'revert-appearance-task.xml'
+# ============================================================================
+#  LOCK-SCREEN RESET CORE  (sync with Reset-ToastLockScreen.ps1)
+# ============================================================================
+function Get-UserProfilePaths {
+    $out = @()
     try {
-        # Author the task XML. <Arguments> carries --revert-appearance; the
-        # group-SID principal + InteractiveToken gives user-context WinRT access.
+        $out = Get-ChildItem -LiteralPath (Join-Path $env:SystemDrive 'Users') -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notin @('Public','Default','Default User','All Users') } |
+            Select-Object -ExpandProperty FullName
+    } catch { }
+    return $out
+}
+
+function ConvertTo-XmlText([string]$s) {
+    return ($s -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;' -replace '"', '&quot;')
+}
+
+$script:LockScreenRelKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Lock Screen'
+function Clear-LockScreenSlots([string]$hiveRoot) {
+    $p = Join-Path $hiveRoot $script:LockScreenRelKey
+    if (-not (Test-Path -LiteralPath $p)) { return }
+    try {
+        $names = (Get-Item -LiteralPath $p -ErrorAction Stop).Property |
+            Where-Object { $_ -match '^(ImageId|OriginalFile|Details)_' }
+        foreach ($n in $names) {
+            Remove-ItemProperty -LiteralPath $p -Name $n -Force -ErrorAction SilentlyContinue
+            Write-Log "  cleared $p\$n"
+        }
+    } catch { Write-Log "  slot sweep failed at ${p}: $($_.Exception.Message)" 'WARN' }
+}
+
+function Invoke-ToastLockScreenReset {
+    param([string]$WorkDir)
+
+    # Resolve default image (prefer img100.jpg).
+    $DefaultImage = $null
+    $screenDir = Join-Path $env:WINDIR 'Web\Screen'
+    $preferred = Join-Path $screenDir 'img100.jpg'
+    if (Test-Path -LiteralPath $preferred) { $DefaultImage = $preferred }
+    else {
+        $cand = Get-ChildItem -LiteralPath $screenDir -Filter 'img*.jpg' -File -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -First 1
+        if ($cand) { $DefaultImage = $cand.FullName }
+    }
+
+    # 1. Release machine-wide enforcement (HKLM).
+    Write-Log "LockScreen 1: releasing machine-wide enforcement (HKLM)."
+    $hklm = @(
+        @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'; Name = 'LockScreenImageStatus' },
+        @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'; Name = 'LockScreenImagePath' },
+        @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'; Name = 'LockScreenImageUrl' },
+        @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'LockScreenImage' },
+        @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'NoChangingLockScreen' },
+        @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'NoLockScreenSlideshow' },
+        @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'NoLockScreenCamera' },
+        @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'; Name = 'LockScreenOverlaysDisabled' },
+        @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Lock Screen'; Name = 'HideSpotlightWindowsSpotlight' }
+    )
+    foreach ($v in $hklm) {
+        try {
+            if (Test-Path -LiteralPath $v.Path) {
+                if ($null -ne (Get-ItemProperty -LiteralPath $v.Path -Name $v.Name -ErrorAction SilentlyContinue)) {
+                    Remove-ItemProperty -LiteralPath $v.Path -Name $v.Name -Force -ErrorAction SilentlyContinue
+                    Write-Log "  cleared $($v.Path)\$($v.Name)"
+                }
+            }
+        } catch { Write-Log "  could not clear $($v.Path)\$($v.Name): $($_.Exception.Message)" 'WARN' }
+    }
+
+    # 2. Hard-delete the SystemData lock-screen cache slots (all SIDs, children only).
+    Write-Log "LockScreen 2: hard-deleting SystemData cache slots."
+    $systemDataRoot = Join-Path $env:ProgramData 'Microsoft\Windows\SystemData'
+    if (Test-Path -LiteralPath $systemDataRoot) {
+        $sidDirs = Get-ChildItem -LiteralPath $systemDataRoot -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'S-1-5-*' }
+        foreach ($sidDir in $sidDirs) {
+            $readOnly = Join-Path $sidDir.FullName 'ReadOnly'
+            if (-not (Test-Path -LiteralPath $readOnly)) { continue }
+            foreach ($slot in (Get-ChildItem -LiteralPath $readOnly -Directory -Filter 'LockScreen_*' -ErrorAction SilentlyContinue)) {
+                $p = $slot.FullName
+                & takeown.exe /F "$p" /R /D Y > $null 2>&1
+                & icacls.exe "$p" /grant "*S-1-5-18:(OI)(CI)F" /grant "*S-1-5-32-544:(OI)(CI)F" /T /C > $null 2>&1
+                try { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop; Write-Log "  deleted slot: $p" }
+                catch { Write-Log "  slot locked, clears on reboot: $p" 'WARN'; $script:RebootNeeded = $true }
+            }
+        }
+    }
+
+    # 2b. Clear the per-user Lock Screen slot index across all hives (loaded + dormant).
+    Write-Log "LockScreen 2b: clearing per-user Lock Screen slot index (all hives)."
+    $loadedSids = @()
+    try {
+        Get-ChildItem -Path 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -like 'S-1-5-21-*' -and $_.PSChildName -notmatch '_Classes$' } |
+            ForEach-Object { $loadedSids += $_.PSChildName; Clear-LockScreenSlots "Registry::HKEY_USERS\$($_.PSChildName)" }
+    } catch { Write-Log "  loaded-hive sweep raised: $($_.Exception.Message)" 'WARN' }
+    try {
+        Get-ChildItem -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -like 'S-1-5-21-*' -and $_.PSChildName -notin $loadedSids } |
+            ForEach-Object {
+                $sid = $_.PSChildName
+                $profPath = $null
+                try { $profPath = (Get-ItemProperty -LiteralPath $_.PSPath -Name 'ProfileImagePath' -ErrorAction Stop).ProfileImagePath } catch { }
+                if (-not $profPath) { return }
+                $dat = Join-Path $profPath 'NTUSER.DAT'
+                if (-not (Test-Path -LiteralPath $dat)) { return }
+                $mount = "TempToast_$sid"; $loaded = $false
+                try {
+                    & reg.exe load "HKU\$mount" "$dat" > $null 2>&1
+                    if ($LASTEXITCODE -eq 0) { $loaded = $true; Clear-LockScreenSlots "Registry::HKEY_USERS\$mount" }
+                } catch { Write-Log "  hive load failed for ${sid}: $($_.Exception.Message)" 'WARN' }
+                finally { if ($loaded) { [gc]::Collect(); & reg.exe unload "HKU\$mount" > $null 2>&1 } }
+            }
+    } catch { Write-Log "  dormant-hive sweep raised: $($_.Exception.Message)" 'WARN' }
+
+    # 3. Hard-delete the agent image files (all profiles, packaged + unpackaged).
+    Write-Log "LockScreen 3: hard-deleting agent image files (all profiles)."
+    $agentFiles = @('lockscreen.jpg','lockscreen_original.jpg','lockscreen.hash','lockscreen.jpg.tmp')
+    foreach ($profilePath in (Get-UserProfilePaths)) {
+        $lad = Join-Path $profilePath 'AppData\Local'
+        $dirs = @(Join-Path $lad 'Toast2IT\Toast Notification')
+        try {
+            $dirs += Get-ChildItem -LiteralPath (Join-Path $lad 'Packages') -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like 'FileUnityCloud.ToastNotification_*' } | ForEach-Object { Join-Path $_.FullName 'LocalState' }
+        } catch { }
+        foreach ($dir in $dirs) {
+            if (-not (Test-Path -LiteralPath $dir)) { continue }
+            foreach ($f in $agentFiles) {
+                $fp = Join-Path $dir $f
+                try { if (Test-Path -LiteralPath $fp) { Remove-Item -LiteralPath $fp -Force -ErrorAction SilentlyContinue; Write-Log "  deleted: $fp" } } catch { }
+            }
+        }
+    }
+
+    # 4. Clear the per-user Content Delivery Manager image cache.
+    Write-Log "LockScreen 4: clearing CDM image cache (all profiles)."
+    foreach ($profilePath in (Get-UserProfilePaths)) {
+        $cdm = Join-Path $profilePath 'AppData\Local\Packages\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\LocalState'
+        foreach ($sub in @('Assets','Settings')) {
+            $dir = Join-Path $cdm $sub
+            if (Test-Path -LiteralPath $dir) {
+                try { Get-ChildItem -LiteralPath $dir -File -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue } catch { }
+            }
+        }
+    }
+
+    # 5. Reset the active image to default for the logged-on user (best-effort, observable).
+    if (-not $DefaultImage) { Write-Log "LockScreen 5: no default image found; default applies at next logon." 'WARN'; return }
+    $hasInteractive = $false
+    try { $hasInteractive = [bool](Get-CimInstance -ClassName Win32_Process -Filter "Name='explorer.exe'" -ErrorAction SilentlyContinue) } catch { }
+    if (-not $hasInteractive) { Write-Log "LockScreen 5: no interactive session; default applies at next logon."; return }
+
+    Write-Log "LockScreen 5: resetting active image to default via user-session WinRT task."
+    $helperPath = Join-Path $WorkDir 'reset-lockscreen-winrt.ps1'
+    $resultPath = Join-Path $WorkDir 'reset-lockscreen-winrt.result'
+    $taskName = '\Toast2IT\ToastLockScreenResetOnce'
+    $taskXmlPath = Join-Path $WorkDir 'reset-lockscreen-task.xml'
+    try { Set-Content -LiteralPath $resultPath -Value '' -Force -ErrorAction SilentlyContinue } catch { }
+    & icacls.exe "$resultPath" /grant "*S-1-5-32-545:(M)" > $null 2>&1
+    $winrtPs = @"
+`$result = '$resultPath'
+try {
+  Function Await(`$op, `$rt) {
+    `$as = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { `$_.Name -eq 'AsTask' -and `$_.GetParameters().Count -eq 1 -and `$_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation``1' })[0]
+    `$t = `$as.MakeGenericMethod(`$rt).Invoke(`$null, @(`$op))
+    `$t.Wait(-1) | Out-Null
+    `$t.Result
+  }
+  Function AwaitAction(`$action) {
+    `$as = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { `$_.Name -eq 'AsTask' -and `$_.GetParameters().Count -eq 1 -and `$_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' })[0]
+    `$t = `$as.Invoke(`$null, @(`$action))
+    `$t.Wait(-1) | Out-Null
+  }
+  [Windows.System.UserProfile.LockScreen,Windows.System.UserProfile,ContentType=WindowsRuntime] | Out-Null
+  [Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime] | Out-Null
+  `$file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync('$DefaultImage')) ([Windows.Storage.StorageFile])
+  AwaitAction ([Windows.System.UserProfile.LockScreen]::SetImageFileAsync(`$file))
+  try { Set-Content -LiteralPath `$result -Value 'SET_OK' -Force } catch { }
+} catch {
+  try { Set-Content -LiteralPath `$result -Value ("ERR: " + `$_.Exception.Message) -Force } catch { }
+}
+"@
+    try {
+        [System.IO.File]::WriteAllText($helperPath, $winrtPs, (New-Object System.Text.UTF8Encoding($false)))
+        $cmd = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+        $psArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $helperPath"
         $taskXml = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Author>Toast2IT, LLC</Author>
-    <Description>One-shot: restore the lock screen before Toast Notification removal.</Description>
-    <URI>$revertTaskName</URI>
+    <URI>$(ConvertTo-XmlText $taskName)</URI>
   </RegistrationInfo>
   <Principals>
-    <Principal id="Author">
-      <GroupId>S-1-5-32-545</GroupId>
-      <RunLevel>LeastPrivilege</RunLevel>
-    </Principal>
+    <Principal id="Author"><GroupId>S-1-5-32-545</GroupId><RunLevel>LeastPrivilege</RunLevel></Principal>
   </Principals>
   <Settings>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <AllowHardTerminate>true</AllowHardTerminate>
-    <StartWhenAvailable>true</StartWhenAvailable>
     <AllowStartOnDemand>true</AllowStartOnDemand>
+    <StartWhenAvailable>true</StartWhenAvailable>
     <Enabled>true</Enabled>
     <Hidden>true</Hidden>
     <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
     <ExecutionTimeLimit>PT2M</ExecutionTimeLimit>
-    <Priority>7</Priority>
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>$agentExe</Command>
-      <Arguments>--revert-appearance</Arguments>
-      <WorkingDirectory>$installPath</WorkingDirectory>
+      <Command>$(ConvertTo-XmlText $cmd)</Command>
+      <Arguments>$(ConvertTo-XmlText $psArgs)</Arguments>
+      <WorkingDirectory>$(ConvertTo-XmlText $WorkDir)</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
 "@
-        # Task Scheduler XML import expects Unicode (UTF-16). PowerShell quotes
-        # native-exe arguments with spaces automatically, so pass paths bare.
         [System.IO.File]::WriteAllText($taskXmlPath, $taskXml, [System.Text.Encoding]::Unicode)
-
-        & schtasks.exe /Create /TN $revertTaskName /XML $taskXmlPath /F | Out-Null
-        & schtasks.exe /Run /TN $revertTaskName | Out-Null
-        Start-Sleep -Seconds 8   # let the short-lived revert run before we yank the exe
-        & schtasks.exe /Delete /TN $revertTaskName /F | Out-Null
-        Remove-Item -LiteralPath $taskXmlPath -Force -ErrorAction SilentlyContinue
-        Write-Log "Lock screen revert task fired and cleaned up."
-    } catch {
-        Write-Log "Lock screen revert task failed (non-fatal): $($_.Exception.Message)" 'WARN'
-    }
-} else {
-    Write-Log "Agent exe not found at $agentExe — skipping WinRT lock screen restore (policy revert still runs)." 'WARN'
+        & schtasks.exe /Create /TN $taskName /XML $taskXmlPath /F > $null 2>&1
+        & schtasks.exe /Run /TN $taskName > $null 2>&1
+        Start-Sleep -Seconds 6
+        & schtasks.exe /Delete /TN $taskName /F > $null 2>&1
+        $outcome = ''
+        try { $outcome = (Get-Content -LiteralPath $resultPath -Raw -ErrorAction SilentlyContinue).Trim() } catch { }
+        if ($outcome -eq 'SET_OK') { Write-Log "  user-session WinRT reset succeeded." }
+        elseif ($outcome) { Write-Log "  user-session WinRT reset reported: $outcome" 'WARN' }
+        else { Write-Log "  user-session WinRT reset produced no result; default applies at next logon." 'WARN' }
+        Remove-Item -LiteralPath $taskXmlPath, $helperPath, $resultPath -Force -ErrorAction SilentlyContinue
+    } catch { Write-Log "  user-session WinRT reset failed (non-fatal): $($_.Exception.Message)" 'WARN' }
 }
 
-# ── Step 3: revert machine-wide lock screen policy values ──────────────────
+# ============================================================================
+#  MAIN REMOVAL
+# ============================================================================
+Write-Log "Toast Notification removal started. WorkDir=$WorkDir"
 
-# Mirror of the install script's HKLM pins. Delete only the named values, never
-# the parent keys (which may hold unrelated GPO settings). Re-enabling Spotlight
-# is what lets Windows reclaim the lock screen on endpoints where step 2 could
-# not run.
-Write-Log "Reverting machine lock screen policy values."
-$policyValues = @(
-    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Lock Screen'; Name = 'HideSpotlightWindowsSpotlight' },
-    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization';            Name = 'NoLockScreenCamera' },
-    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization';            Name = 'LockScreenOverlaysDisabled' },
-    @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications'; Name = 'NoCloudApplicationNotification' }
-)
-foreach ($v in $policyValues) {
-    try {
-        if (Test-Path -LiteralPath $v.Path) {
-            Remove-ItemProperty -LiteralPath $v.Path -Name $v.Name -Force -ErrorAction SilentlyContinue
-            Write-Log "Removed $($v.Path)\$($v.Name)"
-        }
-    } catch { Write-Log "Could not remove $($v.Path)\$($v.Name): $($_.Exception.Message)" 'WARN' }
-}
+$NameLike = 'Toast Notification*'
+$AppxLike = '*ToastNotification*'
 
-# ── Step 4: clear per-user Spotlight toggles across all hives ──────────────
-
-# Older install scripts ran as SYSTEM and wrote these HKCU values into the wrong
-# profile, so sweep every loaded HKEY_USERS hive plus HKCU. Deleting the value
-# is the correct revert — Windows treats an absent value as the default (on).
-Write-Log "Clearing per-user Spotlight toggles (ContentDeliveryManager)."
-$cdmRelative = 'SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
-$cdmValues   = @('RotatingLockScreenEnabled', 'RotatingLockScreenOverlayEnabled', 'SubscribedContent-338387Enabled')
-$hiveRoots   = @('HKCU:')
+$productCodes = @()
 try {
-    Get-ChildItem -Path 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue |
-        Where-Object { $_.PSChildName -notmatch '_Classes$' } |
-        ForEach-Object { $hiveRoots += "Registry::HKEY_USERS\$($_.PSChildName)" }
-} catch { }
-foreach ($root in $hiveRoots) {
-    $cdmPath = Join-Path $root $cdmRelative
-    foreach ($name in $cdmValues) {
-        try {
-            if (Test-Path -LiteralPath $cdmPath) {
-                Remove-ItemProperty -LiteralPath $cdmPath -Name $name -Force -ErrorAction SilentlyContinue
-            }
-        } catch { }
-    }
-}
+    Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -like $NameLike } |
+        ForEach-Object { $productCodes += $_.PSChildName; Write-Log "MSI match by name: '$($_.DisplayName)' $($_.DisplayVersion) -> $($_.PSChildName)" }
+} catch { Write-Log "ARP query failed: $($_.Exception.Message)" 'WARN' }
 
-# ── Step 5a: remove every MSI install matched BY NAME ──────────────────────
+$installPath = $null
+try { $installPath = (Get-ItemProperty 'HKLM:\SOFTWARE\Toast2IT\Toast Notification' -Name 'InstallPath' -ErrorAction Stop).InstallPath } catch { }
+if (-not $installPath) { $installPath = Join-Path $env:ProgramFiles 'Toast Notification' }
 
+# 1. Stop the agent.
+Write-Log "Stopping the agent if running."
+try { Get-Process -Name 'ToastNotification.Agent' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } catch { }
+
+# 2a. Remove every MSI install matched by name.
 $msiFailure = $null
 if (-not $productCodes) {
-    Write-Log "No MSI install matched by name — MSI removal skipped (may be a Store/MSIX install; see step 5b)."
+    Write-Log "No MSI install matched by name (may be Store/MSIX -- see 2b)."
 } else {
     foreach ($pc in ($productCodes | Select-Object -Unique)) {
-        $msiLog = Join-Path $WorkDir "msiexec-uninstall-$($pc -replace '[^0-9A-Fa-f]','').log"
-        Write-Log "Running: msiexec.exe /x $pc /qn /norestart"
-        $proc = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/x', $pc, '/qn', '/norestart', '/l*v', "`"$msiLog`"") -NoNewWindow -PassThru
+        $ml = Join-Path $WorkDir "msiexec-$($pc -replace '[^0-9A-Fa-f]','').log"
+        Write-Log "Running: msiexec /x $pc /qn /norestart"
+        $proc = Start-Process 'msiexec.exe' -ArgumentList @('/x',$pc,'/qn','/norestart','/l*v',"`"$ml`"") -NoNewWindow -PassThru
         if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
-            Write-Log "msiexec did not exit within $TimeoutSeconds seconds for $pc — killing." 'ERROR'
+            Write-Log "msiexec $pc hung past $TimeoutSeconds s -- killing." 'ERROR'
             try { $proc | Stop-Process -Force } catch { }
             $msiFailure = 124; continue
         }
         switch ($proc.ExitCode) {
-            0     { Write-Log "msiexec $pc succeeded (exit 0)." }
-            3010  { Write-Log "msiexec $pc succeeded; reboot pending (3010)." }
-            1605  { Write-Log "msiexec $pc reports not installed (1605) — treating as success." }
-            default { Write-Log "msiexec $pc exit $($proc.ExitCode) (see $msiLog)." 'ERROR'; $msiFailure = $proc.ExitCode }
+            0 { Write-Log "msiexec $pc succeeded." }
+            3010 { Write-Log "msiexec $pc succeeded; reboot pending." }
+            1605 { Write-Log "msiexec $pc not installed (1605) -- treating as success." }
+            default { Write-Log "msiexec $pc exit $($proc.ExitCode) (see $ml)." 'ERROR'; $msiFailure = $proc.ExitCode }
         }
     }
 }
 
-# ── Step 5b: remove the Microsoft Store / MSIX package BY NAME ──────────────
-
-# Store and Intune-LOB installs are MSIX, not MSI — msiexec can't touch them.
-# Remove the per-user package for all users, then the provisioned copy so it
-# doesn't reinstall for new profiles. All matched by package Name, no GUID.
+# 2b. Remove the Store / MSIX package + provisioned copy by name.
 try {
-    $pkgs = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { $_.Name -like $AppxLike }
-    foreach ($pkg in $pkgs) {
-        Write-Log "Removing MSIX package (all users): $($pkg.PackageFullName)"
-        try { Remove-AppxPackage -Package $pkg.PackageFullName -AllUsers -ErrorAction Stop }
-        catch { try { Remove-AppxPackage -Package $pkg.PackageFullName -ErrorAction SilentlyContinue } catch { } }
+    Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { $_.Name -like $AppxLike } | ForEach-Object {
+        Write-Log "Removing MSIX (all users): $($_.PackageFullName)"
+        try { Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction Stop }
+        catch { try { Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue } catch { } }
     }
-} catch { Write-Log "Get-AppxPackage sweep raised (non-fatal): $($_.Exception.Message)" 'WARN' }
+} catch { Write-Log "AppxPackage sweep raised (non-fatal): $($_.Exception.Message)" 'WARN' }
 try {
-    Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -like $AppxLike -or $_.PackageName -like $AppxLike } |
-        ForEach-Object {
-            Write-Log "Removing provisioned MSIX package: $($_.PackageName)"
-            try { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null } catch { }
-        }
-} catch { Write-Log "Get-AppxProvisionedPackage sweep raised (non-fatal): $($_.Exception.Message)" 'WARN' }
-
-# ── Step 5c: purge SYSTEM-side residuals (scheduled tasks, HKLM bootstrap) ──
-
-# MSI custom actions clean these for MSI-channel uninstalls. On a Store/MSIX-only
-# endpoint those actions never run, leaving orphaned tasks and the bootstrap key.
-# Run unconditionally and best-effort so both channels are fully reversed.
-Write-Log "Purging Toast2IT scheduled tasks and HKLM bootstrap key."
-try {
-    Get-ScheduledTask -TaskPath '\Toast2IT\*' -ErrorAction SilentlyContinue |
-        Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
-    Write-Log "Scheduled tasks under \Toast2IT unregistered (or were not present)."
-} catch { Write-Log "Scheduled task cleanup raised (non-fatal): $($_.Exception.Message)" 'WARN' }
-try {
-    if (Test-Path 'HKLM:\SOFTWARE\Toast2IT') {
-        Remove-Item -Path 'HKLM:\SOFTWARE\Toast2IT' -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log "HKLM:\SOFTWARE\Toast2IT removed."
+    Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like $AppxLike -or $_.PackageName -like $AppxLike } | ForEach-Object {
+        Write-Log "Removing provisioned MSIX: $($_.PackageName)"
+        try { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null } catch { }
     }
-} catch { Write-Log "HKLM bootstrap key cleanup raised (non-fatal): $($_.Exception.Message)" 'WARN' }
+} catch { Write-Log "ProvisionedPackage sweep raised (non-fatal): $($_.Exception.Message)" 'WARN' }
 
-# ── Step 6: purge per-user config from every profile ───────────────────────
+# 3. Purge SYSTEM-side residuals (scheduled tasks + HKLM bootstrap key).
+Write-Log "Purging \Toast2IT scheduled tasks and HKLM bootstrap key."
+try { Get-ScheduledTask -TaskPath '\Toast2IT\*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue } catch { }
+try { if (Test-Path 'HKLM:\SOFTWARE\Toast2IT') { Remove-Item -Path 'HKLM:\SOFTWARE\Toast2IT' -Recurse -Force -ErrorAction SilentlyContinue; Write-Log "HKLM:\SOFTWARE\Toast2IT removed." } } catch { }
 
+# 4. HARD-RESET the lock screen (agent is gone now, so it cannot re-brand).
+Write-Log "Resetting the lock screen to Windows default (hard delete)."
+try { Invoke-ToastLockScreenReset -WorkDir $WorkDir } catch { Write-Log "Lock-screen reset raised (non-fatal): $($_.Exception.Message)" 'WARN' }
+
+# 5. Purge per-user config from every profile.
 if (-not $KeepUserConfig) {
-    Write-Log "Purging per-user config (Toast2IT\Toast Notification) from all profiles."
+    Write-Log "Purging per-user config from all profiles."
     try {
-        $usersRoot = Join-Path $env:SystemDrive 'Users'
-        Get-ChildItem -Path $usersRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            $cfg = Join-Path $_.FullName 'AppData\Local\Toast2IT\Toast Notification'
-            if (Test-Path -LiteralPath $cfg) {
-                Remove-Item -LiteralPath $cfg -Recurse -Force -ErrorAction SilentlyContinue
-                Write-Log "Removed config: $cfg"
-            }
+        Get-ChildItem (Join-Path $env:SystemDrive 'Users') -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            $c = Join-Path $_.FullName 'AppData\Local\Toast2IT\Toast Notification'
+            if (Test-Path -LiteralPath $c) { Remove-Item -LiteralPath $c -Recurse -Force -ErrorAction SilentlyContinue; Write-Log "Removed config: $c" }
         }
     } catch { Write-Log "Config purge raised (non-fatal): $($_.Exception.Message)" 'WARN' }
 }
 
-if ($msiFailure) {
-    Write-Log "Toast Notification removal finished WITH a msiexec failure (exit $msiFailure). Appearance/config/MSIX steps still ran." 'ERROR'
-    exit $msiFailure
-}
+# ---- Result ----
+if ($msiFailure) { Write-Log "Removal finished WITH a msiexec failure (exit $msiFailure). Lock-screen/config steps still ran." 'ERROR'; exit $msiFailure }
+if ($script:RebootNeeded) { Write-Log "Removal complete; a lock-screen slot was locked -- REBOOT to finalize (exit 3010)."; exit 3010 }
 Write-Log "Toast Notification removal complete."
 exit 0

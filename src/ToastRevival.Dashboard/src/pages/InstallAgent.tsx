@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import DeployCommand from '../components/DeployCommand';
+import DeploymentScripts from '../components/DeploymentScripts';
 import EnrollmentTokens from '../components/EnrollmentTokens';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -45,6 +46,8 @@ export default function InstallAgent() {
       </div>
 
       <DeployCommand />
+
+      <DeploymentScripts />
 
       <EnrollmentTokens />
 

@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
+using Microsoft.EntityFrameworkCore;
 using OtpNet;
+using ToastRevival.Api.Data;
 using ToastRevival.Api.Models;
 
 namespace ToastRevival.Api.Services;
@@ -25,20 +27,21 @@ public class MfaService
     }
 
     /// <summary>
-    /// Stateless TOTP check against an arbitrary base32 secret, with no replay
-    /// bookkeeping. Used to confirm a PENDING enrollment (AuthController.MfaEnrollConfirm)
-    /// where the secret isn't yet stored as AppUser.MfaSecret and there is no
-    /// LastTotpStep history to guard. Same ±1 step skew window as <see cref="Verify"/>.
+    /// Pure TOTP match against a base32 secret with the standard ±1 step skew
+    /// window. No replay bookkeeping, no mutation, no DB. Returns the matched
+    /// RFC 6238 time-step in <paramref name="matchedStep"/> on success so a
+    /// caller can enforce the replay floor however it persists state.
     /// </summary>
-    public bool VerifySecret(string? base32Secret, string code)
+    private static bool TryMatch(string? base32Secret, string code, out long matchedStep)
     {
+        matchedStep = 0;
         if (string.IsNullOrWhiteSpace(base32Secret)) return false;
         if (string.IsNullOrWhiteSpace(code)) return false;
 
         try
         {
             var totp = new Totp(Base32Encoding.ToBytes(base32Secret));
-            return totp.VerifyTotp(code.Trim(), out _, new VerificationWindow(previous: 1, future: 1));
+            return totp.VerifyTotp(code.Trim(), out matchedStep, new VerificationWindow(previous: 1, future: 1));
         }
         catch
         {
@@ -47,57 +50,72 @@ public class MfaService
     }
 
     /// <summary>
-    /// Verifies a 6-digit TOTP code against the user's stored base32 secret
-    /// and rejects replay within or before the same 30-second time-step.
+    /// Stateless TOTP check against an arbitrary base32 secret, with no replay
+    /// bookkeeping. Used to confirm a PENDING enrollment (AuthController.MfaEnrollConfirm)
+    /// where the secret isn't yet stored as AppUser.MfaSecret and there is no
+    /// LastTotpStep history to guard. Same ±1 step skew window as <see cref="Verify"/>.
+    /// </summary>
+    public bool VerifySecret(string? base32Secret, string code) =>
+        TryMatch(base32Secret, code, out _);
+
+    /// <summary>
+    /// In-memory TOTP verify with replay-floor check. Mutates
+    /// <paramref name="user"/>.<see cref="AppUser.LastTotpStep"/> on success but
+    /// does NOT persist anything.
     ///
-    /// On success: mutates <paramref name="user"/>.<see cref="AppUser.LastTotpStep"/>
-    /// to the matched step. The caller is responsible for persisting the
-    /// change via <c>SaveChangesAsync</c> — without persistence, replay
-    /// rejection only holds for the lifetime of the in-memory entity, not
-    /// across requests. AuthController.MfaVerify saves explicitly.
+    /// NOTE: this overload is NOT safe to use as the production replay guard.
+    /// Because the check-and-set is in memory and the caller persists separately,
+    /// two concurrent requests loaded from independent DbContexts can both pass
+    /// (AUTH-H1). Production login / step-up paths MUST use
+    /// <see cref="VerifyAndClaimAsync"/>, which performs the floor check and the
+    /// advance as one atomic SQL UPDATE. This method is retained as the pure
+    /// in-memory core exercised by MfaServiceTests.
     ///
-    /// Returns <c>false</c> when:
-    ///   - the user's TOTP secret is null/empty (MFA not enrolled),
-    ///   - the code is empty / malformed,
-    ///   - OtpNet's <see cref="Totp.VerifyTotp"/> rejects the code (wrong
-    ///     digits, outside the ±1 step window),
-    ///   - the matched step is &lt;= LastTotpStep (replay).
-    ///
-    /// Window: ±1 step (30 s each side) to tolerate clock skew. The replay
-    /// guard intentionally rejects equality (matched &lt;= last) so a code
-    /// accepted in the previous request is unusable in this one even if
-    /// it's still in its valid window.
+    /// Returns <c>false</c> when the secret is null/empty, the code is empty /
+    /// malformed, OtpNet rejects it (wrong digits / outside the ±1 step window),
+    /// or the matched step is &lt;= LastTotpStep (replay).
     /// </summary>
     public bool Verify(AppUser user, string code)
     {
-        if (string.IsNullOrWhiteSpace(user.MfaSecret)) return false;
-        if (string.IsNullOrWhiteSpace(code)) return false;
+        if (!TryMatch(user.MfaSecret, code, out var matchedStep)) return false;
 
-        try
-        {
-            var secretBytes = Base32Encoding.ToBytes(user.MfaSecret);
-            var totp = new Totp(secretBytes);
-            if (!totp.VerifyTotp(
-                    code.Trim(),
-                    out var matchedStep,
-                    new VerificationWindow(previous: 1, future: 1)))
-            {
-                return false;
-            }
-
-            // Replay rejection. matchedStep is floor(unixSeconds / 30) of the
-            // step OtpNet picked. If we have already accepted that step (or
-            // an earlier one) for this user, this is a replay or a stale code
-            // — reject without mutating LastTotpStep.
-            if (user.LastTotpStep.HasValue && matchedStep <= user.LastTotpStep.Value)
-                return false;
-
-            user.LastTotpStep = matchedStep;
-            return true;
-        }
-        catch
-        {
+        // Replay rejection. If we have already accepted that step (or an earlier
+        // one) for this user, this is a replay or a stale code.
+        if (user.LastTotpStep.HasValue && matchedStep <= user.LastTotpStep.Value)
             return false;
-        }
+
+        user.LastTotpStep = matchedStep;
+        return true;
+    }
+
+    /// <summary>
+    /// AUTH-H1 — atomic, replay-safe TOTP verification. Verifies the code against
+    /// <paramref name="user"/>.MfaSecret, then advances LastTotpStep to the matched
+    /// step using a single conditional UPDATE
+    /// (<c>WHERE last_totp_step IS NULL OR last_totp_step &lt; @matchedStep</c>).
+    /// The check and the state change are one SQL statement, so two concurrent
+    /// requests presenting the same intercepted code race the UPDATE and exactly
+    /// one observes rows-affected == 1 — the other is rejected. This mirrors the
+    /// XT-1 single-use enrollment-token claim in DevicesController.
+    ///
+    /// Returns <c>true</c> only when the code is valid AND this request won the
+    /// atomic advance. Returns <c>false</c> for an invalid/expired/replayed code
+    /// or when another concurrent request already advanced the floor.
+    /// </summary>
+    public async Task<bool> VerifyAndClaimAsync(AppDbContext db, AppUser user, string code)
+    {
+        if (!TryMatch(user.MfaSecret, code, out var matchedStep)) return false;
+
+        var claimed = await db.Users.IgnoreQueryFilters()
+            .Where(u => u.Id == user.Id
+                && (u.LastTotpStep == null || u.LastTotpStep < matchedStep))
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.LastTotpStep, matchedStep));
+
+        if (claimed != 1) return false;
+
+        // Keep the tracked entity coherent with what the atomic UPDATE wrote, so a
+        // subsequent SaveChangesAsync on the same context is a no-op for this column.
+        user.LastTotpStep = matchedStep;
+        return true;
     }
 }

@@ -68,7 +68,7 @@ public class DeviceGroupsController : ControllerBase
         if (!IsAdmin()) return Forbid();
 
         var tenantId = GetTenantId();
-        var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id);
+        var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id && g.TenantId == GetTenantId());
         if (group is null) return NotFound();
 
         var name = req.Name?.Trim();
@@ -91,7 +91,7 @@ public class DeviceGroupsController : ControllerBase
     {
         if (!IsAdmin()) return Forbid();
 
-        var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id);
+        var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id && g.TenantId == GetTenantId());
         if (group is null) return NotFound();
 
         _db.DeviceGroups.Remove(group);
@@ -103,7 +103,7 @@ public class DeviceGroupsController : ControllerBase
     [HttpGet("{id:guid}/members")]
     public async Task<ActionResult<IEnumerable<DeviceGroupMemberResponse>>> ListMembers(Guid id)
     {
-        var exists = await _db.DeviceGroups.AnyAsync(g => g.Id == id);
+        var exists = await _db.DeviceGroups.AnyAsync(g => g.Id == id && g.TenantId == GetTenantId());
         if (!exists) return NotFound();
 
         var members = await _db.DeviceGroupMembers
@@ -121,7 +121,7 @@ public class DeviceGroupsController : ControllerBase
     {
         if (!IsAdmin()) return Forbid();
 
-        var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id);
+        var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id && g.TenantId == GetTenantId());
         if (group is null) return NotFound("Device group not found.");
 
         var deviceExists = await _db.Devices
@@ -149,7 +149,7 @@ public class DeviceGroupsController : ControllerBase
     {
         if (!IsAdmin()) return Forbid();
 
-        var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id);
+        var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id && g.TenantId == GetTenantId());
         if (group is null) return NotFound("Device group not found.");
 
         var requested = (req.DeviceIds ?? Array.Empty<Guid>())
@@ -205,7 +205,7 @@ public class DeviceGroupsController : ControllerBase
                 && m.DeviceGroup.TenantId == GetTenantId());
         if (member is null) return NotFound();
 
-        var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id);
+        var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id && g.TenantId == GetTenantId());
         _db.DeviceGroupMembers.Remove(member);
 
         if (group is not null)

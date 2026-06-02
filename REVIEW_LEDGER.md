@@ -1,118 +1,82 @@
-# REVIEW LEDGER — Toast Notification
+# REVIEW LEDGER — 7-Pass Code Review (2026-06-02)
 
-> **Fresh ledger — 2026-06-01 (Carl).** The prior multi-pass ledger (cold pass + 32-finding
-> multi-perspective security review + two remediation passes) was blown out at Keith's call.
-> Its full text is preserved in git history at commit `54c15bc`. A complete code review is
-> incoming; new findings append below and we run every one of them (no-defer).
+> **Full cold pass — 2026-06-02 (Carl).** Prior ledger (XT-1 remediation, gauge → 0)
+> archived to `Docs/review_history/REVIEW_LEDGER_2026-06-02_1.md`.
+> This pass used 4 parallel Explore agents across Api/Dashboard/Agent/XT-1, with every
+> top-tier finding personally verified by reading the actual source before inclusion.
+>
+> **REMEDIATE pass — 2026-06-02 (Carl + Anthony + Abish).** All 7 findings re-verified
+> against current source (each still manifested at the cited shape). 6 fixed + verified;
+> XT-M1 stays OPEN as Keith's product decision (anchored in code so it isn't re-flagged).
+> Gauge: 7 OPEN → **1 OPEN**.
 
-## How the gauge reads this file (v5.4.25 parser — DO NOT BREAK)
+## Gauge rules (v5.4.25 parser — DO NOT BREAK)
 
-The sidebar Code Health gauge (`countLedgerOpenRows`) treats **every pipe-table row whose first
-cell is an ID (a letter plus a digit — e.g. `BF-2`, `MOD-1`) as OPEN — UNLESS that same row
-contains an uppercase terminal token: `FIXED-VERIFIED`, `REMEDIATED`, `REJECTED-VERIFIED`, or
-`VERIFIED-CLEAN`.** Rules learned the hard way (the old ledger read 39 when only 9 were open):
+Every pipe-table row whose first cell is an ID (letter + digit) counts as OPEN **unless**
+the row also contains one of these uppercase terminal tokens:
+`FIXED-VERIFIED` · `REMEDIATED` · `REJECTED-VERIFIED` · `VERIFIED-CLEAN`
 
-1. A finding leaves the gauge **only** when its row carries one of those four uppercase tokens.
-   `DEFERRED` / `BLOCKED` / `OPEN` / blank all **COUNT**. Deferred = OPEN.
-2. Each open finding appears as a counted row in **exactly one place** — a duplicate row double-counts.
-3. **Never** let the word `REMEDIATED` (or any terminal token) appear in the *prose* of an OPEN
-   row — it silently removes the finding from the gauge.
-4. An in-code anchor stops the *code* scanner from re-alerting on a known item; it has **zero**
-   effect on this ledger. Anchor ≠ closed. A row closes only when code changed and was verified.
-
----
-
-## OPEN findings (live gauge source)
-
-**None — gauge → 0.** XT-1, the last open finding, was remediated, QA-verified, and **deployed
-LIVE** on this 2026-06-02 remediation pass (details under **Closed this pass — XT-1** below).
-
-**LIVE on TOASTWEB1 (v0.5.27, 2026-06-02).** Committed `b9dc8f2` → private `main`; API +
-dashboard deployed; **M17 applied on startup** (`CREATE TABLE EnrollmentTokens` in the journal);
-`/api/health` healthy; the new admin endpoints respond `401` (deployed + auth-gated); public
-mirror synced at tag `v0.5.27` (`6d7ae27`). The architect win held: **no MSI bump, no
-code-signing token, and no RMM reinstall** — the single-use token rides the existing
-`ENROLLMENTKEY` install plumbing, so the agent and WiX installer were untouched.
-
-_No open rows._
+`DEFERRED` / `BLOCKED` / `OPEN` all **count as OPEN**. An in-code anchor is NOT a terminal
+state. Only code changed + verified earns a terminal token.
 
 ---
 
-## Closed this pass — 2026-06-02 (XT-1 remediation)
+## Pre-pass checks
 
-- **XT-1** — FIXED-VERIFIED (**LIVE on TOASTWEB1, v0.5.27** — server + dashboard deployed;
-  **no MSI / signing token / RMM**) — per-device single-use enrollment tokens replace reliance
-  on the reusable per-tenant `EnrollmentKey`. Keith approved the design on the 2026-06-02 call
-  (opaque 32-byte token, single-use, 24h TTL, dashboard-issued, admin-revocable) and chose
-  **"cut it now."**
-  **Code shipped:** `EnrollmentToken` model + EF migration **M17** (`EnrollmentTokens` table,
-  unique `(TenantId, TokenHash)`, applies on API startup) + admin **issue/list/revoke**
-  endpoints on `DevicesController` (admin-gated, tenant-scoped, audited) + an **Enrollment
-  tokens** admin UI on the Install Agent page (issue → show-once + copy, status list,
-  two-step revoke). `DevicesController.Register` now **dual-accepts**: it tries the single-use
-  token first (hash-lookup, **atomic** single-use claim via a conditional `ExecuteUpdate`,
-  bound to the redeeming device identity), then falls back to the legacy constant-time key
-  compare; tenants with neither mechanism stay open-registration (unchanged).
-  **The XT-1 win:** a spent token left in a device's registry is worthless — it cannot
-  provision a *new* device, only re-authenticate the same machine on reinstall.
-  **Why no MSI/agent change:** the agent already presents the HKLM bootstrap value in the same
-  `req.EnrollmentKey` field, so the token rides the existing wire — the agent + WiX are
-  untouched. Disabling the legacy key later is just clearing the per-tenant `EnrollmentKey`
-  server-side (no fleet reinstall), once Keith switches his deploy process to issuing tokens.
-  **Verification:** API `dotnet build` 0/0; dashboard `tsc -b` + `vite build` clean; M17
-  generated with a consistent model snapshot; QA-gated by **2 adversarial reviewers → SHIP**
-  (cross-tenant IDOR, double-spend race, expired/revoked, spent-token reuse, legacy +
-  open-registration regression, admin gating + audit, TS↔C# DTO contract, CSS/design-system —
-  all clean). **Ship = commit + server+dashboard deploy + public mirror, on Keith's go.**
+```
+Read REVIEW_LEDGER.md / latest review_history?   Yes (prior ledger read; all prior items FIXED-VERIFIED)
+Closed-pass anchors honored?                       Yes (checked for REVIEW-*/FIX-* anchors during reads)
+Files scanned:                                     ~85 (Controllers/, Services/, Models/, Data/, Dashboard/src/, Agent/*)
+Files with anchors found and respected:            5 (DevicesController, AuthController, BlocklistService, Program.cs, NotificationsController)
+Remediate-pass verification:                       solution build green; EF model validated (no-DB probe); MfaServiceTests 6/6 green;
+                                                   new XT-1 + AUTH-H1 integration tests compile + behavior-traced (execute under Docker
+                                                   Postgres fixture in CI — Docker unavailable in this session).
+```
 
 ---
 
-## SHIPPED TO PRODUCTION — 2026-06-02 (LIVE on TOASTWEB1)
+## Findings (live gauge source)
 
-The entire session's work is deployed + verified on prod, not just committed:
-- **API** redeployed (`/opt/toast/api`, `toast-api` active, `/api/health` healthy) — live: BF-2, MOD-1, API-1, DASH-L1, billing-disable, SES-2-R, and AGT-4-R server-side signing. **M16 migration applied on startup** (`Tenant.LockScreenImageUpdatedAt`). Prior build backed up at `api.bak.prev` for rollback.
-- **Dashboard** redeployed — `/privacy-policy/` renders the policy LIVE (Store 10.5.1 fix verified; `/login` + marketing Playwright screenshots clean, 0 console errors).
-- **Signed agent MSI 0.4.35** hosted at `https://toastnotification.com/downloads/ToastNotification.msi` — **Authenticode Valid (Toast2IT, LLC)** over the public URL; versioned copy 200; Velopack feed `releases.win.json` 200; signed Setup.exe published.
-- **`Agent:LatestVersion` → 0.4.35** (`/api/agent/version` confirms) — fleet self-updates on next 24h poll; **Keith pushes the RMM reinstall for immediate**. Delivers Agent-H1 (LPE/TOCTOU), AGT-LOG-1 (enrollment-key log redaction), and AGT-4-R to the fleet.
-- **MSIX 0.4.35.0** built unsigned + codename-audited clean — **ready for Keith to upload to Partner Center** (resubmit the Store app; the privacy URL is now live).
-- **API v0.5.26** (MFA-7) redeployed to `/opt/toast/api` (`toast-api` active, `/api/health` healthy, `/login` 200) — TOTP-enrolled users can no longer downgrade step-up to SMS. Prior build backed up at `api.bak.prev`. Mirrored to public at tag `v0.5.26`.
-
-## Closed this session — post-call execution (2026-06-01)
-
-All green-lit on the call, built + verified + shipped to private `main` + the public mirror. Builds: API + Agent + dashboard all 0/0.
-
-- **BF-2** — FIXED-VERIFIED (v0.5.22) — `CloudflareIpValidator` + rate-limiter/`ClientIp` trust `CF-Connecting-IP` only from a verified Cloudflare egress peer (or loopback proxy). Direct-to-origin header spoof can no longer reset the rate-limit bucket. (Ops follow-up: lock the origin firewall to Cloudflare ranges in prod.)
-- **MOD-1** — FIXED-VERIFIED (v0.5.22) — `ContentSafetyService` now fails CLOSED (Block) on an Azure scan exception; a moderation failure STOPS the send instead of passing unmoderated content.
-- **DASH-L1** — FIXED-VERIFIED (v0.5.22) — `Tenant.LockScreenImageUpdatedAt` (M16 migration) is the server-provided `?v=` cache-bust; a replaced lock-screen image re-fetches for every viewer/agent.
-- **API-1** — FIXED-VERIFIED (v0.5.22) — the inert per-tenant API-key UI was removed (page/route/nav + controller/DTOs). DbSet/model/table retained (no EF drift, no data loss).
-- **BILL-ENF-1** — REMEDIATED (v0.5.23) — moot: billing is DISABLED platform-wide via `Billing:Enabled` (default off). No billable seats exist, so the PastDue-grace question does not arise until billing is re-enabled. Keith's scope call on the call.
-- **SES-2-R** — FIXED-VERIFIED (v0.5.24) — token-epoch session revocation: user tokens carry `tokenEpoch` (= Identity SecurityStamp); the `OnTokenValidated` hook rejects a token when the tenant is suspended or the stamp rotated (30s cache, fail-open on a DB blip, legacy-token-safe). SecurityStamp rotates on password reset (Identity) and role change. Tenant suspend now kills live operator sessions, not just device/send/hub paths.
-- **AGT-4-R** — FIXED-VERIFIED (v0.5.25, agent 0.4.35, LIVE) — appearance/lock-screen config HMAC-signed end-to-end (server `AppearanceConfigBuilder` + agent verify, **fail-closed**). QA-gated by 4 adversarial reviewers (enforced signatures over the original graceful-unsigned fallback to kill the strip-the-signature downgrade) + unit-tested 5/5. Server signs in prod now; agents enforce after self-update to 0.4.35.
-- **MFA-7** — FIXED-VERIFIED (v0.5.26, LIVE on TOASTWEB1) — a TOTP-enrolled user could downgrade session step-up to the weaker SMS channel. Added a guard on **both** `AuthController.MfaSendSms` and `MfaVerifySms`: when `MfaSecret` is set, refuse SMS step-up with `403 { error: "totp_required" }` and force the authenticator path (send-sms refuses before spending a ClickSend SMS; verify-sms guards too as defense in depth). **Non-breaking** — SMS-only / SSO / legacy users (no `MfaSecret`) are unaffected; login already prefers TOTP; the step-up modal (`MfaStepUpModal.tsx`) already falls back to the authenticator code on any send-sms failure, so **no frontend change**. The prior "Held for Keith" anchor is removed. Verification: API built 0/0, deployed live, `/api/health` healthy post-deploy, `/login` 200, send-sms returns 401 unauth (auth gate intact, no 500). Two regression tests added to `SecurityTests` (TOTP user blocked on both paths; guard inert for non-TOTP users). **Test-exec caveat:** the integration tests are committed but were not run on the dev host (no Docker / local Postgres / CI runner present — fixture needs Postgres 16); they pass on any Docker/CI-capable runner. Guard correctness is otherwise verified by inspection + the live deploy. **Retiring SMS outright remains Keith's separate migration call — NOT part of this finding.**
-- **Store privacy (10.5.1)** — FIXED-VERIFIED (v0.5.22, LIVE 2026-06-02) — `/privacy-policy` route alias + prerender + sitemap; verified rendering live at the Store-listing URL. **Action for Keith: resubmit the app in Partner Center with the new unsigned MSIX 0.4.35.0.**
+| ID | Severity | Status | File:Line | What's wrong | Why it matters | Confidence |
+|---|---|---|---|---|---|---|
+| AUTH-H1 | High | FIXED-VERIFIED | `src/ToastRevival.Api/Services/MfaService.cs` `AuthController.cs` | TOTP replay guard was non-atomic (read `LastTotpStep` → mutate in memory → caller persists), so two concurrent requests could both pass and save the same step. | An intercepted 6-digit code could be redeemed twice (full login + step-up) inside its ±1 step window. | High |
+| DGC-M1 | Medium | FIXED-VERIFIED | `src/ToastRevival.Api/Controllers/DeviceGroupsController.cs` | `Update`/`Delete` (and 4 sibling fetches) loaded `DeviceGroup` by id only, relying solely on the global query filter — no explicit tenant predicate. | A future `IgnoreQueryFilters()` or no-HTTP-context job path could cross tenants on a GUID guess. | High |
+| DGM-M2 | Medium | FIXED-VERIFIED | `src/ToastRevival.Api/Data/AppDbContext.cs` | `DeviceGroupMember` was the only tenant-associated entity with no `HasQueryFilter`. | A direct `_db.DeviceGroupMembers` query (future job/endpoint) would silently skip tenant isolation. | High |
+| XT-M1 | Medium | OPEN | `src/ToastRevival.Api/Controllers/DevicesController.cs` (carve-out, anchored) | Single-use-token reinstall carve-out identifies "same machine" by the self-reported `(DeviceName, Username)` tuple — not hardware-backed. An attacker with a spent token from HKLM + the original name/username can re-enroll. | Defense-in-depth gap (HKLM read already implies machine compromise). **Decision 2026-06-02 (Keith, phone):** fresh-token-per-reinstall REJECTED (breaks silent RMM mass deploy of hundreds of devices). Fix = bind token to machine SID, scoped as build-mode project **XT-3** (`Docs/ToastRevival/projects/XT-3/`). Carve-out stays as-is; anchored in code. **Owner: Keith.** Stays OPEN until XT-3 ships. | Medium |
+| XT-L1 | Low | FIXED-VERIFIED | `src/ToastRevival.Api/Controllers/DevicesController.cs` (PassesEnrollmentGateAsync) | Atomic-claim `ExecuteUpdateAsync` WHERE omitted `t.TenantId == tenantId`. | Defense-in-depth: a leaked `token.Id` could consume another tenant's token. | High |
+| XT-L2 | Low | FIXED-VERIFIED | `src/ToastRevival.Api/Controllers/DevicesController.cs` (PassesEnrollmentGateAsync) | Lost-race re-read `FirstOrDefaultAsync(t => t.Id == token.Id)` omitted the tenant predicate. | Same leak surface as XT-L1, feeding the reinstall carve-out. | High |
+| XT-L3 | Low | REMEDIATED | `tests/ToastRevival.Api.Tests/SecurityTests.cs` | No automated coverage for the XT-1 enrollment-token feature. | XT-1 is the most recent security ship; regression coverage was missing. | High |
 
 ---
 
-## Closed this session — 2026-06-01 audit pass (off gauge)
+## Remediation log (2026-06-02)
 
-Carl ran a targeted audit of the surfaces the prior review left uncovered (dashboard, the
-never-logic-reviewed controllers, content moderation, output/injection services, agent+installer).
-Method: 3 parallel refute-first finder agents, every claim `git grep`-anchored, each survivor
-re-verified personally. Builds: `ToastRevival.Api` + `ToastRevival.Agent` → 0 warnings / 0 errors.
+1. **AUTH-H1 → FIXED-VERIFIED.** Added `MfaService.VerifyAndClaimAsync(AppDbContext, AppUser, string)`: verifies the code, then advances `LastTotpStep` with one conditional `ExecuteUpdateAsync` (`WHERE last_totp_step IS NULL OR < @matchedStep`), returning true only on rows-affected == 1. Mirrors the proven XT-1 token-claim pattern. All 3 call sites (`VerifyLoginTotp`, `MfaDisable`, `MfaVerify`) switched. Pure crypto/floor core retained as the in-memory `Verify` for `MfaServiceTests` (6/6 green). New concurrency test `AuthH1_ConcurrentSameTotpCode_AdvancesReplayFloorExactlyOnce`.
 
-- **BLK-1** — FIXED-VERIFIED — `BlocklistService.cs:31-39`. Tenant custom-blocklist matching did raw `ToLowerInvariant()` + `Contains()` with no Unicode normalization, so a sender could split a banned term with a zero-width char (`b​adword`) or use full-width/ligature look-alikes to evade it. Fix: added `NormalizeForMatch` (NFKC + strip Unicode `Format`-category code points) on both the message and each term. Anchored. Residual: cross-script homoglyphs (Cyrillic 'а' vs Latin 'a') not folded — needs a confusables map; Azure CS remains the severity gate.
-- **AGT-LOG-1** — FIXED-VERIFIED (LIVE in agent 0.4.35) — `Program.cs:55,301`. The agent wrote its full command line (including the optional `[enrollmentKey]` the MSI passes to `--setup-bootstrap`) to `agent.log` — a secret that an RMM/support log bundle could carry off-box. Fix: `DiagLog.RedactArgs` masks the key at both log sites. Anchored. **Shipped to the fleet in the signed MSI 0.4.35 (`Agent:LatestVersion` bumped 2026-06-02).**
+2. **DGC-M1 → FIXED-VERIFIED.** Added `&& g.TenantId == GetTenantId()` to all 6 `DeviceGroup` fetches in the controller (Update, Delete, ListMembers, AddMember, SetMembers, RemoveMember secondary) — not just the 2 originally flagged (whole-module sweep). Matches house style across every other write-path controller.
 
-## Verified clean this audit (off gauge)
+3. **DGM-M2 → FIXED-VERIFIED.** Added `e.HasQueryFilter(m => m.DeviceGroup.TenantId == _tenantProvider.TenantId)` scoped through the required navigation (no own TenantId column). EF model build + validation confirmed via a no-DB model probe.
 
-- **Dashboard React/TS** (first deep logic pass) — VERIFIED-CLEAN. SSO `#token=` fragment consumed then cleared via `window.history.replaceState` (`SsoCallback.tsx:28`); zero `dangerouslySetInnerHTML`/`innerHTML`/`eval`/`document.write` sinks; API key shown once read-only via `navigator.clipboard`; no open-redirect from user-supplied params; no `console.*` of secrets. JWT in `localStorage` is an accepted tradeoff (no XSS sink + CSP ships).
-- **Untouched controllers + hub** — VERIFIED-CLEAN. `AnalyticsController`/`AuditController`/`TemplatesController`/`AssetsController` tenant-scoped, no IDOR, asset upload ext-allowlisted with Guid ids (no traversal); `NotificationHub` suspension + decommission checks present, `dashboard-{tenantId}` group excludes device tokens.
-- **Output/injection services** — VERIFIED-CLEAN. `EmailTemplates` HtmlEncode user fields; `ClickSendSmsService` JSON-encodes the message; `PdfExportService` consumes typed model values — no injection surface.
-- **Agent self-update beyond Agent-H1** — VERIFIED-CLEAN. SYSTEM-side reparse-point guard + ACL lockdown + Authenticode re-verify on the protected copy before `msiexec`; HTTPS-only download in Release; downgrade-protected; `UseShellExecute=false` (no PATH search); update task runs as SYSTEM with no user-writable working dir.
+4. **XT-L1 / XT-L2 → FIXED-VERIFIED.** Added `t.TenantId == tenantId` to the atomic-claim WHERE and the lost-race re-read in `PassesEnrollmentGateAsync`.
+
+5. **XT-M1 → OPEN (owner: Keith; fix scheduled as XT-3).** Not rubber-stamped. The clean "return false" fix silently breaks the intentional silent-reinstall UX (commit b9dc8f2), so it is a product decision. Keith decided by phone (2026-06-02): reject the fresh-token-per-reinstall option (it breaks RMM mass deployment), keep the carve-out as-is, and fix it properly by binding the token to the machine SID — scoped as build-mode project **XT-3** (`Docs/ToastRevival/projects/XT-3/`, full residual-risk + design docs). Behavior unchanged this pass; in-code anchor records the decision. Stays on the gauge until XT-3 ships.
+
+6. **XT-L3 → REMEDIATED.** Added enrollment-token security tests to `SecurityTests.cs`: admin-only gating, expiry, cross-tenant rejection, revoked-active rejection, same-machine-reinstall-allowed / different-machine-rejected, and concurrent-claim atomicity (one wins). Register-path tests use a dedicated `ApiTestFactory` for a fresh `device-per-hour` window (mirrors `RegistrationLoadTests`). Token hashes seeded as lowercase hex to match production lookup. (Verifier's draft had three behavior bugs — uppercase hashes, an inactive-gate cross-tenant case, and a revoked-used-token assertion contradicting the `RevokedAt` gate — all corrected.)
 
 ---
 
-*Lifecycle note: per the gauge parser's own model, a Scan writes a fresh OPEN ledger, a Remediate
-pass drives every row to a `*-VERIFIED`/`REMEDIATED` terminal status (gauge → 0), and an Audit
-writes `REVIEW_AUDIT.md`. This file is the fresh ledger. When Keith's complete review lands, new
-findings are appended to the OPEN table above and worked to closure.*
+## Reviewed and clean (off gauge)
+
+The following areas were reviewed by parallel agents and verified personally. No findings.
+
+- **Agent self-update / SelfUpdateService.cs** — Authenticode re-verify, reparse-point defense, TOCTOU protection via protected directory copy, SYSTEM-task privilege boundary — VERIFIED-CLEAN
+- **Dashboard XSS surface** — no `dangerouslySetInnerHTML`, no `innerHTML`, no `eval`, SSO token fragment cleared via `replaceState` — VERIFIED-CLEAN
+- **NotificationsController device-token isolation** — `Get` endpoint explicitly scopes by `tenantId` from claims; device tokens cannot read cross-tenant — VERIFIED-CLEAN
+- **DeployCommand.tsx / EnrollmentTokens.tsx install command** — All interpolated values are server-generated UUID (tenantId), hex string (enrollment token/key), or `window.location.origin` — no injection surface — VERIFIED-CLEAN (FE-H1 REJECTED: false positive)
+- **AgentClient.cs HMAC verification** — constant-time comparison, payload deduplication, correct key lookup — VERIFIED-CLEAN
+- **BlocklistService.cs Unicode normalization** — NFKC + Format-strip anchored from BLK-1 fix — VERIFIED-CLEAN
+- **EnrollmentToken admin endpoints** — admin-gated, tenant-scoped on all three (issue/list/revoke), plaintext token never returned after issue, 24h expiry enforced at claim time — VERIFIED-CLEAN
+
+---
+
+*Lifecycle: This is a REMEDIATE pass — rows driven to terminal status. One row (XT-M1) stays OPEN by design, owned by Keith. Gauge reads this file; don't alter the table format.*

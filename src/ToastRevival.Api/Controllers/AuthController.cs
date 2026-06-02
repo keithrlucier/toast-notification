@@ -584,9 +584,10 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(user.MfaSecret))
             return Unauthorized("Authenticator MFA is not set up on this account.");
 
-        // MfaService.Verify mutates user.LastTotpStep on success (replay guard) —
-        // persist it so a replayed code is rejected on the next request.
-        if (!_mfa.Verify(user, req.Code))
+        // AUTH-H1 — VerifyAndClaimAsync verifies the code AND advances LastTotpStep
+        // in one atomic SQL UPDATE, so a code replayed across concurrent requests is
+        // accepted at most once.
+        if (!await _mfa.VerifyAndClaimAsync(_db, user, req.Code))
             return Unauthorized("Invalid or expired authenticator code.");
 
         user.LastLogin = DateTime.UtcNow;
@@ -838,7 +839,8 @@ public class AuthController : ControllerBase
                 message = "Your workspace requires multi-factor authentication. Ask an admin to lift the requirement before disabling it."
             });
 
-        if (!_mfa.Verify(user, req.Code))
+        // AUTH-H1 — atomic verify + replay-floor advance (see VerifyLoginTotp).
+        if (!await _mfa.VerifyAndClaimAsync(_db, user, req.Code))
             return Unauthorized("Invalid or expired authenticator code.");
 
         user.MfaSecret        = null;
@@ -866,11 +868,12 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(user.MfaSecret))
             return BadRequest("Authenticator app MFA is not set up on this account.");
 
-        // MfaService.Verify mutates user.LastTotpStep on success (replay
-        // guard against an attacker who intercepted a valid TOTP within its
-        // ±1 step window). Persist the change so the next call sees the new
-        // floor and rejects a replayed code.
-        if (!_mfa.Verify(user, req.Code))
+        // AUTH-H1 — VerifyAndClaimAsync atomically verifies the code and advances
+        // the replay floor (LastTotpStep) at the DB level, so an attacker who
+        // intercepts a valid TOTP within its ±1 step window cannot replay it across
+        // concurrent step-up requests. The atomic UPDATE has already persisted the
+        // floor; the SaveChangesAsync below is a no-op for that column.
+        if (!await _mfa.VerifyAndClaimAsync(_db, user, req.Code))
             return Unauthorized("Invalid or expired TOTP code.");
 
         await _db.SaveChangesAsync();

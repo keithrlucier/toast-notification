@@ -73,6 +73,10 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
              .WithMany(d => d.GroupMemberships)
              .HasForeignKey(m => m.DeviceId)
              .OnDelete(DeleteBehavior.Cascade);
+            // DGM-M2 — scope through the required DeviceGroup navigation so a direct
+            // _db.DeviceGroupMembers query is tenant-isolated like every other
+            // tenant-associated entity (DeviceGroupMember has no own TenantId column).
+            e.HasQueryFilter(m => m.DeviceGroup.TenantId == _tenantProvider.TenantId);
         });
 
         builder.Entity<NotificationTemplate>(e =>

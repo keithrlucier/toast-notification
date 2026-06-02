@@ -26,6 +26,11 @@ public class TokenService : ITokenService
             new Claim("tenantId", user.TenantId.ToString()),
             new Claim("role", user.Role.ToString()),
             new Claim("type", "user"),
+            // SES-2-R: token epoch = the user's Identity SecurityStamp. The JWT pipeline
+            // (Program.cs OnTokenValidated) rejects a token whose epoch no longer matches
+            // the current stamp, so password reset / role change instantly kill live
+            // sessions; tenant suspension is enforced in the same hook.
+            new Claim("tokenEpoch", user.SecurityStamp ?? ""),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
@@ -72,6 +77,7 @@ public class TokenService : ITokenService
             // (Jwt:ExpiresInMinutes); expiring it on the short MFA window would log the
             // user out 15 min after any sensitive action.
             new Claim("mfa_at", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()),
+            new Claim("tokenEpoch", user.SecurityStamp ?? ""), // SES-2-R (see CreateUserToken)
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 

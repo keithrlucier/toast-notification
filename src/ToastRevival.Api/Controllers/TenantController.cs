@@ -403,6 +403,7 @@ public class TenantController : ControllerBase
         // logo + settings split. Constrained to our own /assets/lockscreen/ path —
         // never an arbitrary URL the agent would then fetch.
         t.LockScreenImageUrl = NormalizeLockScreenUrlForStorage(req.ImageUrl);
+        t.LockScreenImageUpdatedAt = DateTime.UtcNow; // DASH-L1 cache-bust
         await _db.SaveChangesAsync();
         await NotifyAppearanceChangedAsync(tenantId);
         return NoContent();
@@ -474,6 +475,7 @@ public class TenantController : ControllerBase
         if (tenant is not null)
         {
             tenant.LockScreenImageUrl = url;
+            tenant.LockScreenImageUpdatedAt = DateTime.UtcNow; // DASH-L1 cache-bust
             await _db.SaveChangesAsync();
             // Image commits immediately (Diana's split: upload now, Save toggles
             // enabled). Refresh live so a re-upload-while-enabled reaches devices.

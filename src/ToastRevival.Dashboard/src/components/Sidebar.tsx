@@ -86,7 +86,6 @@ const ADMIN_ITEMS = [
   { to: '/users',             label: 'Users',      icon: UsersIcon },
   { to: '/audit',             label: 'Audit Log',  icon: AuditIcon },
   { to: '/billing',           label: 'Billing',    icon: BillingIcon },
-  { to: '/settings/api-keys', label: 'API Keys',   icon: ApiKeysIcon },
   { to: '/settings/tenant',   label: 'Settings',   icon: SettingsIcon },
 ];
 
@@ -280,16 +279,6 @@ function UsersIcon() {
       <path d="M1 13c0-2.21 2.239-4 5-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <circle cx="12" cy="7" r="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M10 13c0-1.657 1.343-3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ApiKeysIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <circle cx="6" cy="9" r="3.5" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M8.5 7.5L14 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M12 4l1.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

@@ -300,17 +300,9 @@ public class AuthController : ControllerBase
         return uri.ToString().TrimEnd('/');
     }
 
-    private string ClientIp()
-    {
-        var cfIp = Request.Headers["CF-Connecting-IP"].FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(cfIp)) return cfIp;
-
-        var forwarded = Request.Headers["X-Forwarded-For"].FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(forwarded))
-            return forwarded.Split(',')[0].Trim();
-
-        return HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    }
+    // BF-2: trust CF-Connecting-IP only from a verified Cloudflare peer (or loopback
+    // reverse proxy). Single source of truth in CloudflareIpValidator.
+    private string ClientIp() => Services.CloudflareIpValidator.ResolveTrustedClientIp(HttpContext);
 
     private async Task NotifyTrialReviewAsync(TrialRequest trial)
     {

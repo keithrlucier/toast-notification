@@ -314,23 +314,21 @@ function LockScreenCard() {
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
   const [removeArmed, setRemoveArmed] = useState(false);
-  const [cacheBust, setCacheBust]     = useState(0);
   // When a lock-screen mutation is rejected with 403 mfa_required (tenant enforces
   // MFA), we stash the retry here and show the step-up modal; on verify we re-run it.
   const [stepUpRetry, setStepUpRetry] = useState<(() => void) | null>(null);
-  // REVIEW DASH-L1 (2026-05-31): cache-bust key is mountTime+counter, not a server-provided
-  // version. The robust fix (a LockScreenImageUpdatedAt column surfaced in the DTO and used as
-  // ?v=) is a DB-schema change deferred to Keith's architectural call. The user-visible symptom
-  // (stale preview after replace for the uploading admin) is already remediated by the counter.
-  const [mountTime]                   = useState(() => Date.now());
+  // DASH-L1 (2026-06-01): cache-bust is now the SERVER-provided LockScreenImageUpdatedAt
+  // (surfaced as imageUpdatedAtUtc), so a replaced image is re-fetched for every viewer/agent,
+  // not just the uploading admin. No ?v= until the config loads.
+  const [imageUpdatedAtUtc, setImageUpdatedAtUtc] = useState<string | null>(null);
 
   const previewUrl = imageUrl
-    ? `${tenantLogoUrlForBrowser(imageUrl)}?v=${mountTime + cacheBust}`
+    ? `${tenantLogoUrlForBrowser(imageUrl)}${imageUpdatedAtUtc ? `?v=${encodeURIComponent(imageUpdatedAtUtc)}` : ''}`
     : '';
 
   useEffect(() => {
-    api.get<{ enabled: boolean; imageUrl: string | null }>('/api/tenant/lockscreen')
-      .then(c => { setEnabled(c.enabled); setImageUrl(c.imageUrl); })
+    api.get<{ enabled: boolean; imageUrl: string | null; imageUpdatedAtUtc: string | null }>('/api/tenant/lockscreen')
+      .then(c => { setEnabled(c.enabled); setImageUrl(c.imageUrl); setImageUpdatedAtUtc(c.imageUpdatedAtUtc); })
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, []);
@@ -364,7 +362,7 @@ function LockScreenCard() {
       const { url } = await res.json() as { url?: string };
       if (!url) throw new Error('Upload failed.');
       setImageUrl(url);
-      setCacheBust(b => b + 1);
+      setImageUpdatedAtUtc(new Date().toISOString());
     } catch (err) {
       if (isMfaRequired(err)) { setStepUpRetry(() => () => doUpload(file)); return; }
       setError(err instanceof Error ? err.message : 'Upload failed.');

@@ -235,6 +235,9 @@ public class AuthController : ControllerBase
         if (!result.Succeeded)
             return BadRequest(new { errors = result.Errors.Select(e => e.Description).ToArray() });
 
+        // SES-2-R: ResetPasswordAsync rotates the Identity SecurityStamp, so every token
+        // issued before this reset (old epoch) is rejected by the OnTokenValidated hook —
+        // a password reset instantly kills the prior sessions.
         return Ok(new { message = "Password updated. You can now sign in." });
     }
 

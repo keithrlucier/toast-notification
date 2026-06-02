@@ -92,6 +92,10 @@ public class UsersController : ControllerBase
         if (user.TenantId != GetTenantId()) return NotFound();
 
         user.Role = req.Role;
+        // SES-2-R: rotate the security stamp so the user's existing tokens (which carry
+        // the OLD role + old epoch) are revoked on the next request — they must re-login
+        // and pick up the new role.
+        user.SecurityStamp = Guid.NewGuid().ToString();
         await _db.SaveChangesAsync();
 
         return NoContent();

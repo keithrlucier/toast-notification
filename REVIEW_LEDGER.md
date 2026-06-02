@@ -24,21 +24,28 @@ contains an uppercase terminal token: `FIXED-VERIFIED`, `REMEDIATED`, `REJECTED-
 
 ## OPEN findings (live gauge source)
 
-These are genuine Keith-decisions carried forward from the prior review — each is OPEN because it
-needs Keith's product/architecture/deploy-topology call, not because work was skipped. Each has an
-in-code anchor at the cited site so the automated scanner does not re-flag it.
+What's left needs Keith's product / architecture / release decision — not skipped work.
+Everything else green-lit on the 2026-06-01 call shipped this session (see **Closed** below).
 
 | ID | Sev | Status | Owner | File / anchor | Decision Keith owns |
 |----|-----|--------|-------|---------------|---------------------|
-| BF-2 | High | OPEN | Keith | `Program.cs` login-per-ip | Trust `CF-Connecting-IP` only from a verified Cloudflare egress range / nginx overwrite / `KnownNetworks` — deploy-topology call. BF-1 account lockout mitigates per-account meanwhile. |
-| XT-1 | High | OPEN | Keith | `DevicesController.Register` + `Setup.wxs` BootstrapEnrollReg | Replace the reusable per-tenant HKLM enrollment key with per-device single-use tokens. Architectural; HKLM ACL is USER-context-sensitive (agent reads it as the user). |
-| SES-2-R | High | OPEN | Keith | `IsDeviceRevoked` | Instant revocation of live USER/operator sessions on tenant suspend (token-epoch / SecurityStamp pipeline). Device + send + hub paths already shipped; this is the session remainder. |
-| MFA-7 | Medium | OPEN | Keith | `AuthController.MfaVerifySms` | SMS step-up must be a factor DISTINCT from the login factor — require enrolled TOTP for step-up, or add a separate SMS-elevation secret. Product/UX call. |
-| BILL-ENF-1 | Medium | OPEN | Keith | `LicenseService.IsWithinCap` | May a PastDue tenant keep adding billable seats during grace, or deny? One-line fix either way once decided. Product policy. |
-| API-1 | Info | OPEN | Keith | `ApiKeysController` | Implement key-auth properly (constant-time compare, tenant-scoped, must-not-bypass-MFA) OR remove the feature + its dashboard UI. Currently inert (no live bypass). |
-| AGT-4-R | Low | OPEN | Keith | `LockScreenService` | End-to-end HMAC-sign the appearance config (versioned server+agent rollout). Image host-pin already shipped; this is the signing remainder. |
-| DASH-L1 | Low | OPEN | Keith | `DeviceAppearanceCards.tsx` cache-bust | Lock-screen preview cache-bust is client-side, not a server version. Visible symptom already fixed; robust fix adds `LockScreenImageUpdatedAt` to `Tenant` (DB-schema call) or accept current over-fetch. |
-| MOD-1 | Low | OPEN | Keith | `ContentSafetyService` catch blocks | Azure Content Safety scan paths fail open (return Pass) on an Azure exception — deliberate availability tradeoff, mitigated per-tenant by `ModerationRequireApprovalAll`. Decision: should an exception degrade to Review (not Pass) for moderation-enabled tenants? |
+| XT-1 | High | OPEN | Keith | `DevicesController.Register` + `Setup.wxs` | Per-device single-use enrollment tokens (replacing the reusable HKLM key). Scoped: a non-breaking SERVER-FIRST phase (EnrollmentToken model + issue/list/revoke endpoints + Register accepting single-use tokens; the legacy key keeps working) then an MSI phase (agent + WiX read the token) needing an MSI bump + your code-signing token + reinstall push. |
+| MFA-7 | Medium | OPEN | Keith | `AuthController.MfaVerifySms` | REVIEW (you're holding this): confirmed the TOTP step-up IS already a distinct enrolled-secret factor. Remaining — a TOTP-enrolled user can still downgrade to the weaker SMS step-up, and removing SMS outright would lock out SMS-only / SSO / legacy users until they enroll TOTP. Approve the safe hardening (block SMS step-up when TOTP is enrolled) + the user-migration plan before ClickSend SMS is retired. |
+| AGT-4-R | Low | OPEN | Keith | appearance config / `LockScreenService` | End-to-end HMAC-sign the appearance config (mirrors the existing toast HMAC). Scoped as a 3-phase versioned rollout (server signs → agent verifies → enforce) needing a signed MSI to reach the fleet; the image host-pin already shipped. |
+
+---
+
+## Closed this session — post-call execution (2026-06-01)
+
+All green-lit on the call, built + verified + shipped to private `main` + the public mirror. Builds: API + Agent + dashboard all 0/0.
+
+- **BF-2** — FIXED-VERIFIED (v0.5.22) — `CloudflareIpValidator` + rate-limiter/`ClientIp` trust `CF-Connecting-IP` only from a verified Cloudflare egress peer (or loopback proxy). Direct-to-origin header spoof can no longer reset the rate-limit bucket. (Ops follow-up: lock the origin firewall to Cloudflare ranges in prod.)
+- **MOD-1** — FIXED-VERIFIED (v0.5.22) — `ContentSafetyService` now fails CLOSED (Block) on an Azure scan exception; a moderation failure STOPS the send instead of passing unmoderated content.
+- **DASH-L1** — FIXED-VERIFIED (v0.5.22) — `Tenant.LockScreenImageUpdatedAt` (M16 migration) is the server-provided `?v=` cache-bust; a replaced lock-screen image re-fetches for every viewer/agent.
+- **API-1** — FIXED-VERIFIED (v0.5.22) — the inert per-tenant API-key UI was removed (page/route/nav + controller/DTOs). DbSet/model/table retained (no EF drift, no data loss).
+- **BILL-ENF-1** — REMEDIATED (v0.5.23) — moot: billing is DISABLED platform-wide via `Billing:Enabled` (default off). No billable seats exist, so the PastDue-grace question does not arise until billing is re-enabled. Keith's scope call on the call.
+- **SES-2-R** — FIXED-VERIFIED (v0.5.24) — token-epoch session revocation: user tokens carry `tokenEpoch` (= Identity SecurityStamp); the `OnTokenValidated` hook rejects a token when the tenant is suspended or the stamp rotated (30s cache, fail-open on a DB blip, legacy-token-safe). SecurityStamp rotates on password reset (Identity) and role change. Tenant suspend now kills live operator sessions, not just device/send/hub paths.
+- **Store privacy (10.5.1)** — FIXED-VERIFIED (v0.5.22) — `/privacy-policy` route alias + prerender + sitemap so the Store-listing URL renders the policy (was a blank shell). **Action for Keith: resubmit the app in Partner Center.**
 
 ---
 

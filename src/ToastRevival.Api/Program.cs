@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -28,6 +30,9 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 // Database
 builder.Services.AddDbContext<AppDbContext>(opts =>
     opts.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// SES-2-R: short-TTL cache for the per-request session-revocation check.
+builder.Services.AddMemoryCache();
 
 // Tenant isolation
 builder.Services.AddHttpContextAccessor();
@@ -116,6 +121,66 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 if (!string.IsNullOrEmpty(token) && ctx.Request.Path.StartsWithSegments("/hubs"))
                     ctx.Token = token;
                 return Task.CompletedTask;
+            },
+            // SES-2-R: immediate session revocation for USER tokens. Reject when the
+            // tenant is suspended or the user's SecurityStamp (token epoch) has rotated
+            // (password reset / role change). Cached 30s to stay off the hot path; the
+            // reject path re-reads so a stale cache can't kill a freshly-rotated token or
+            // a just-unsuspended tenant. Legacy tokens with no epoch claim skip the epoch
+            // check (graceful rollout) but still honor suspension. Device tokens are gated
+            // separately (IsDeviceRevoked / hub OnConnected). Fail-OPEN on a DB blip — a
+            // transient outage must not log the whole platform out.
+            OnTokenValidated = async ctx =>
+            {
+                if (ctx.Principal?.FindFirstValue("type") != "user") return;
+                var userIdStr = ctx.Principal.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (!Guid.TryParse(userIdStr, out var userId)) { ctx.Fail("invalid token"); return; }
+
+                var tokenEpoch      = ctx.Principal.FindFirstValue("tokenEpoch");
+                var isPlatformAdmin = ctx.Principal.FindFirstValue("platformAdmin") == "true";
+
+                try
+                {
+                    var cache = ctx.HttpContext.RequestServices.GetRequiredService<IMemoryCache>();
+                    var db    = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                    var key   = $"sess:{userId}";
+
+                    async Task<(bool Found, bool Suspended, string? Stamp)> ReadAsync()
+                    {
+                        var u = await db.Users.IgnoreQueryFilters()
+                            .Where(x => x.Id == userId)
+                            .Select(x => new { x.SecurityStamp, x.TenantId })
+                            .FirstOrDefaultAsync();
+                        if (u is null) return (false, false, null);
+                        var suspendedAt = await db.Tenants.IgnoreQueryFilters()
+                            .Where(t => t.Id == u.TenantId)
+                            .Select(t => (DateTime?)t.SuspendedAt)
+                            .FirstOrDefaultAsync();
+                        return (true, suspendedAt.HasValue, u.SecurityStamp);
+                    }
+
+                    static bool ShouldReject((bool Found, bool Suspended, string? Stamp) s, bool isPa, string? epoch)
+                        => !s.Found || (s.Suspended && !isPa) || (epoch is not null && s.Stamp != epoch);
+
+                    if (!cache.TryGetValue(key, out (bool Found, bool Suspended, string? Stamp) v))
+                    {
+                        v = await ReadAsync();
+                        cache.Set(key, v, TimeSpan.FromSeconds(30));
+                    }
+
+                    if (ShouldReject(v, isPlatformAdmin, tokenEpoch))
+                    {
+                        // Stale-cache guard: confirm against a fresh read before rejecting.
+                        v = await ReadAsync();
+                        cache.Set(key, v, TimeSpan.FromSeconds(30));
+                        if (ShouldReject(v, isPlatformAdmin, tokenEpoch))
+                            ctx.Fail("session revoked");
+                    }
+                }
+                catch
+                {
+                    // DB unavailable — do not fail closed; device/send paths gate independently.
+                }
             },
         };
     });

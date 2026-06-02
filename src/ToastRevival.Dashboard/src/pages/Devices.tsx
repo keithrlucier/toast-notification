@@ -95,6 +95,9 @@ export default function Devices() {
   const [sortDir, setSortDir]       = useState<SortDir>('asc');
   const [removing, setRemoving]     = useState<string | null>(null);
   const [uninstalling, setUninstalling] = useState<string | null>(null);
+  const [checking, setChecking]     = useState<string | null>(null);
+  const [pushingFleet, setPushingFleet] = useState(false);
+  const [notice, setNotice]         = useState('');
   // The agent runs unprivileged and can't reliably self-remove, so the button
   // opens a modal with the manual removal command + a best-effort remote attempt.
   const [removeTarget, setRemoveTarget] = useState<Device | null>(null);
@@ -183,6 +186,42 @@ export default function Devices() {
       await load();
     } finally {
       setUninstalling(null);
+    }
+  };
+
+  // Tell a single online agent to run its self-update check now instead of
+  // waiting for the 24h poll. Offline devices can't be reached and update on
+  // their next check-in; the button is disabled for them.
+  const handleCheckUpdate = async (id: string, name: string) => {
+    setChecking(id);
+    setNotice('');
+    setError('');
+    try {
+      const { pushed } = await devicesApi.checkUpdate(id);
+      setNotice(pushed
+        ? `Update check pushed to "${name}". If a newer version is published it'll pull it now.`
+        : `"${name}" is offline — it'll check for updates on its next check-in.`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to push update check.');
+    } finally {
+      setChecking(null);
+    }
+  };
+
+  // Fleet-wide: push the update check to every online device in this tenant so
+  // the whole fleet rolls forward at once instead of waiting on per-device timers.
+  const handlePushFleetUpdate = async () => {
+    if (!confirm('Push an update check to every online device in this tenant now? Online agents will check for the latest published version immediately.')) return;
+    setPushingFleet(true);
+    setNotice('');
+    setError('');
+    try {
+      const { pushed, total } = await devicesApi.checkUpdateAll();
+      setNotice(`Update check pushed to ${pushed} online device${pushed !== 1 ? 's' : ''} of ${total}. Offline devices update on their next check-in.`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to push fleet update.');
+    } finally {
+      setPushingFleet(false);
     }
   };
 
@@ -302,6 +341,14 @@ export default function Devices() {
           <Link to="/devices/install" className="btn btn-secondary" style={{ textDecoration: 'none' }}>
             Install Agent
           </Link>
+          <button
+            className="btn btn-secondary"
+            onClick={() => void handlePushFleetUpdate()}
+            disabled={pushingFleet || loading || devices.length === 0}
+            title="Tell every online agent in this tenant to check for the latest version now"
+          >
+            {pushingFleet ? <span className="spinner" /> : 'Push Update'}
+          </button>
           <button className="btn btn-ghost" onClick={() => void load()} disabled={loading}>
             <RefreshIcon />
             Refresh
@@ -310,6 +357,26 @@ export default function Devices() {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+
+      {notice && (
+        <div
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+            padding: '10px 14px', marginBottom: 16, borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--accent)', background: 'rgba(31,111,189,0.06)',
+            color: 'var(--text-secondary)', fontSize: 13,
+          }}
+        >
+          <span>{notice}</span>
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize: 12, padding: '2px 8px' }}
+            onClick={() => setNotice('')}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0, marginBottom: 16, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
@@ -578,6 +645,15 @@ export default function Devices() {
                     <td style={{ color: 'var(--text-dim)' }}>{formatDate(d.registeredAt)}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        <button
+                          className="btn btn-ghost"
+                          style={{ fontSize: 12, padding: '6px 10px', color: 'var(--accent)' }}
+                          onClick={() => void handleCheckUpdate(d.id, d.machineName)}
+                          disabled={!d.isOnline || checking === d.id || removing === d.id || uninstalling === d.id}
+                          title={d.isOnline ? 'Tell this agent to check for the latest version now' : 'Offline — updates on next check-in'}
+                        >
+                          {checking === d.id ? <span className="spinner" /> : 'Update'}
+                        </button>
                         <button
                           className="btn btn-ghost"
                           style={{ fontSize: 12, padding: '6px 10px', color: 'var(--status-error)' }}

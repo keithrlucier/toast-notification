@@ -312,6 +312,21 @@ internal sealed class AgentHubClient : IAsyncDisposable
             DiagLog.Write("AppearanceUpdated: live appearance refresh requested.");
             OnAppearanceUpdated?.Invoke();
         });
+        // Admin pushed "check for update now" from the dashboard. Run a single
+        // update check immediately instead of waiting for the 24h poll. Fire-and-
+        // forget; SelfUpdateService applies the same guards as the periodic loop.
+        _hub.On("CheckForUpdate", () =>
+        {
+            DiagLog.Write("CheckForUpdate: admin-triggered update check requested.");
+            _ = Task.Run(async () =>
+            {
+                try { await SelfUpdateService.ForceCheckAsync(_config, CancellationToken.None); }
+                catch (Exception ex)
+                {
+                    DiagLog.Write($"CheckForUpdate: ForceCheckAsync failed: {ex.GetType().Name}: {ex.Message}");
+                }
+            });
+        });
         _hub.Reconnecting += ex =>
         {
             DiagLog.Write($"Hub reconnecting: {ex?.GetType().Name}: {ex?.Message}");

@@ -517,6 +517,91 @@ public class DevicesController : ControllerBase
     }
 
     /// <summary>
+    /// Admin-triggered "check for update now" for a single device. If the device is
+    /// online it gets the CheckForUpdate hub command and runs its self-update check
+    /// immediately instead of waiting for the 24h poll; if offline it picks the new
+    /// version up on its next scheduled poll. The agent applies its own guards
+    /// (Velopack-managed / DisableAutoUpdate) on receipt, so this never forces an
+    /// update against local policy. Returns whether the device was reached.
+    /// </summary>
+    [Authorize]
+    [HttpPost("{id:guid}/check-update")]
+    [EnableRateLimiting("tenant-per-minute")]
+    public async Task<IActionResult> RequestUpdateCheck(Guid id)
+    {
+        if (!IsAdmin()) return Forbid();
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var device = await _db.Devices.FindAsync(id);
+        if (device is null) return NotFound();
+        if (device.TenantId != tenantId) return NotFound();
+
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        await _audit.LogAsync(tenantId, userId, "device.check-update", "Device", id.ToString());
+
+        var pushed = false;
+        if (NotificationHub.ConnectedDevices.TryGetValue(id, out var connectionId))
+        {
+            try
+            {
+                await _hubContext.Clients.Client(connectionId).SendAsync("CheckForUpdate");
+                pushed = true;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "CheckForUpdate hub push failed for device {DeviceId}", id);
+            }
+        }
+
+        return Ok(new { pushed });
+    }
+
+    /// <summary>
+    /// Admin-triggered fleet update push: sends CheckForUpdate to every ONLINE
+    /// device in the caller's tenant so the whole fleet rolls forward at once
+    /// instead of waiting on individual 24h timers. Offline devices are skipped
+    /// and update on their next poll. Returns how many online devices were reached
+    /// and the tenant's total active device count.
+    /// </summary>
+    [Authorize]
+    [HttpPost("check-update-all")]
+    [EnableRateLimiting("tenant-per-minute")]
+    public async Task<IActionResult> RequestUpdateCheckAll()
+    {
+        if (!IsAdmin()) return Forbid();
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+
+        var deviceIds = await _db.Devices
+            .Where(d => d.TenantId == tenantId && d.Status != DeviceStatus.Decommissioned)
+            .Select(d => d.Id)
+            .ToListAsync();
+
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        await _audit.LogAsync(tenantId, userId, "device.check-update-all", "Tenant", tenantId.ToString());
+
+        // Resolve to live hub connections for THIS tenant only, then one batched push.
+        var connIds = new List<string>();
+        foreach (var did in deviceIds)
+            if (NotificationHub.ConnectedDevices.TryGetValue(did, out var cid))
+                connIds.Add(cid);
+
+        if (connIds.Count > 0)
+        {
+            try
+            {
+                await _hubContext.Clients.Clients(connIds).SendAsync("CheckForUpdate");
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "CheckForUpdate fleet push failed for tenant {TenantId}", tenantId);
+            }
+        }
+
+        return Ok(new { pushed = connIds.Count, total = deviceIds.Count });
+    }
+
+    /// <summary>
     /// SES-3 + FIX-SES-2 (2026-06-01): true when a device JWT must be refused — the
     /// device row is missing or Decommissioned (SES-3), OR the owning tenant is
     /// suspended (SES-2). Suspension is the operator kill switch for a compromised/

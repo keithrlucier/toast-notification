@@ -106,72 +106,70 @@ try {
 
 # -- MSI Install --------------------------------------------------------------
 # Run msiexec via a standalone one-shot SYSTEM scheduled task rather than as a
-# child of this script process. EDR products (CrowdStrike, Defender for
-# Endpoint, etc.) watch the process chain: RMM->PowerShell->msiexec is flagged
-# and the IStorage open is denied with STG_E_ACCESSDENIED / MSI error 2203 /
-# exit 1619 -- regardless of what directory the MSI lives in. A standalone
-# Task Scheduler task has no suspicious parent chain and msiexec opens cleanly.
-# This mirrors the agent's own self-update mechanism (SelfUpdateService.cs
-# ExecuteMsiexec) which is proven to work on hardened endpoints.
+# child of this script process. EDR products watch the RMM->PowerShell->msiexec
+# process chain and block the IStorage open with STG_E_ACCESSDENIED / error
+# 2203 / exit 1619. A standalone Task Scheduler task has no suspicious parent.
+#
+# msiexec.exe is invoked directly as the task executable -- no .cmd wrapper --
+# so AppLocker Script rules (which block .cmd/.bat from non-whitelisted paths)
+# cannot interfere. The exit code is read from Get-ScheduledTaskInfo.LastTaskResult.
 
-$msiLog    = "$logDir\ToastNotification_msi_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
-$cmdPath   = "$logDir\apply-install.cmd"
-$taskName  = "\Toast2IT\ToastNotificationRmmInstall"
-$exitFile  = "$logDir\install-exitcode.txt"
+$msiLog   = "$logDir\ToastNotification_msi_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+$taskName = "ToastNotificationRmmInstall"
+$taskRoot = "\"
 
 $msiArgs = "/i `"$f`" /qn /norestart /l*v `"$msiLog`" CLIENTID=`"$TenantId`" SERVERURL=`"$ServerUrl`""
 if ($EnrollmentKey) { $msiArgs += " ENROLLMENTKEY=`"$EnrollmentKey`"" }
 
-# Write a .cmd that runs msiexec and records its exit code to a file. The .cmd
-# lives in C:\Temp (non-interactive, SYSTEM-owned) alongside the log files.
-Remove-Item $cmdPath  -Force -ErrorAction SilentlyContinue
-Remove-Item $exitFile -Force -ErrorAction SilentlyContinue
-$cmdContent = "@echo off`r`nmsiexec.exe $msiArgs`r`necho %ERRORLEVEL%>`"$exitFile`"`r`n"
-[System.IO.File]::WriteAllText($cmdPath, $cmdContent, [System.Text.Encoding]::ASCII)
 Write-Log "MSI log: $msiLog"
-Write-Log "Apply cmd: $cmdPath"
 
-# Clean up any stale task, create fresh one-shot SYSTEM task, fire it.
-& "$env:windir\System32\schtasks.exe" /Delete /TN $taskName /F 2>&1 | Out-Null
-$createOut = & "$env:windir\System32\schtasks.exe" /Create /TN $taskName `
-    /TR "cmd.exe /c `"$cmdPath`"" /SC ONCE /ST 00:00 /RU SYSTEM /RL HIGHEST /F 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Log "Task creation failed ($LASTEXITCODE): $createOut -- falling back to direct Start-Process" "WARN"
-    $proc = Start-Process "$env:windir\System32\msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
-    $msiExitCode = $proc.ExitCode
-} else {
-    Write-Log "Starting MSI install via standalone SYSTEM task..."
-    & "$env:windir\System32\schtasks.exe" /Run /TN $taskName | Out-Null
+$usedTask = $false
+try {
+    # Remove any stale task from a prior crashed run.
+    Get-ScheduledTask -TaskName $taskName -TaskPath $taskRoot -ErrorAction SilentlyContinue |
+        Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
 
-    # Poll until task exits (up to 5 min). Get-ScheduledTask is PS3+ and always
-    # available here (Server 2012+/Win 8.1+ and we need Win 10 2004+).
+    $action    = New-ScheduledTaskAction -Execute "$env:windir\System32\msiexec.exe" -Argument $msiArgs
+    $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -RunLevel Highest -LogonType ServiceAccount
+    $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds 300) -MultipleInstances IgnoreNew
+    $taskDef   = New-ScheduledTask -Action $action -Principal $principal -Settings $settings
+    Register-ScheduledTask -TaskName $taskName -TaskPath $taskRoot -InputObject $taskDef -Force | Out-Null
+
+    Write-Log "Starting MSI install via standalone SYSTEM task (msiexec direct)..."
+    Start-ScheduledTask -TaskName $taskName -TaskPath $taskRoot
+    $usedTask = $true
+} catch {
+    Write-Log "Task setup failed: $($_.Exception.Message) -- falling back to direct Start-Process" "WARN"
+}
+
+if ($usedTask) {
+    # Poll until task exits (up to 5 min). Task state is 'Running' while active,
+    # 'Ready' when done. PS scheduled-task cmdlets are available on Win 8.1+ / Server 2012+.
     $deadline = (Get-Date).AddSeconds(300)
     do {
         Start-Sleep -Seconds 5
-        try {
-            $state = (Get-ScheduledTask -TaskName "ToastNotificationRmmInstall" `
-                        -TaskPath "\Toast2IT\" -ErrorAction Stop).State
-        } catch {
-            $state = 'Unknown'
-        }
+        $taskObj = Get-ScheduledTask -TaskName $taskName -TaskPath $taskRoot -ErrorAction SilentlyContinue
+        $state   = if ($taskObj) { $taskObj.State } else { 'Ready' }
     } while ($state -eq 'Running' -and (Get-Date) -lt $deadline)
 
     if ($state -eq 'Running') {
-        Write-Log "Task did not finish within 300 seconds -- install may still be in progress." "WARN"
-    }
-
-    # Read exit code written by the .cmd
-    if (Test-Path $exitFile) {
-        $msiExitCode = [int]((Get-Content $exitFile -Raw).Trim())
+        Write-Log "Task did not finish within 300s -- stopping and treating as failure." "WARN"
+        Stop-ScheduledTask -TaskName $taskName -TaskPath $taskRoot -ErrorAction SilentlyContinue
+        $msiExitCode = 1603
     } else {
-        Write-Log "Exit code file not found -- task may not have run. Assuming failure." "WARN"
-        $msiExitCode = 1619
+        # LastTaskResult is a uint32 matching the msiexec exit code.
+        $info = Get-ScheduledTaskInfo -TaskName $taskName -TaskPath $taskRoot -ErrorAction SilentlyContinue
+        $msiExitCode = if ($info) { [int64]$info.LastTaskResult } else { 1619 }
+        Write-Log "Task LastTaskResult: $msiExitCode"
     }
 
-    & "$env:windir\System32\schtasks.exe" /Delete /TN $taskName /F 2>&1 | Out-Null
+    Get-ScheduledTask -TaskName $taskName -TaskPath $taskRoot -ErrorAction SilentlyContinue |
+        Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
+} else {
+    # Fallback: direct Start-Process (may still hit the EDR chain issue)
+    $proc = Start-Process "$env:windir\System32\msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
+    $msiExitCode = $proc.ExitCode
 }
-Remove-Item $cmdPath  -Force -ErrorAction SilentlyContinue
-Remove-Item $exitFile -Force -ErrorAction SilentlyContinue
 
 Write-Log "MSI exit code: $msiExitCode"
 

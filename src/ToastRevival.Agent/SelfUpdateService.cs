@@ -382,8 +382,21 @@ internal static class SelfUpdateService
     {
         var verifiedDir = Path.Combine(GetProgramDataDir(), VerifiedSubDir);
         var existing = new DirectoryInfo(verifiedDir);
-        if (existing.Exists && (existing.Attributes & FileAttributes.ReparsePoint) != 0)
-            existing.Delete(recursive: false); // removes the link, never its target
+        if (existing.Exists)
+        {
+            // Remove ANY pre-existing entry so SYSTEM is unambiguously the creator of the
+            // dir we lock down below. A reparse point is unlinked WITHOUT following it to
+            // its target; a plain directory is deleted wholesale. The plain-dir case is the
+            // attack this closes: the parent is user-writable by design, so a non-admin can
+            // pre-create `verified` as an ordinary directory and stay its OWNER. CreateDirectory
+            // no-ops on an existing dir, so without this delete that owner survives, keeps
+            // implicit WRITE_DAC, and could rewrite our ACL to swap the SYSTEM-executed
+            // apply-msi.cmd (which, unlike the MSI, is not Authenticode-gated).
+            if ((existing.Attributes & FileAttributes.ReparsePoint) != 0)
+                existing.Delete(recursive: false); // removes the link, never its target
+            else
+                existing.Delete(recursive: true);  // real dir (possibly non-admin-owned) -> gone
+        }
         Directory.CreateDirectory(verifiedDir);
         LockDownToSystemAndAdmins(verifiedDir);
         var locked = new DirectoryInfo(verifiedDir);
@@ -393,9 +406,14 @@ internal static class SelfUpdateService
     }
 
     // REVIEW Agent-L1 (2026-05-31): ACL set in C# here rather than in WiX is intentional.
-    // The verified\ dir is created and owned exclusively by the SYSTEM updater and is
-    // re-created + re-locked + reparse-checked every run before use, so a WiX-pre-seeded
-    // ACL would not be load-bearing. Resolved no-change; not a deviation worth re-flagging.
+    // The verified\ dir is unconditionally recreated, SetOwner'd to SYSTEM, and re-locked
+    // + reparse-checked every run before use (see EnsureProtectedVerifiedDir +
+    // LockDownToSystemAndAdmins), so SYSTEM is the sole owner at use-time and a
+    // WiX-pre-seeded ACL would not be load-bearing. Resolved no-change.
+    // Agent-M1 (2026-06-03): the prior "owned exclusively by the SYSTEM updater" premise is
+    // now ENFORCED in code — a non-admin pre-created plain dir is deleted wholesale and
+    // ownership is forced to SYSTEM — closing the local->SYSTEM owner-rights (WRITE_DAC) gap
+    // and resolving the Agent-L1 anchor-challenge.
     // Deletes a file or directory entry if present, removing a SYMLINK itself rather
     // than following it to its target (File.Delete / Directory.Delete on a reparse
     // point unlinks the link only). No-op if the path does not exist. Used to clear a
@@ -422,6 +440,13 @@ internal static class SelfUpdateService
 
         var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
         var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        // Force ownership to SYSTEM. An object's OWNER always holds implicit WRITE_DAC
+        // ("owner rights") and can rewrite the DACL regardless of the ACEs below, so if a
+        // non-admin pre-created this dir they would otherwise remain owner even after we
+        // set the ACL — and could swap apply-msi.cmd. We run as SYSTEM (which holds
+        // SeRestorePrivilege), so assigning SYSTEM as owner is permitted. Belt-and-suspenders
+        // with the unconditional recreate in EnsureProtectedVerifiedDir.
+        sec.SetOwner(system);
         foreach (var sid in new[] { system, admins })
         {
             sec.AddAccessRule(new FileSystemAccessRule(

@@ -560,24 +560,6 @@ namespace ToastRevival.Agent
                         try { await client.ReconnectAsync(); }
                         catch (Exception ex) { DiagLog.Write($"ReconnectRequested: {ex.GetType().Name}: {ex.Message}"); }
                     };
-                    tray.SendTestRequested += () =>
-                    {
-                        try
-                        {
-                            var assets = new FileSystemToastAssets(AppContext.BaseDirectory);
-                            var tmpl   = ToastTemplateCatalog.All[ToastTemplateKey.Announcement];
-                            var note   = ToastTemplateBuilder.Build(tmpl, assets,
-                                "Toast Notification",
-                                "Agent is connected. Notifications from your admin will appear here.");
-                            LegacyToastShim.Show(note);
-                            DiagLog.Write("PrimaryMode: test notification sent from tray.");
-                        }
-                        catch (Exception ex)
-                        {
-                            DiagLog.Write($"PrimaryMode: test notification failed: {ex.GetType().Name}: {ex.Message}");
-                        }
-                    };
-
                     UpdateService.UpdateReady += version => tray.ShowUpdateAvailable(version);
                     tray.ApplyUpdateRequested += () =>
                     {

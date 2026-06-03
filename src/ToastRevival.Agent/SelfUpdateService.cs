@@ -38,7 +38,9 @@ internal static class SelfUpdateService
 {
     private const string RegistryKeyPath = @"SOFTWARE\Toast2IT\Toast Notification";
     private const string UpdaterTaskName = @"\Toast2IT\ToastNotificationUpdater";
+    private const string ApplyTaskName   = @"\Toast2IT\ToastNotificationApplyUpdate";
     private const string TriggerFileName = "pending-action.txt";
+    private const string MsiActionLogName = "msi-install.log";
     private const string UpdateSubDir    = "update";    // user-writable staging (download lands here)
     private const string VerifiedSubDir  = "verified";  // SYSTEM/Admin-only; verify+install happen here
     private const string UpdatedMsiName  = "ToastNotification.Agent.msi";
@@ -224,28 +226,87 @@ internal static class SelfUpdateService
         };
     }
 
+    // Runs "msiexec <args>" from a standalone one-shot SYSTEM scheduled task instead
+    // of as a child of this updater process. LOAD-BEARING — do not "simplify" back to
+    // a direct Process.Start. When msiexec was a child of agent.exe --run-updater
+    // (itself launched by the ToastNotificationUpdater task) it lived inside that
+    // task's job object AND the agent's process tree, and TWO things killed it
+    // mid-install: (1) the MSI's KillAgent action — taskkill /F /IM
+    // ToastNotification.Agent.exe /T — tree-kills it, and (2) Task Scheduler tears
+    // down the updater task's job the instant --run-updater returns. Either way the
+    // over-the-top upgrade rolled back and the agent stayed on the old version
+    // (observed in the field: 0.4.35 looping on 0.4.36, a stuck msiexec holding the
+    // Windows Installer mutex). A separate scheduled task runs msiexec as its OWN task
+    // process, in its OWN job, owned by neither the agent nor the updater task — so
+    // KillAgent cannot reach it and the updater task exiting cannot kill it, and it
+    // runs to completion. /l*v writes a verbose install log so the result is never
+    // invisible again.
     private static int ExecuteMsiexec(string args)
     {
-        DiagLog.Write($"UpdaterMode: launching msiexec {args}");
         try
         {
-            var psi = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName        = "msiexec.exe",
-                Arguments       = args,
-                UseShellExecute = false,
-                CreateNoWindow  = true,
-            };
-            // Launch and detach — msiexec will kill this process (KillAgent CA) then
-            // install/remove files. We don't wait; the task scheduler records the exit
-            // code of this launcher process (0 = launched successfully), not msiexec.
-            System.Diagnostics.Process.Start(psi);
-            DiagLog.Write("UpdaterMode: msiexec launched.");
+            var verifiedDir = EnsureProtectedVerifiedDir();
+            var logPath = Path.Combine(GetProgramDataDir(), MsiActionLogName);
+            var cmdPath = Path.Combine(verifiedDir, "apply-msi.cmd");
+
+            // The .cmd lives in the SYSTEM/Administrators-only verified dir so a
+            // non-admin cannot alter what SYSTEM is about to execute. Remove any
+            // pre-existing entry first (link-safe) so we can't be tricked into writing
+            // through a symlink a non-admin planted before the dir was locked.
+            RemoveExistingEntry(cmdPath);
+            File.WriteAllText(
+                cmdPath,
+                "@echo off\r\n" + $"msiexec.exe {args} /l*v \"{logPath}\"\r\n",
+                new System.Text.UTF8Encoding(false));
+
+            DiagLog.Write($"UpdaterMode: scheduling msiexec via standalone task; args='{args}'.");
+
+            // Best-effort cleanup of any prior instance, then (re)create and run.
+            RunSchtasks("/delete", "/tn", ApplyTaskName, "/f");
+            if (RunSchtasks("/create", "/tn", ApplyTaskName,
+                            "/tr", $"cmd.exe /c \"{cmdPath}\"",
+                            "/sc", "ONCE", "/st", "00:00",
+                            "/ru", "SYSTEM", "/rl", "HIGHEST", "/f") != 0)
+                return 1;
+            if (RunSchtasks("/run", "/tn", ApplyTaskName) != 0)
+                return 1;
+
+            DiagLog.Write($"UpdaterMode: msiexec apply task started (independent of updater task); install log -> {logPath}.");
             return 0;
         }
         catch (Exception ex)
         {
-            DiagLog.Write($"UpdaterMode: msiexec launch failed: {ex.GetType().Name}: {ex.Message}");
+            DiagLog.Write($"UpdaterMode: failed to schedule msiexec: {ex.GetType().Name}: {ex.Message}");
+            return 1;
+        }
+    }
+
+    // Invokes schtasks.exe with the given args (via ArgumentList so paths with spaces
+    // and embedded quotes are passed correctly). Returns the exit code; logs non-zero.
+    private static int RunSchtasks(params string[] args)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName               = "schtasks.exe",
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+            };
+            foreach (var a in args) psi.ArgumentList.Add(a);
+            using var p = System.Diagnostics.Process.Start(psi)!;
+            var so = p.StandardOutput.ReadToEnd();
+            var se = p.StandardError.ReadToEnd();
+            p.WaitForExit();
+            if (p.ExitCode != 0)
+                DiagLog.Write($"UpdaterMode: schtasks {args[0]} exit {p.ExitCode}: {(so + se).Trim()}");
+            return p.ExitCode;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"UpdaterMode: schtasks {(args.Length > 0 ? args[0] : "")} launch failed: {ex.GetType().Name}: {ex.Message}");
             return 1;
         }
     }
@@ -298,38 +359,60 @@ internal static class SelfUpdateService
     // the interactive user cannot modify the file after this copy. Runs as SYSTEM.
     private static string CopyToProtectedDir(string stagedMsiPath)
     {
-        var verifiedDir = Path.Combine(GetProgramDataDir(), VerifiedSubDir);
-
-        // The parent dir is user-writable (the user-context agent stages downloads
-        // there). Before our first run a non-admin could pre-create `verified` as a
-        // junction/symlink to redirect SYSTEM's ACL write and File.Copy to an
-        // arbitrary location. Refuse to operate through any reparse point; recreate
-        // it fresh so the directory is SYSTEM-owned, then lock its ACL.
-        var existing = new DirectoryInfo(verifiedDir);
-        if (existing.Exists && (existing.Attributes & FileAttributes.ReparsePoint) != 0)
-        {
-            existing.Delete(recursive: false); // removes the link, never its target
-        }
-        Directory.CreateDirectory(verifiedDir);
-        LockDownToSystemAndAdmins(verifiedDir);
-
-        // Post-lockdown re-check: confirm we hold a real directory, not a reparse
-        // point that slipped in before the ACL was applied.
-        var locked = new DirectoryInfo(verifiedDir);
-        if ((locked.Attributes & FileAttributes.ReparsePoint) != 0)
-            throw new IOException($"Refusing to stage MSI through reparse-point dir '{verifiedDir}'.");
-
+        var verifiedDir = EnsureProtectedVerifiedDir();
         var verifiedMsiPath = Path.Combine(verifiedDir, UpdatedMsiName);
+        // Remove any pre-existing entry (link-safe) before copying so we cannot be
+        // tricked into writing through a planted symlink.
+        RemoveExistingEntry(verifiedMsiPath);
         File.Copy(stagedMsiPath, verifiedMsiPath, overwrite: true);
         // The user-staged copy has served its purpose; remove it best-effort.
         try { File.Delete(stagedMsiPath); } catch { /* best-effort */ }
         return verifiedMsiPath;
     }
 
+    // Creates (or re-creates) the SYSTEM/Administrators-only `verified` directory and
+    // returns its path. The parent dir is user-writable (the user-context agent stages
+    // downloads there), so before our first run a non-admin could pre-create `verified`
+    // as a junction/symlink to redirect SYSTEM's writes to an arbitrary location. We
+    // refuse to operate through any reparse point, recreate the dir fresh so it is
+    // SYSTEM-owned, lock its ACL to SYSTEM + Administrators, then re-check it is still a
+    // real directory. Everything SYSTEM later writes here — the verified MSI and the
+    // apply-msi.cmd — is therefore tamper-proof from non-admins. Runs as SYSTEM.
+    private static string EnsureProtectedVerifiedDir()
+    {
+        var verifiedDir = Path.Combine(GetProgramDataDir(), VerifiedSubDir);
+        var existing = new DirectoryInfo(verifiedDir);
+        if (existing.Exists && (existing.Attributes & FileAttributes.ReparsePoint) != 0)
+            existing.Delete(recursive: false); // removes the link, never its target
+        Directory.CreateDirectory(verifiedDir);
+        LockDownToSystemAndAdmins(verifiedDir);
+        var locked = new DirectoryInfo(verifiedDir);
+        if ((locked.Attributes & FileAttributes.ReparsePoint) != 0)
+            throw new IOException($"Refusing to use reparse-point dir '{verifiedDir}'.");
+        return verifiedDir;
+    }
+
     // REVIEW Agent-L1 (2026-05-31): ACL set in C# here rather than in WiX is intentional.
     // The verified\ dir is created and owned exclusively by the SYSTEM updater and is
     // re-created + re-locked + reparse-checked every run before use, so a WiX-pre-seeded
     // ACL would not be load-bearing. Resolved no-change; not a deviation worth re-flagging.
+    // Deletes a file or directory entry if present, removing a SYMLINK itself rather
+    // than following it to its target (File.Delete / Directory.Delete on a reparse
+    // point unlinks the link only). No-op if the path does not exist. Used to clear a
+    // pre-existing entry from the locked verified dir before SYSTEM writes over it,
+    // closing the symlink-follow TOCTOU on the apply .cmd and the verified MSI.
+    private static void RemoveExistingEntry(string path)
+    {
+        FileAttributes attrs;
+        try { attrs = File.GetAttributes(path); }
+        catch (FileNotFoundException) { return; }
+        catch (DirectoryNotFoundException) { return; }
+        if ((attrs & FileAttributes.Directory) != 0)
+            Directory.Delete(path, recursive: false); // empty dir or dir-symlink (link only)
+        else
+            File.Delete(path);                          // file or file-symlink (link only)
+    }
+
     private static void LockDownToSystemAndAdmins(string dir)
     {
         var di  = new DirectoryInfo(dir);

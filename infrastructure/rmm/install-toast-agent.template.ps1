@@ -46,7 +46,11 @@ if ($stillRunning) {
 }
 
 # -- Download -----------------------------------------------------------------
-$f = "$env:TEMP\ToastNotification.msi"
+# Use the script's own log dir (C:\Temp) rather than $env:TEMP (which resolves
+# to C:\Windows\Temp under SYSTEM). Some Entra/Intune-hardened endpoints block
+# the Windows Installer service from opening IStorage from C:\Windows\Temp,
+# producing MSI error 2203 / STG_E_ACCESSDENIED / exit 1619.
+$f = "$logDir\ToastNotification.msi"
 Write-Log "Downloading MSI to: $f"
 
 try {
@@ -111,7 +115,9 @@ $msiLog = "$logDir\ToastNotification_msi_$(Get-Date -Format 'yyyyMMdd_HHmmss').l
 Write-Log "Using msiexec: $msiexec"
 Write-Log "Starting MSI install. MSI log: $msiLog"
 
-$proc = Start-Process $msiexec -ArgumentList "/i `"$f`" /qn /norestart /l*v `"$msiLog`" CLIENTID=$TenantId SERVERURL=$ServerUrl ENROLLMENTKEY=$EnrollmentKey" -Wait -PassThru
+$enrollArgs = "/i `"$f`" /qn /norestart /l*v `"$msiLog`" CLIENTID=`"$TenantId`" SERVERURL=`"$ServerUrl`""
+if ($EnrollmentKey) { $enrollArgs += " ENROLLMENTKEY=`"$EnrollmentKey`"" }
+$proc = Start-Process $msiexec -ArgumentList $enrollArgs -Wait -PassThru
 
 Write-Log "MSI exit code: $($proc.ExitCode)"
 

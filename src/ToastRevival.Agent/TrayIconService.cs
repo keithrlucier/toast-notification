@@ -31,7 +31,6 @@ internal sealed class TrayIconService : IDisposable
 {
     public event Action? QuitRequested;
     public event Action? ReconnectRequested;
-    public event Action? SendTestRequested;
     public event Action? ApplyUpdateRequested;
 
     private readonly string _serverUrl;
@@ -135,8 +134,6 @@ internal sealed class TrayIconService : IDisposable
         _errorIcon           = CreateBellIcon(16, Color.FromArgb(0xDC, 0x26, 0x26), strikethrough: true);
 
         var menu = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer() };
-        menu.Items.Add(new ToolStripMenuItem("Open Dashboard",          null, (_, _) => OpenDashboard()));
-        menu.Items.Add(new ToolStripMenuItem("Send Test Notification",  null, (_, _) => SendTestRequested?.Invoke()));
         menu.Items.Add(new ToolStripMenuItem("View Log",                null, (_, _) => ViewLog()));
         _reconnectItem = new ToolStripMenuItem("Reconnect Now",         null, (_, _) => ReconnectRequested?.Invoke());
         menu.Items.Add(_reconnectItem);
@@ -242,19 +239,6 @@ internal sealed class TrayIconService : IDisposable
         _animPhase = !_animPhase;
         var icon = _animPhase ? _reconnectingDimIcon : _reconnectingIcon;
         _uiContext?.Post(_ => { if (_notifyIcon != null) _notifyIcon.Icon = icon; }, null);
-    }
-
-    private void OpenDashboard()
-    {
-        try
-        {
-            var url = _serverUrl.TrimEnd('/') + "/dashboard";
-            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            DiagLog.Write($"TrayIcon: OpenDashboard failed: {ex.GetType().Name}: {ex.Message}");
-        }
     }
 
     private static void ViewLog()

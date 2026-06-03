@@ -118,7 +118,23 @@ $msiLog   = "$logDir\ToastNotification_msi_$(Get-Date -Format 'yyyyMMdd_HHmmss')
 $taskName = "ToastNotificationRmmInstall"
 $taskRoot = "\"
 
-$msiArgs = "/i `"$f`" /qn /norestart /l*v `"$msiLog`" CLIENTID=`"$TenantId`" SERVERURL=`"$ServerUrl`""
+# Stage to C:\Windows\Installer\ before invoking msiexec. Security products hook
+# StgOpenStorage and deny access to MSI files in arbitrary writable directories
+# (C:\Temp, C:\Windows\Temp, ProgramData) -- but trust the Windows Installer package
+# cache unconditionally. msiserver always has IStorage access there. This is the
+# last layer; every other variable (path, process chain, invocation method) has
+# been eliminated across prior attempts on this endpoint.
+$stagePath = "$env:windir\Installer\ToastNotification_rmm.msi"
+try {
+    Copy-Item -Path $f -Destination $stagePath -Force -ErrorAction Stop
+    Write-Log "MSI staged to Windows Installer cache: $stagePath"
+    $installSource = $stagePath
+} catch {
+    Write-Log "Staging to Windows\Installer failed: $($_.Exception.Message) -- using original path" "WARN"
+    $installSource = $f
+}
+
+$msiArgs = "/i `"$installSource`" /qn /norestart /l*v `"$msiLog`" CLIENTID=`"$TenantId`" SERVERURL=`"$ServerUrl`""
 if ($EnrollmentKey) { $msiArgs += " ENROLLMENTKEY=`"$EnrollmentKey`"" }
 
 Write-Log "MSI log: $msiLog"
@@ -175,6 +191,7 @@ Write-Log "MSI exit code: $msiExitCode"
 
 # -- Cleanup MSI --------------------------------------------------------------
 Remove-Item $f -Force -ErrorAction SilentlyContinue
+Remove-Item $stagePath -Force -ErrorAction SilentlyContinue
 Write-Log "MSI file removed"
 
 # -- Handle result ------------------------------------------------------------

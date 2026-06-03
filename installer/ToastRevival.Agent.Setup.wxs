@@ -336,6 +336,21 @@
                   Return="ignore" />
 
     <!--
+      v0.4.37: the agent's SelfUpdateService registers a standalone SYSTEM apply task
+      (\Toast2IT\ToastNotificationApplyUpdate) at update time so msiexec runs outside the
+      EDR-blocked process chain. msiexec /x does NOT remove a schtasks-registered task, so
+      without this action a plain MSI/remote uninstall leaves an orphaned SYSTEM task whose
+      action is a cmd under a user-writable-parent ProgramData dir. (The RMM uninstall
+      script's \Toast2IT\* wildcard purge already catches it; this covers the msiexec /x path.)
+    -->
+    <CustomAction Id="UninstallApplyTask"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Delete /TN &quot;\Toast2IT\ToastNotificationApplyUpdate&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
       D9: Write bootstrap.json next to the exe using the agent's own setup-bootstrap
       mode (XML comments cannot contain the literal CLI double-dash; the actual flag
       is on the ExeCommand attribute below). Runs before InstallScheduledTask so the
@@ -439,6 +454,8 @@
       <Custom Action="UninstallScheduledTask" Before="DeleteUserConfig"      Condition="REMOVE=&quot;ALL&quot;" />
       <!-- M15: remove the SYSTEM updater task alongside the logon task -->
       <Custom Action="UninstallUpdaterTask"   After="UninstallScheduledTask" Condition="REMOVE=&quot;ALL&quot;" />
+      <!-- v0.4.37: remove the standalone SYSTEM apply task too (agent registers it at update time) -->
+      <Custom Action="UninstallApplyTask"     After="UninstallUpdaterTask"   Condition="REMOVE=&quot;ALL&quot;" />
       <!-- Do-no-harm reversal: restore the lock screen (user context) and strip the
            machine-wide Spotlight policy (SYSTEM) BEFORE the snapshot/config is wiped
            and BEFORE the agent exe is removed. -->

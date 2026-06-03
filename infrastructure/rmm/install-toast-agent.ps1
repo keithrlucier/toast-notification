@@ -331,6 +331,12 @@ Write-Log "Running: msiexec.exe $($arguments -join ' ')"
 
 $proc = Start-Process -FilePath 'msiexec.exe' -ArgumentList $arguments `
     -NoNewWindow -PassThru
+# Materialize the SafeHandle BEFORE waiting. On Windows PowerShell 5.1 a
+# Start-Process -PassThru object whose Handle was never touched returns $null from
+# .ExitCode after exit. Here that would read $exitCode = $null on a SUCCESSFUL install,
+# skip Write-BootstrapFallback + Set-LockScreenPolicy, and report failure via 'default'.
+# Caching the handle makes $proc.ExitCode reliable below.
+$null = $proc.Handle
 if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
     Write-Log "msiexec did not exit within $TimeoutSeconds seconds — killing." 'ERROR'
     try { $proc | Stop-Process -Force } catch { }

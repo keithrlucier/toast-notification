@@ -177,6 +177,17 @@ if ($NoUserRefresh) {
     $hasInteractive = $false
     try { $hasInteractive = [bool](Get-CimInstance -ClassName Win32_Process -Filter "Name='explorer.exe'" -ErrorAction SilentlyContinue) } catch { }
     if (-not $hasInteractive) {
+        # REVIEW-2026-06-03 RMM-M2 REJECTED-by-design: "never black" in the headless SYSTEM
+        # path is guaranteed by CONSTRUCTION, not by this branch acting. Assumption: Windows'
+        # OS-baked default lock-screen image (%WINDIR%\Web\Screen\img100.jpg, confirmed present
+        # at script start, line ~77) is what displays whenever no per-user Lock Screen registry
+        # slot exists. This branch removes ONLY the Toast registry triplet (Step 3) and DEFERS
+        # the cache-folder delete (DeferCacheDelete stays $true), so the brand image bytes also
+        # remain on disk until reboot. Black would require BOTH no OS default image AND the
+        # cache gone -- neither occurs headless. The only SYSTEM-settable alternative (a
+        # PersonalizationCSP/policy LockScreenImage) would re-pin the "managed by your
+        # organization" lock this script exists to remove, so taking no further headless action
+        # is the correct, safe behavior. Not a proven defect; resolved no-change.
         Write-Log "Step 2: no interactive session; default applies after the brand slot is removed + next lock."
     } else {
         Write-Log "Step 2: setting active lock screen to default via user-session WinRT task."
@@ -260,7 +271,23 @@ try {
                 & reg.exe load "HKU\$mount" "$dat" > $null 2>&1
                 if ($LASTEXITCODE -eq 0) { $loaded = $true; Remove-ToastSlotsFromHive -HiveRoot "Registry::HKEY_USERS\$mount" -Sid $sid }
             } catch { Write-Log "  hive load failed for ${sid}: $($_.Exception.Message)" 'WARN' }
-            finally { if ($loaded) { [gc]::Collect(); & reg.exe unload "HKU\$mount" > $null 2>&1 } }
+            finally {
+                if ($loaded) {
+                    # Drop the PS registry-provider key handles the hive read cached, then run
+                    # pending finalizers so reg.exe can unload. [gc]::Collect() alone does NOT
+                    # wait for finalizers, so the unload could fail silently and leave NTUSER.DAT
+                    # mounted under HKU\TempToast_<sid> (locked until reboot, blocking that
+                    # profile's next logon). Check the result and retry once.
+                    [gc]::Collect(); [gc]::WaitForPendingFinalizers(); [gc]::Collect()
+                    & reg.exe unload "HKU\$mount" > $null 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        Start-Sleep -Milliseconds 250
+                        [gc]::Collect(); [gc]::WaitForPendingFinalizers()
+                        & reg.exe unload "HKU\$mount" > $null 2>&1
+                        if ($LASTEXITCODE -ne 0) { Write-Log "  reg unload failed for ${sid} (hive stays mounted until reboot)." 'WARN' }
+                    }
+                }
+            }
         }
 } catch { Write-Log "  dormant-hive sweep raised: $($_.Exception.Message)" 'WARN' }
 

@@ -230,7 +230,23 @@ try {
                     & reg.exe load "HKU\$mount" "$dat" > $null 2>&1
                     if ($LASTEXITCODE -eq 0) { $loaded = $true; Remove-ToastSlotsFromHive -HiveRoot "Registry::HKEY_USERS\$mount" -Sid $sid }
                 } catch { Write-Log "  hive load failed for ${sid}: $($_.Exception.Message)" 'WARN' }
-                finally { if ($loaded) { [gc]::Collect(); & reg.exe unload "HKU\$mount" > $null 2>&1 } }
+                finally {
+                    if ($loaded) {
+                        # Drop the PS registry-provider key handles the hive read cached, then run
+                        # pending finalizers so reg.exe can unload. [gc]::Collect() alone does NOT
+                        # wait for finalizers, so the unload could fail silently and leave NTUSER.DAT
+                        # mounted under HKU\TempToast_<sid> (locked until reboot, blocking that
+                        # profile's next logon). Check the result and retry once.
+                        [gc]::Collect(); [gc]::WaitForPendingFinalizers(); [gc]::Collect()
+                        & reg.exe unload "HKU\$mount" > $null 2>&1
+                        if ($LASTEXITCODE -ne 0) {
+                            Start-Sleep -Milliseconds 250
+                            [gc]::Collect(); [gc]::WaitForPendingFinalizers()
+                            & reg.exe unload "HKU\$mount" > $null 2>&1
+                            if ($LASTEXITCODE -ne 0) { Write-Log "  reg unload failed for ${sid} (hive stays mounted until reboot)." 'WARN' }
+                        }
+                    }
+                }
             }
     } catch { Write-Log "  dormant-hive sweep raised: $($_.Exception.Message)" 'WARN' }
 
@@ -282,6 +298,13 @@ if (-not $productCodes) {
         $ml = Join-Path $WorkDir "msiexec-$($pc -replace '[^0-9A-Fa-f]','').log"
         Write-Log "Running: msiexec /x $pc /qn /norestart"
         $proc = Start-Process 'msiexec.exe' -ArgumentList @('/x',$pc,'/qn','/norestart','/l*v',"`"$ml`"") -NoNewWindow -PassThru
+        # Materialize the SafeHandle BEFORE waiting. On Windows PowerShell 5.1 a
+        # Start-Process -PassThru object whose Handle was never touched returns $null
+        # from .ExitCode after the process exits -- which would make every uninstall
+        # (even a FAILED msiexec /x) fall through to the 'default' branch with a $null
+        # exit, silently recording SUCCESS on a broken removal. Caching the handle here
+        # is what makes $proc.ExitCode reliable below.
+        $null = $proc.Handle
         if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
             Write-Log "msiexec $pc hung past $TimeoutSeconds s -- killing." 'ERROR'
             try { $proc | Stop-Process -Force } catch { }

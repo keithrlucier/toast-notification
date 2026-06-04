@@ -336,6 +336,29 @@
                   Return="ignore" />
 
     <!--
+      MajorUpgrade is scheduled afterInstallFinalize (1619-resilient: new files land first so
+      RemoveExistingProducts can always find the cached old MSI). The side-effect: the old
+      product's uninstall fires AFTER InstallFinalize and its REMOVE="ALL" condition deletes
+      the logon + updater tasks the new product just created. RepairScheduledTask and
+      RepairUpdaterTask re-create both tasks immediately after RemoveExistingProducts so the
+      next user logon picks them up. The /F flag is idempotent — safe on fresh installs too
+      (the task is simply overwritten with the same XML).
+    -->
+    <CustomAction Id="RepairScheduledTask"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationLogon.xml&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <CustomAction Id="RepairUpdaterTask"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationUpdater&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationUpdater.xml&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <!--
       v0.4.37: the agent's SelfUpdateService registers a standalone SYSTEM apply task
       (\Toast2IT\ToastNotificationApplyUpdate) at update time so msiexec runs outside the
       EDR-blocked process chain. msiexec /x does NOT remove a schtasks-registered task, so
@@ -456,6 +479,15 @@
       <Custom Action="UninstallUpdaterTask"   After="UninstallScheduledTask" Condition="REMOVE=&quot;ALL&quot;" />
       <!-- v0.4.37: remove the standalone SYSTEM apply task too (agent registers it at update time) -->
       <Custom Action="UninstallApplyTask"     After="UninstallUpdaterTask"   Condition="REMOVE=&quot;ALL&quot;" />
+      <!--
+        Re-create the logon and updater tasks after RemoveExistingProducts wipes them.
+        MajorUpgrade is afterInstallFinalize, so the old product's REMOVE="ALL" uninstall
+        runs after our new tasks are already installed — deleting them. These two CAs
+        recreate both tasks immediately after that uninstall completes. /F is idempotent.
+        Condition NOT REMOVE skips this on standalone uninstall.
+      -->
+      <Custom Action="RepairScheduledTask"    After="RemoveExistingProducts" Condition="NOT REMOVE" />
+      <Custom Action="RepairUpdaterTask"      After="RepairScheduledTask"    Condition="NOT REMOVE" />
       <!-- Do-no-harm reversal: restore the lock screen (user context) and strip the
            machine-wide Spotlight policy (SYSTEM) BEFORE the snapshot/config is wiped
            and BEFORE the agent exe is removed. -->

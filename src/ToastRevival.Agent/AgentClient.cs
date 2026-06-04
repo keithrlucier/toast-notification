@@ -39,7 +39,7 @@ internal static class RegistrationService
 
         try
         {
-            var response = await http.PostAsJsonAsync("/api/devices/register", request, ct);
+            using var response = await http.PostAsJsonAsync("/api/devices/register", request, ct);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(ct);
@@ -732,7 +732,7 @@ internal static class InteractionFallback
 
         try
         {
-            var resp = await http.PostAsJsonAsync(
+            using var resp = await http.PostAsJsonAsync(
                 $"/api/notifications/{notificationId}/interactions",
                 new { action },
                 ct);

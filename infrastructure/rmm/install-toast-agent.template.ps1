@@ -78,15 +78,19 @@ Write-Log "Unblocking MSI file"
 Unblock-File -Path $f
 Write-Log "MSI unblocked"
 
-# -- (Optional, informational) verify the publisher --------------------------
+# -- Verify Authenticode signature (enforced -- mirrors main install script) --
 try {
     $sig = Get-AuthenticodeSignature -FilePath $f
     Write-Log "Authenticode: Status=$($sig.Status) Signer=$($sig.SignerCertificate.Subject)"
     if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike '*Toast2IT, LLC*') {
-        Write-Log "MSI signature is not a Valid Toast2IT, LLC signature -- review before trusting." "WARN"
+        Write-Log "MSI signature is not a Valid Toast2IT, LLC signature -- aborting." "ERROR"
+        Remove-Item $f -Force -ErrorAction SilentlyContinue
+        exit 3
     }
 } catch {
-    Write-Log "Authenticode check could not run: $_" "WARN"
+    Write-Log "Authenticode check could not run: $_ -- aborting." "ERROR"
+    Remove-Item $f -Force -ErrorAction SilentlyContinue
+    exit 3
 }
 
 # -- Wait for AV scan to complete ---------------------------------------------

@@ -190,8 +190,8 @@ function BillingStep({
           label="Managed SaaS"
           badge="Upgrade"
           badgeColor="rgba(15,23,42,0.35)"
-          description="0–100 devices · we handle hosting, updates, and backups"
-          price="$22/mo"
+          description="First 25 devices free · then $0.22/device/mo · no cap"
+          price="$0.22"
         />
         <TierCard
           label="Roll Your Own"

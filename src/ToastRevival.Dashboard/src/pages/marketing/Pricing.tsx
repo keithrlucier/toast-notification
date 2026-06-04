@@ -21,12 +21,13 @@ const TIERS = [
   {
     name: 'Managed SaaS',
     tagline: 'We run it. You send notifications.',
-    price: '$22',
-    priceSub: '/ month · up to 100 devices',
+    price: '$0.22',
+    priceSub: '/ device / month · first 25 free',
     bullets: [
+      'First 25 active devices free, then $0.22 per device / month',
+      'No device cap — scale to any fleet size',
       'Hosted on our infrastructure, US region',
       'Updates, backups, and TLS handled by us',
-      'Microsoft Store MSIX listing available',
       'Cancel from the billing portal anytime',
     ],
     cta: { label: 'Request trial access', href: '/register', style: 'primary' as const },
@@ -56,7 +57,7 @@ const INCLUSIONS = [
       'Title, body, hero image, logo, action buttons, audio',
       'Scenario routing — Default, Reminder, Alarm, IncomingCall, Urgent',
       'Tenant asset library with image moderation',
-      'Notification scheduling and recurring sends',
+      'Schedule a notification for a future send time',
     ],
   },
   {
@@ -111,7 +112,7 @@ const INCLUSIONS = [
     heading: 'Device appearance',
     items: [
       'Read-only desktop info overlay — hostname, logged-in user, OS version, IP address, tenant name, custom text',
-      'Four overlay positions; does not change the user wallpaper',
+      'Four overlay positions and adjustable opacity; does not change the user wallpaper',
       'Per-device lock screen branding from an uploaded image',
       'Per-tenant, toggled from the admin panel, applied by the agent at startup',
     ],
@@ -128,8 +129,8 @@ const FAQ = [
     a: 'Two devices and fourteen days are enforced in the backend. To keep using the product, either activate Managed SaaS billing through the admin dashboard or pull the Docker Compose source and run it yourself. There is no automatic conversion to a paid plan.',
   },
   {
-    q: 'How is a "device" counted on Managed SaaS?',
-    a: 'The agent is licensed per signed-in user session. A single machine with two active users consumes two device slots. Decommissioning a device frees the slot immediately. Devices that have not pinged in 30 days are not counted as active.',
+    q: 'How is a "device" counted and billed on Managed SaaS?',
+    a: 'The agent is licensed per signed-in user session. The first 25 active devices are free; past that, billing is $0.22 per device per month, with no device cap. A single machine with two active users consumes two device slots. Decommissioning a device frees the slot immediately, and devices that have not pinged in 30 days are not counted as active — so you are only billed for devices that are actually in use.',
   },
   {
     q: 'How does device counting work on Terminal Server / RDS?',
@@ -153,7 +154,7 @@ const FAQ = [
   },
   {
     q: 'Why is this priced this way?',
-    a: 'Toast Notification was built in 2020 for MSPs during the work-from-home explosion and delivered 986,000 legitimate notifications across 17 production tenants in its first life. Teams and Slack absorbed the generic use case, so it is now a passion project for the shops where OS-level fleet notification without a third-party dependency still matters. The Managed SaaS rate covers infrastructure. The self-hosted path is free, full stop, no strings.',
+    a: 'Toast Notification was built in 2020 for MSPs during the work-from-home explosion and delivered 986,000 legitimate notifications across 17 production tenants in its first life. Teams and Slack absorbed the generic use case, so it is now a passion project for the shops where OS-level fleet notification without a third-party dependency still matters. Managed SaaS keeps the first 25 devices free and charges $0.22 per device per month after that, with no cap — enough to cover infrastructure, no more. The self-hosted path is free, full stop, no strings.',
   },
 ];
 
@@ -163,7 +164,7 @@ export default function Pricing() {
   useSeo({
     title: 'Pricing',
     description:
-      'Toast Notification pricing — Free Trial (2 devices, 14 days, reviewed), Managed SaaS ($22/month for up to 100 devices), or Roll Your Own (Docker Compose self-host, free, no device cap).',
+      'Toast Notification pricing — Free Trial (2 devices, 14 days, reviewed), Managed SaaS (first 25 devices free, then $0.22/device/month, no cap), or Roll Your Own (Docker Compose self-host, free, no device cap).',
     path: '/pricing',
     jsonLd: [
       breadcrumbLd([

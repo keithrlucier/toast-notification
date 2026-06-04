@@ -68,12 +68,12 @@ export default function DocsGettingStarted() {
 
       <h3>Signed MSI (single endpoint)</h3>
       <p>
-        Download the latest <code>ToastNotification.Agent-X.Y.Z.0.msi</code> from the admin dashboard's{' '}
+        Download the latest <code>ToastNotification.msi</code> from the admin dashboard's{' '}
         <strong>Install Agent</strong> page. From an elevated PowerShell prompt:
       </p>
       <CodeBlock
         language="powershell"
-        code={`msiexec /i ToastNotification.Agent-0.4.0.0.msi /qn \`
+        code={`msiexec /i ToastNotification.msi /qn \`
   CLIENTID=00000000-0000-0000-0000-000000000000 \`
   SERVERURL=https://toastnotification.com \`
   ENROLLMENTKEY=<tenant-enrollment-key>`}
@@ -123,8 +123,8 @@ export default function DocsGettingStarted() {
         <li>Custom Text</li>
       </ul>
       <p>
-        Pick one of four positions — bottom-right, bottom-left, top-right, or top-left. The panel renders as white text
-        on a translucent dark box.
+        Pick one of four positions — bottom-right, bottom-left, top-right, or top-left — and set the panel opacity
+        anywhere from 10% to 100% (default 85%). The panel renders as white text on a translucent dark box.
       </p>
 
       <h3>Lock screen branding</h3>

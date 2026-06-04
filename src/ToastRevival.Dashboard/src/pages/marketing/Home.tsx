@@ -214,12 +214,12 @@ WS-014: payload unsigned`}
             <div className="m-tier-card">
               <div className="m-tier-name">Managed SaaS</div>
               <p className="m-tier-tagline">We run it. You send notifications.</p>
-              <div className="m-tier-price">$22</div>
-              <div className="m-tier-price-sub">/ month · up to 100 devices</div>
+              <div className="m-tier-price">$0.22</div>
+              <div className="m-tier-price-sub">/ device / mo · first 25 free</div>
               <ul className="m-tier-bullets">
-                <li>Hosted on our infrastructure, US region</li>
-                <li>Updates, backups, and TLS handled by us</li>
-                <li>Cancel from the billing portal anytime</li>
+                <li>First 25 devices free, then $0.22/device per month</li>
+                <li>No device cap; hosted in our US region</li>
+                <li>Updates, backups, TLS, and billing handled by us</li>
               </ul>
               <Link to="/pricing" className="m-btn m-btn-primary m-tier-cta" style={{ width: '100%', textAlign: 'center' }}>
                 See pricing detail

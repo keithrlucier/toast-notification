@@ -67,7 +67,7 @@ export default function DocsIntune() {
         label="wrap the MSI"
         code={`IntuneWinAppUtil.exe \`
   -c "C:\\IntuneSource" \`
-  -s "ToastNotification.Agent-X.Y.Z.0.msi" \`
+  -s "ToastNotification.msi" \`
   -o "C:\\IntuneOutput"`}
       />
 
@@ -99,7 +99,7 @@ export default function DocsIntune() {
       <CodeBlock
         language="text"
         label="install command"
-        code={`msiexec /i "ToastNotification.Agent-X.Y.Z.0.msi" /qn /norestart CLIENTID=00000000-0000-0000-0000-000000000000 SERVERURL=https://toastnotification.com ENROLLMENTKEY=<your-enrollment-key>`}
+        code={`msiexec /i "ToastNotification.msi" /qn /norestart CLIENTID=00000000-0000-0000-0000-000000000000 SERVERURL=https://toastnotification.com ENROLLMENTKEY=<your-enrollment-key>`}
       />
       <CodeBlock
         language="powershell"

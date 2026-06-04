@@ -7,11 +7,24 @@ branded, trackable Windows toast notifications to managed endpoints.
 
 - Sends rich Windows toast notifications with branding, hero images, logos,
   action buttons, scenarios, and custom audio.
-- Targets one device, a device group, or all devices in a tenant.
-- Tracks delivered, clicked, dismissed, and failed outcomes.
-- Provides tenant audit records with CSV and PDF export.
+- Targets one device, a device group, or all devices in a tenant, and can
+  schedule a notification for a future send time.
+- Tracks delivered, clicked, dismissed, and failed outcomes, with aggregate
+  delivery- and interaction-rate analytics.
+- Provides per-notification history and an append-only tenant audit log, both
+  with CSV and PDF export.
+- Brands the device itself: a read-only desktop info overlay (hostname,
+  logged-in user, OS version, IP address, tenant name, custom text; four corner
+  positions, adjustable opacity) that does not change the wallpaper — a
+  dashboard-managed replacement for BgInfo — plus per-device lock screen
+  branding from an uploaded image, applied by the agent at startup with no login
+  scripts, GPO, or registry edits.
+- Screens outgoing content with tenant blocklists and configurable content
+  safety before delivery.
+- Controls administrator access with role-based permissions, TOTP multi-factor
+  authentication, and optional Microsoft Entra (Azure AD) single sign-on.
 - Supports deployment through signed MSI, Intune, Microsoft Store, and RMM
-  silent install paths.
+  silent install paths, with automatic signed-MSI agent self-update.
 
 ## Audience
 
@@ -25,8 +38,9 @@ Three tiers. Every tier ships every feature; the tier controls who runs the
 infrastructure, not which capabilities are available.
 
 - Free Trial: 0 USD, 2 devices, 14 days, reviewed before activation.
-- Managed SaaS: 22 USD per month flat for up to 100 devices, hosted on
-  Toast2IT infrastructure in a single US region. Cancel anytime.
+- Managed SaaS: the first 25 active devices are free, then 0.22 USD per device
+  per month with no device cap, hosted on Toast2IT infrastructure in a single US
+  region. Cancel anytime.
 - Roll Your Own: 0 USD, self-hosted from the Docker Compose source on GitHub
   with no device cap. The operator runs hosting, updates, and backups.
 

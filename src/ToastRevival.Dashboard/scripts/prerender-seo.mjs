@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const SITE_URL = 'https://toastnotification.com';
 const SITE_NAME = 'Toast Notification';
-const UPDATED = '2026-05-29';
+const UPDATED = '2026-06-04';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -23,23 +23,30 @@ const softwareApplicationLd = () => ({
   applicationSubCategory: 'EndpointManagement',
   operatingSystem: 'Windows 10, Windows 11',
   description:
-    'Managed Windows notification platform for MSPs and IT departments. Sends branded, signed, trackable toast notifications to enrolled endpoints.',
+    'Managed Windows notification platform for MSPs and IT departments. Sends branded, signed, trackable toast notifications to enrolled endpoints, plus dashboard-managed desktop info overlays and device lock screen branding.',
   url: SITE_URL,
+  featureList: [
+    'Branded Windows toast notifications with templates, scenarios, hero images, logos, action buttons, and custom audio',
+    'Device, group, and tenant-wide targeting with scheduled sends',
+    'Delivery and interaction tracking with CSV and PDF export',
+    'Desktop info overlay — a dashboard-managed BgInfo replacement',
+    'Per-device lock screen branding',
+    'Per-tenant HMAC-signed payloads and DPAPI-protected agent configuration',
+    'Content moderation and tenant blocklists',
+    'Microsoft Entra SSO, TOTP multi-factor authentication, and role-based access',
+    'Deployment by signed MSI, Intune, Microsoft Store, or RMM silent install',
+  ],
   offers: {
     '@type': 'Offer',
     name: 'Managed SaaS',
-    price: '22.00',
+    description: 'First 25 active devices free, then $0.22 per device per month, with no device cap.',
+    price: '0.22',
     priceCurrency: 'USD',
     priceSpecification: {
-      '@type': 'PriceSpecification',
-      price: '22.00',
+      '@type': 'UnitPriceSpecification',
+      price: '0.22',
       priceCurrency: 'USD',
-    },
-    eligibleQuantity: {
-      '@type': 'QuantitativeValue',
-      minValue: 0,
-      maxValue: 100,
-      unitText: 'device',
+      unitText: 'device per month',
     },
     availability: 'https://schema.org/InStock',
   },
@@ -55,13 +62,13 @@ const productLd = () => ({
   '@type': 'Product',
   name: `${SITE_NAME} Managed SaaS plan`,
   description:
-    'Managed Windows notification platform with reviewed trial access, a $22/month Managed SaaS tier up to 100 devices, and a free self-hosted Docker Compose path.',
+    'Managed Windows notification platform with reviewed trial access, a Managed SaaS tier where the first 25 devices are free and additional devices are $0.22 per month with no cap, and a free self-hosted Docker Compose path.',
   brand: { '@type': 'Brand', name: SITE_NAME },
   offers: {
     '@type': 'AggregateOffer',
     priceCurrency: 'USD',
     lowPrice: '0.00',
-    highPrice: '22.00',
+    highPrice: '0.22',
     offerCount: 3,
     offers: [
       {
@@ -74,12 +81,14 @@ const productLd = () => ({
       {
         '@type': 'Offer',
         name: 'Managed SaaS',
-        price: '22.00',
+        description: 'First 25 active devices free, then $0.22 per device per month, no device cap.',
+        price: '0.22',
         priceCurrency: 'USD',
         priceSpecification: {
-          '@type': 'PriceSpecification',
-          price: '22.00',
+          '@type': 'UnitPriceSpecification',
+          price: '0.22',
           priceCurrency: 'USD',
+          unitText: 'device per month',
         },
         availability: 'https://schema.org/InStock',
       },
@@ -146,14 +155,14 @@ const routes = [
         <li>Deploy through MSI, Intune, Microsoft Store, or RMM silent install.</li>
         <li>Brand devices from the dashboard with a read-only desktop info overlay (hostname, logged-in user, OS version, IP address, tenant name, custom text) and a per-device lock screen image, applied by the agent at startup with no login scripts, GPO, or registry edits.</li>
       </ul>
-      <p>Three ways to run it: a reviewed Free Trial (2 devices, 14 days), a $22/month Managed SaaS tier up to 100 devices, or a free self-hosted Docker Compose path with no device cap.</p>
+      <p>Three ways to run it: a reviewed Free Trial (2 devices, 14 days), a Managed SaaS tier where the first 25 devices are free and additional devices are $0.22 each per month with no cap, or a free self-hosted Docker Compose path with no device cap.</p>
     `,
   },
   {
     path: '/pricing',
     title: 'Pricing',
     description:
-      'Toast Notification pricing: Free Trial (2 devices, 14 days, reviewed), Managed SaaS ($22/month up to 100 devices), or Roll Your Own (Docker Compose self-host, free, no device cap).',
+      'Toast Notification pricing: Free Trial (2 devices, 14 days, reviewed), Managed SaaS (first 25 devices free, then $0.22/device/month, no cap), or Roll Your Own (Docker Compose self-host, free, no device cap).',
     priority: '0.9',
     changefreq: 'weekly',
     jsonLd: [
@@ -168,7 +177,7 @@ const routes = [
       <p>Toast Notification was built in 2020 for MSPs during the work-from-home explosion and delivered 986,000 legitimate notifications across 17 production tenants in its first life. It is offered today in three tiers — every tier ships every feature.</p>
       <ul>
         <li>Free Trial: $0 — 2 devices, 14 days, reviewed before activation.</li>
-        <li>Managed SaaS: $22/month flat for up to 100 devices, hosted on Toast2IT infrastructure in a single US region. Cancel anytime.</li>
+        <li>Managed SaaS: first 25 devices free, then $0.22 per device per month with no cap, hosted on Toast2IT infrastructure in a single US region. Cancel anytime.</li>
         <li>Roll Your Own: $0 — self-host the Docker Compose source from GitHub, no device cap, operator runs hosting and updates.</li>
       </ul>
       <p>The product is identical across tiers. The tier controls who runs the infrastructure, not which features are available. Every tier includes device appearance — a dashboard-managed read-only desktop info overlay and per-device lock screen branding, applied by the agent at startup.</p>
@@ -357,7 +366,7 @@ const routes = [
       <h2>Canonical facts</h2>
       <ul>
         <li>Primary audience: MSPs and IT departments.</li>
-        <li>Pricing: three tiers — Free Trial (2 devices / 14 days / reviewed), Managed SaaS ($22/month up to 100 devices), Roll Your Own (Docker Compose self-host, free, no device cap).</li>
+        <li>Pricing: three tiers — Free Trial (2 devices / 14 days / reviewed), Managed SaaS (first 25 devices free, then $0.22/device/month, no cap), Roll Your Own (Docker Compose self-host, free, no device cap).</li>
         <li>Deployment: MSI, Intune, Microsoft Store, or RMM silent install.</li>
         <li>Security: HMAC payload signing, tenant isolation, MFA-gated broadcast sends, and audit records.</li>
         <li>Plain-text crawler file: <a href="/llms.txt">/llms.txt</a>.</li>

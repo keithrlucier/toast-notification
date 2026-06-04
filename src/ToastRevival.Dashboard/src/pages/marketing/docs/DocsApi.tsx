@@ -6,13 +6,13 @@ export default function DocsApi() {
   useSeo({
     title: 'REST API reference',
     description:
-      'Toast Notification REST API: authentication, devices, notifications, and webhooks. Bearer-token JWT, JSON over HTTPS, multi-tenant isolation enforced server-side.',
+      'Toast Notification REST API: authentication, devices, notifications, and delivery reporting. Bearer-token JWT, JSON over HTTPS, multi-tenant isolation enforced server-side.',
     path: '/docs/api',
     jsonLd: [
       techArticleLd({
         headline: 'Toast Notification REST API reference',
         description:
-          'Authentication, devices, notifications, webhooks. Bearer-token JWT, JSON over HTTPS, multi-tenant isolation server-side.',
+          'Authentication, devices, notifications, delivery reporting. Bearer-token JWT, JSON over HTTPS, multi-tenant isolation server-side.',
         path: '/docs/api',
       }),
       breadcrumbLd([
@@ -87,7 +87,7 @@ export default function DocsApi() {
       />
 
       <h3>POST /api/auth/login</h3>
-      <p>Exchange credentials for a 60-minute user JWT. Public endpoint.</p>
+      <p>Exchange credentials for an 8-hour user JWT. Public endpoint.</p>
       <CodeBlock
         language="json"
         label="request body"
@@ -105,7 +105,7 @@ export default function DocsApi() {
 
       <Callout title="Token lifetimes">
         <p>
-          User tokens expire after 60 minutes; refresh by re-issuing through <code>POST /api/auth/login</code>. Device
+          User tokens expire after 8 hours; refresh by re-issuing through <code>POST /api/auth/login</code>. Device
           tokens expire after 365 days and are rotated by re-registering the device.
         </p>
       </Callout>
@@ -172,7 +172,7 @@ export default function DocsApi() {
   "machineName":  "WIN-LAB-01",
   "userName":     "alice",
   "operatingSystem": "Windows 11 23H2 (10.0.22631)",
-  "agentVersion": "0.4.0.0"
+  "agentVersion": "0.4.38"
 }`}
       />
       <CodeBlock
@@ -273,59 +273,25 @@ export default function DocsApi() {
         </p>
       </Callout>
 
-      <h2 id="webhooks">Webhooks</h2>
+      <h2 id="delivery-status">Delivery status &amp; reporting</h2>
       <p>
-        Webhooks fire on notification lifecycle events. Configure the URL and signing secret under{' '}
-        <strong>Settings → API keys → Webhooks</strong> on the admin dashboard.
+        Toast Notification does not push outbound webhooks. Delivery and interaction state is reported by the agent
+        and read back through the API and dashboard:
       </p>
-
-      <h3>Events</h3>
       <ul>
         <li>
-          <code>notification.delivered</code> — agent reported successful render.
+          <code>GET /api/notifications/{'{id}'}</code> returns the notification with one delivery row per device —{' '}
+          <code>Pending</code>, <code>Delivered</code>, <code>Clicked</code>, <code>Dismissed</code>, or{' '}
+          <code>Failed</code>.
         </li>
         <li>
-          <code>notification.interacted</code> — user clicked an action button or dismissed.
+          The dashboard streams the same delivery and interaction events live over SignalR as the agent reports them.
         </li>
         <li>
-          <code>notification.failed</code> — agent reported render failure or signature mismatch.
-        </li>
-        <li>
-          <code>device.registered</code> — new device successfully registered.
-        </li>
-        <li>
-          <code>device.decommissioned</code> — device removed.
+          Aggregate delivery and interaction rates, plus the full per-tenant audit log, export to CSV and PDF from the
+          dashboard for tickets and incident review.
         </li>
       </ul>
-
-      <h3>Signature verification</h3>
-      <p>
-        Each webhook delivery includes an <code>X-Toast-Signature</code> header. The signature is the HMAC-SHA256 of
-        the raw request body, hex-encoded, using the webhook signing secret. Verify in the receiver before processing
-        the payload.
-      </p>
-      <CodeBlock
-        language="javascript"
-        label="Node.js example"
-        code={`const crypto = require('crypto');
-
-function verify(rawBody, header, secret) {
-  const computed = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex');
-  return crypto.timingSafeEqual(
-    Buffer.from(computed, 'hex'),
-    Buffer.from(header, 'hex')
-  );
-}`}
-      />
-
-      <h3>Retries</h3>
-      <p>
-        Failed deliveries (non-2xx responses or timeouts beyond 10 seconds) retry with exponential backoff: 30s, 5m,
-        30m, 2h, 6h. After five attempts the delivery is marked failed and surfaced in the dashboard's webhook log.
-      </p>
 
       <h2 id="rate-limits">Rate limits</h2>
       <ul>

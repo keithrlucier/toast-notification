@@ -34,7 +34,7 @@ export default function DocsRmm() {
       <h2 id="install-command">Install command</h2>
       <CodeBlock
         language="powershell"
-        code={`msiexec /i "C:\\Temp\\ToastNotification.Agent-0.4.0.0.msi" /qn /norestart \`
+        code={`msiexec /i "C:\\Temp\\ToastNotification.msi" /qn /norestart \`
   CLIENTID=00000000-0000-0000-0000-000000000000 \`
   SERVERURL=https://toastnotification.com \`
   ENROLLMENTKEY=<tenant-enrollment-key>`}
@@ -57,7 +57,7 @@ export default function DocsRmm() {
       <h2 id="ninjaone">NinjaOne</h2>
       <ol>
         <li>
-          Upload <code>ToastNotification.Agent-X.Y.Z.0.msi</code> to <strong>Configuration → Documents</strong>.
+          Upload <code>ToastNotification.msi</code> to <strong>Configuration → Documents</strong>.
         </li>
         <li>
           Create a script under <strong>Configuration → Scripts</strong> with the install command above. Use the
@@ -128,7 +128,7 @@ export default function DocsRmm() {
       </ul>
       <CodeBlock
         language="powershell"
-        code={`msiexec /i ToastNotification.Agent-0.4.0.0.msi /qn /norestart \`
+        code={`msiexec /i ToastNotification.msi /qn /norestart \`
   /L*v "%ProgramData%\\Toast2IT\\install.log" \`
   CLIENTID=... SERVERURL=https://toastnotification.com ENROLLMENTKEY=...`}
       />

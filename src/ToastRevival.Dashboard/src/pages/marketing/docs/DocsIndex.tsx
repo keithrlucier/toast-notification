@@ -23,6 +23,11 @@ const HUB_LINKS = [
     body: 'msiexec with CLIENTID, SERVERURL, and ENROLLMENTKEY properties. Tested with NinjaOne, Datto, ConnectWise Automate, Atera, and any RMM that supports silent MSI deployment.',
   },
   {
+    to: '/docs/getting-started#device-appearance',
+    title: 'Device appearance',
+    body: 'Configure the dashboard-managed desktop info overlay — the no-scripts replacement for BgInfo — and per-device lock screen branding. Both apply at agent startup, with no login scripts, GPO, or registry edits.',
+  },
+  {
     to: '/docs/moderation',
     title: 'Content moderation',
     body: 'Configure per-tenant scanning policy, severity thresholds, the admin approval queue, custom blocklist terms, and bring-your-own Azure Content Safety credentials.',
@@ -30,7 +35,7 @@ const HUB_LINKS = [
   {
     to: '/docs/api',
     title: 'REST API reference',
-    body: 'Authentication, devices, notifications, and webhooks. Bearer-token JWT for users and devices. JSON over HTTPS.',
+    body: 'Authentication, devices, notifications, and delivery reporting. Bearer-token JWT for users and devices. JSON over HTTPS.',
   },
 ];
 
@@ -89,7 +94,7 @@ export default function DocsIndex() {
           <code>https://toastnotification.com/hubs/notifications</code>.
         </li>
         <li>
-          User JWTs are issued by <code>POST /api/auth/login</code> and expire after 60 minutes. Device JWTs are issued
+          User JWTs are issued by <code>POST /api/auth/login</code> and expire after 8 hours. Device JWTs are issued
           by <code>POST /api/devices/register</code> and expire after 365 days.
         </li>
         <li>

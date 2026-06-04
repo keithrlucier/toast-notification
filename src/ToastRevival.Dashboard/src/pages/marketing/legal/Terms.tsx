@@ -235,9 +235,9 @@ export default function Terms() {
           <h2 id="law-heading">12. Governing Law and Disputes</h2>
           <p>
             These Terms are governed by the laws of the United States and the State of
-            Delaware, without regard to conflict of law principles. Any dispute arising
+            Florida, without regard to conflict of law principles. Any dispute arising
             out of or relating to these Terms or the Service will be resolved exclusively
-            in the state or federal courts located in Delaware, and you consent to personal
+            in the state or federal courts located in Florida, and you consent to personal
             jurisdiction in those courts.
           </p>
           <p>

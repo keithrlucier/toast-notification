@@ -62,8 +62,10 @@ export default function Security() {
         <section className="m-security-section" aria-labelledby="auth-heading">
           <h2 id="auth-heading">Authentication and authorization</h2>
           <ul>
-            <li><strong>User tokens</strong> &mdash; HMAC-SHA256 JWTs with 60-minute expiry and zero clock-skew tolerance.</li>
+            <li><strong>User tokens</strong> &mdash; HMAC-SHA256 JWTs with 8-hour expiry and zero clock-skew tolerance.</li>
             <li><strong>Device tokens</strong> &mdash; tenant-scoped JWTs bound to a device ID. Device credentials cannot be used as user credentials.</li>
+            <li><strong>Multi-factor authentication</strong> &mdash; administrators can enroll a TOTP authenticator, and a tenant can require MFA org-wide for every user.</li>
+            <li><strong>Single sign-on</strong> &mdash; tenants can enable Microsoft Entra (Azure AD) sign-in. Directory identities map to existing tenant users; single sign-on never auto-provisions a new account.</li>
             <li><strong>MFA elevation</strong> &mdash; broadcast-to-all sends require a short-lived token containing an MFA claim.</li>
             <li><strong>TOTP replay control</strong> &mdash; accepted TOTP time steps are persisted; codes from the same or an earlier 30-second step are rejected.</li>
             <li><strong>Registration</strong> &mdash; SMS verification codes are hashed at rest with SHA-256 and expire after 10 minutes. Password setup uses ASP.NET Identity email-confirmation tokens.</li>

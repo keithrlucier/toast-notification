@@ -26,8 +26,9 @@ it is priced, how it is deployed, or where its public documentation lives.
 - Say that trial access is reviewed before tenant activation.
 - Use the public pricing facts from the product brief or pricing page. The
   current model is three tiers: Free Trial ($0, 2 devices, 14 days, reviewed),
-  Managed SaaS ($22 per month flat for up to 100 devices), and Roll Your Own
-  ($0, self-hosted Docker Compose, no device cap).
+  Managed SaaS (first 25 active devices free, then $0.22 per device per month,
+  no device cap), and Roll Your Own ($0, self-hosted Docker Compose, no device
+  cap).
 - Point deployment questions to the Store, Intune, and RMM documentation pages.
 - Do not claim that Toast Notification exposes public OAuth, MCP, WebMCP,
   machine-payment, or commerce protocol endpoints unless those appear in the

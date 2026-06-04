@@ -177,19 +177,20 @@ export default function Login() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'var(--bg-primary)',
+      background:
+        "linear-gradient(180deg, rgba(9,12,20,0.82) 0%, rgba(9,12,20,0.62) 50%, rgba(9,12,20,0.85) 100%), url('/login-bg.png') center / cover no-repeat",
       padding: 16,
     }}>
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           {LOGO}
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>Toast Notification</h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: 6 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#FFFFFF' }}>Toast Notification</h1>
+          <p style={{ color: 'rgba(255,255,255,0.72)', marginTop: 6 }}>
             {step === 'password' ? 'Sign in to your admin dashboard' : 'Verify your identity'}
           </p>
         </div>
 
-        <div className="card">
+        <div className="card" style={{ boxShadow: '0 24px 60px rgba(0,0,0,0.55)' }}>
           {step === 'password' ? (
             <form onSubmit={handlePassword}>
               {error && <div className="error-banner">{error}</div>}
@@ -335,20 +336,20 @@ export default function Login() {
         </div>
 
         {step === 'password' && (
-          <p style={{ textAlign: 'center', marginTop: 20, color: 'var(--text-dim)', fontSize: 13 }}>
+          <p style={{ textAlign: 'center', marginTop: 20, color: 'rgba(255,255,255,0.70)', fontSize: 13 }}>
             No account?{' '}
-            <Link to="/register" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>
+            <Link to="/register" style={{ color: '#6BB0F5', textDecoration: 'none', fontWeight: 600 }}>
               Create one
             </Link>
           </p>
         )}
 
         {step !== 'password' && (
-          <p style={{ textAlign: 'center', marginTop: 20, color: 'var(--text-dim)', fontSize: 13 }}>
+          <p style={{ textAlign: 'center', marginTop: 20, color: 'rgba(255,255,255,0.70)', fontSize: 13 }}>
             <button
               type="button"
               onClick={() => { setStep('password'); setCode(''); setError(''); }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', fontSize: 13, padding: 0 }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.70)', fontSize: 13, padding: 0 }}
             >
               ← Back to sign in
             </button>

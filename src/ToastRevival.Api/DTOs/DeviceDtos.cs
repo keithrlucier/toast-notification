@@ -8,7 +8,10 @@ public record RegisterDeviceRequest(
     [Required] string Username,
     string? OsVersion = null,
     string? AgentVersion = null,
-    string? EnrollmentKey = null);
+    string? EnrollmentKey = null,
+    // M1 — agent-reported LAN IP. Optional with a default so an old agent that
+    // omits it (every agent before M2) still deserializes cleanly — no 400.
+    string? LanIpAddress = null);
 
 public record DeviceResponse(
     Guid DeviceId,
@@ -19,7 +22,11 @@ public record DeviceResponse(
     string Status,
     DateTime? LastPing,
     DateTime RegisteredAt,
-    IReadOnlyList<Guid> GroupIds);
+    IReadOnlyList<Guid> GroupIds,
+    // M1 — WAN (server-derived) + LAN (agent-reported). Null for devices that
+    // predate the feature; the dashboard renders a dash.
+    string? WanIpAddress,
+    string? LanIpAddress);
 
 public record DeviceTokenResponse(
     string Token,
@@ -39,4 +46,7 @@ public record InteractionRequest(
 public record TenantAttributionResponse(string TenantName, string? LogoUrl = null);
 
 // Body for POST /api/devices/ping. Optional — agents before 0.4.26 send no body.
-public record PingRequest(string? AgentVersion = null);
+// M1 — LanIpAddress optional with a default so a pre-M2 agent sending only
+// { agentVersion } still deserializes; the server only overwrites a stored LAN
+// when the incoming value is non-empty (never nulls a good value).
+public record PingRequest(string? AgentVersion = null, string? LanIpAddress = null);

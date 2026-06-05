@@ -8,6 +8,15 @@ public class Device
     public string Username { get; set; } = null!;
     public string? OsVersion { get; set; }
     public string? AgentVersion { get; set; }
+
+    // M1 (Device IP Capture) — WAN is server-derived on register/ping via
+    // CloudflareIpValidator.ResolveTrustedClientIp (not spoofable by the agent);
+    // LAN is agent-reported from NetworkUtils.GetLocalIPv4() (M2). Both nullable:
+    // old agents/devices that predate the feature carry null until they re-ping.
+    // 64 chars covers any IPv4 or full IPv6 (incl. zone ID).
+    public string? WanIpAddress { get; set; }
+    public string? LanIpAddress { get; set; }
+
     public string RegistrationToken { get; set; } = null!;
     public DeviceStatus Status { get; set; } = DeviceStatus.Active;
     public DateTime? LastPing { get; set; }

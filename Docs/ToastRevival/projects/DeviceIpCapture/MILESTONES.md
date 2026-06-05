@@ -48,18 +48,20 @@
 
 ## Milestone 2: Agent + Frontend — LAN IP Collection, UI Column
 
-**Status:** Pending  
+**Status:** ✅ COMPLETE (2026-06-05)  
 **Priority:** High  
 **Dependencies:** Milestone 1 (backend must be live before agent ships)
 
-**What we're delivering:**
-- [ ] `NetworkUtils.cs` (new): static class in agent project, `GetLocalIPv4()` method extracted from `DesktopOverlayService.cs`. Same logic — first UP, non-loopback, non-link-local IPv4 from `NetworkInterface.GetAllNetworkInterfaces()`.
-- [ ] `DesktopOverlayService.cs`: refactor the `GetLocalIPv4()` call-site to call `NetworkUtils.GetLocalIPv4()` instead. Remove the now-private method body from DesktopOverlayService.
-- [ ] `AgentClient.cs` — registration anonymous object: add `lanIpAddress = NetworkUtils.GetLocalIPv4()` alongside the existing fields
-- [ ] `AgentClient.cs` — ping anonymous object (line ~692): add `lanIpAddress = NetworkUtils.GetLocalIPv4()`
-- [ ] Agent version bump, build, sign, deploy to TOASTWEB1 (Agent__LatestVersion env var update)
-- [ ] `src/ToastRevival.Dashboard/src/api/devices.ts`: add `wanIpAddress?: string` and `lanIpAddress?: string` to `DeviceApiResponse` interface and `Device` normalized type
-- [ ] `Devices.tsx`: add "IP" column after "User" column. Cell content: `wanIpAddress` truncated to 20 chars (full value in tooltip). Tooltip content: `WAN: <wanIpAddress>` and `LAN: <lanIpAddress>` (each shown only when non-null). If both null: dash.
+**What we delivered:**
+- [x] `NetworkUtils.cs` (new): static `GetLocalIPv4()` extracted from `DesktopOverlayService.cs`. First UP, non-loopback, non-link-local IPv4.
+- [x] `DesktopOverlayService.cs`: delegates to `NetworkUtils.GetLocalIPv4()`; three `System.Net*` usings removed.
+- [x] `AgentClient.cs` — registration + both ping sites (`ReportVersionAsync` + `RunPingLoopAsync`): `lanIpAddress = NetworkUtils.GetLocalIPv4()` added.
+- [x] Agent 0.4.39 → 0.4.40: csproj + appxmanifest + appsettings.json bumped.
+- [x] MSI built, signed (thumbprint 19B07B46), MSIX unsigned, Setup.exe signed. SHA256 verified on TOASTWEB1.
+- [x] `devices.ts`: `wanIpAddress: string | null` + `lanIpAddress: string | null` in `Device`, `DeviceApiResponse`, `normalizeDevice`.
+- [x] `Devices.tsx`: IP column after User — mono/dim, 20-char WAN truncation, native title tooltip (WAN+LAN when non-null), em dash when both null.
+- [x] Diana sign-off: column styling approved.
+- [x] Abish QA: SHIP WITH NOTES. 3 findings filed to FIX-LIST (M2-001/002/003).
 
 **How we know it's done:**
 - Registered device (using updated agent) shows WAN IP and LAN IP in admin panel
@@ -112,4 +114,4 @@ Backend must be live before agent ships — new agent payload fields must be acc
 | Milestone | Completed | Notes |
 |-----------|-----------|-------|
 | 1 | 2026-06-05 | Backend complete. 6 src files + migration. Build clean, migration DDL verified via idempotent script, integration tests written (DeviceIpCaptureTests.cs, 6 facts) — CI-executed (no local Docker/PG this session). Abish Code Sweep: SHIP. One finding fixed (over-length IP clamp). Blast-radius catch: migration relocated to Data/Migrations to match convention. |
-| 2 | | Agent + Frontend — blocked until M1 backend deploys |
+| 2 | 2026-06-05 | Agent 0.4.40 + dashboard IP column. NetworkUtils extracted, 3 payloads updated, MSI/EXE/Setup.exe signed, MSIX unsigned. Dashboard bundle deployed. SHA256 verified. Public mirror v0.5.37. Abish: SHIP WITH NOTES (3 FIX-LIST items). |

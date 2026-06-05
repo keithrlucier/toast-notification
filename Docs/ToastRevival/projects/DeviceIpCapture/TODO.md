@@ -1,10 +1,11 @@
 # Active TODO List
 
-## Current Focus: ▶ Milestone 2 — Agent + Frontend
+## ✅ PROJECT COMPLETE (2026-06-05)
 
-**M1 Backend ✅ COMPLETE (2026-06-05)** — all High/Medium items below done; details in MILESTONES.md + TEST-LOG.md. **Next session: start Milestone 2** (NetworkUtils extraction, AgentClient LAN payload, agent build/sign/deploy, devices.ts + Devices.tsx IP column). M2 is blocked only on the M1 backend being **deployed to TOASTWEB1** — see "Deploy gate" below.
+**M1 ✅ COMPLETE (2026-06-05)** — backend migration, model, DTOs, controller, 6 integration tests.
+**M2 ✅ COMPLETE (2026-06-05)** — agent 0.4.40 (NetworkUtils, lanIpAddress payloads), dashboard IP column, MSI/EXE/Setup.exe signed, deployed to TOASTWEB1, public mirror v0.5.37.
 
-> **Deploy gate for M2:** the M1 backend (migration + new API fields) must be live on TOASTWEB1 before the updated agent ships, so the API accepts the new `lanIpAddress` payload. M1 code is committed-ready; deploy is the team's job (commit → push → pull/migrate on TOASTWEB1 → mirror to public repo).
+Open backlog items (see FIX-LIST.md M2-001/002/003 — none blocking).
 
 ### High Priority (M1 — ✅ all done)
 

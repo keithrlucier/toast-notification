@@ -585,6 +585,7 @@ export default function Devices() {
                 </th>
                 <th>Machine</th>
                 <th>User</th>
+                <th>IP</th>
                 <th>Groups</th>
                 <th>OS</th>
                 <th>Agent</th>
@@ -612,6 +613,17 @@ export default function Devices() {
                     </td>
                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{d.machineName}</td>
                     <td>{d.username}</td>
+                    <td
+                      style={{ color: 'var(--text-dim)', fontSize: 12, fontFamily: 'var(--font-mono)' }}
+                      title={[
+                        d.wanIpAddress ? `WAN: ${d.wanIpAddress}` : null,
+                        d.lanIpAddress ? `LAN: ${d.lanIpAddress}` : null,
+                      ].filter(Boolean).join('\n') || undefined}
+                    >
+                      {d.wanIpAddress
+                        ? d.wanIpAddress.length > 20 ? `${d.wanIpAddress.slice(0, 20)}…` : d.wanIpAddress
+                        : '—'}
+                    </td>
                     <td>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: 220 }}>
                         {names.length === 0 ? (

@@ -2,9 +2,6 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Drawing.Text;
-using System.Net;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -109,7 +106,7 @@ internal sealed class DesktopOverlayService : IDisposable
             lines.Add(new OverlayLine("OS Version", RuntimeInformation.OSDescription));
         if (fields.Contains("ip"))
         {
-            var ip = GetLocalIPv4();
+            var ip = NetworkUtils.GetLocalIPv4();
             if (!string.IsNullOrEmpty(ip))
                 lines.Add(new OverlayLine("IP Address", ip));
         }
@@ -119,33 +116,6 @@ internal sealed class DesktopOverlayService : IDisposable
             lines.Add(new OverlayLine(null, config.CustomText!.Trim()));
 
         return lines;
-    }
-
-    private static string? GetLocalIPv4()
-    {
-        try
-        {
-            foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
-            {
-                if (ni.OperationalStatus != OperationalStatus.Up) continue;
-                if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
-
-                foreach (var ua in ni.GetIPProperties().UnicastAddresses)
-                {
-                    if (ua.Address.AddressFamily != AddressFamily.InterNetwork) continue;
-                    var ip = ua.Address;
-                    if (IPAddress.IsLoopback(ip)) continue;
-                    var b = ip.GetAddressBytes();
-                    if (b[0] == 169 && b[1] == 254) continue;
-                    return ip.ToString();
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            DiagLog.Write($"DesktopOverlay.GetLocalIPv4: {ex.GetType().Name}: {ex.Message}");
-        }
-        return null;
     }
 
     // ── Rendering (UI/STA thread only) ──────────────────────────────────────

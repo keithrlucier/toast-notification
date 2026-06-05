@@ -8,7 +8,7 @@ import RemoveAgentModal from '../components/RemoveAgentModal';
 
 type StatusFilter = 'all' | 'online' | 'offline';
 type GroupFilter = 'all' | 'ungrouped' | string;
-type SortKey = 'machine' | 'user' | 'group' | 'status' | 'lastSeen' | 'registered';
+type SortKey = 'machine' | 'user' | 'group' | 'status' | 'lastSeen' | 'registered' | 'ip';
 type SortDir = 'asc' | 'desc';
 
 interface GroupModalState {
@@ -26,6 +26,7 @@ interface SaveGroupArgs {
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'machine', label: 'Machine' },
   { value: 'user', label: 'User' },
+  { value: 'ip', label: 'IP' },
   { value: 'group', label: 'Group' },
   { value: 'status', label: 'Status' },
   { value: 'lastSeen', label: 'Last seen' },
@@ -76,6 +77,8 @@ function sortDevices(a: Device, b: Device, sortKey: SortKey, groupById: Map<stri
     case 'registered':
       return (new Date(a.registeredAt).getTime() - new Date(b.registeredAt).getTime())
         || compareText(a.machineName, b.machineName);
+    case 'ip':
+      return compareText(a.wanIpAddress ?? '', b.wanIpAddress ?? '') || compareText(a.machineName, b.machineName);
     case 'machine':
     default:
       return compareText(a.machineName, b.machineName);

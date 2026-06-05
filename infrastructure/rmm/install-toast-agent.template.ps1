@@ -108,59 +108,74 @@ try {
     exit 1
 }
 
-# -- Skip MSI if already at target version ------------------------------------
-# Re-running /i against an already-registered ProductCode enters maintenance/
-# reconfiguration mode and returns 1603 when any custom action fails during
-# repair. Detect this before staging the package: read the server's current
-# version, compare to what is installed in the uninstall registry, and skip
-# the MSI entirely if they match. The pre-start kill + schtasks /Run below
-# still fires to ensure the correct agent process is running.
-$msiSuccess = $false
-$skipMsi    = $false
-try {
-    $feedJson      = (New-Object System.Net.WebClient).DownloadString("$ServerUrl/api/agent/version")
-    $targetVersion = ($feedJson | ConvertFrom-Json).version
-    Write-Log "Server target version: $targetVersion"
-
-    $installedEntry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' `
-        -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -like '*Toast Notification*Agent*' } |
-        Select-Object -First 1
-    $installedVersion = if ($installedEntry) { $installedEntry.DisplayVersion } else { $null }
-    Write-Log "Installed version: $(if ($installedVersion) { $installedVersion } else { 'none' })"
-
-    # Normalize: feed returns "0.4.40", registry stores "0.4.40.0"
-    if ($installedVersion -and ($installedVersion -eq $targetVersion -or $installedVersion -eq "$targetVersion.0")) {
-        Write-Log "Agent is already at v$targetVersion -- skipping MSI, will ensure agent process is running."
-        $msiSuccess = $true
-        $skipMsi    = $true
-    }
-} catch {
-    Write-Log "Version pre-check failed: $_ -- proceeding with MSI." "WARN"
-}
-
-if (-not $skipMsi) {
-
-# -- MSI Install --------------------------------------------------------------
-# Run msiexec via a standalone one-shot SYSTEM scheduled task rather than as a
-# child of this script process. EDR products watch the RMM->PowerShell->msiexec
-# process chain and block the IStorage open with STG_E_ACCESSDENIED / error
-# 2203 / exit 1619. A standalone Task Scheduler task has no suspicious parent.
-#
-# msiexec.exe is invoked directly as the task executable -- no .cmd wrapper --
-# so AppLocker Script rules (which block .cmd/.bat from non-whitelisted paths)
-# cannot interfere. The exit code is read from Get-ScheduledTaskInfo.LastTaskResult.
-
-$msiLog   = "$logDir\ToastNotification_msi_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
-$taskName = "ToastNotificationRmmInstall"
+# -- Uninstall any existing agent first ---------------------------------------
+# Running /i against an already-registered ProductCode enters maintenance/
+# reconfiguration mode and 1603s on custom action failures. Rollbacks from
+# failed repairs corrupt the on-disk binary. Cleanest path: uninstall first
+# so the subsequent install is always a fresh install with no upgrade/repair
+# complexity, no rollback state, no mutex races from CA-spawned processes.
 $taskRoot = "\"
 
-# Stage to C:\Windows\Installer\ before invoking msiexec. Security products hook
-# StgOpenStorage and deny access to MSI files in arbitrary writable directories
-# (C:\Temp, C:\Windows\Temp, ProgramData) -- but trust the Windows Installer package
-# cache unconditionally. msiserver always has IStorage access there. This is the
-# last layer; every other variable (path, process chain, invocation method) has
-# been eliminated across prior attempts on this endpoint.
+$installedEntry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+    -ErrorAction SilentlyContinue |
+    Where-Object { $_.DisplayName -like '*Toast Notification*Agent*' } |
+    Select-Object -First 1
+
+if ($installedEntry) {
+    $productCode      = $installedEntry.PSChildName
+    $installedVersion = $installedEntry.DisplayVersion
+    Write-Log "Found installed version: $installedVersion ($productCode) -- uninstalling first"
+
+    $uninstallLog  = "$logDir\ToastNotification_uninstall_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+    $uninstallArgs = "/x `"$productCode`" /qn /norestart /l*v `"$uninstallLog`""
+    $uninstallTask = "ToastNotificationRmmUninstall"
+
+    try {
+        Get-ScheduledTask -TaskName $uninstallTask -TaskPath $taskRoot -ErrorAction SilentlyContinue |
+            Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
+
+        $action    = New-ScheduledTaskAction -Execute "$env:windir\System32\msiexec.exe" -Argument $uninstallArgs
+        $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -RunLevel Highest -LogonType ServiceAccount
+        $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds 300) -MultipleInstances IgnoreNew
+        $taskDef   = New-ScheduledTask -Action $action -Principal $principal -Settings $settings
+        Register-ScheduledTask -TaskName $uninstallTask -TaskPath $taskRoot -InputObject $taskDef -Force | Out-Null
+
+        Start-ScheduledTask -TaskName $uninstallTask -TaskPath $taskRoot
+
+        $deadline = (Get-Date).AddSeconds(300)
+        do {
+            Start-Sleep -Seconds 5
+            $taskObj = Get-ScheduledTask -TaskName $uninstallTask -TaskPath $taskRoot -ErrorAction SilentlyContinue
+            $state   = if ($taskObj) { $taskObj.State } else { 'Ready' }
+        } while ($state -eq 'Running' -and (Get-Date) -lt $deadline)
+
+        $uInfo         = Get-ScheduledTaskInfo -TaskName $uninstallTask -TaskPath $taskRoot -ErrorAction SilentlyContinue
+        $uninstallCode = if ($uInfo) { [int64]$uInfo.LastTaskResult } else { 1619 }
+        Write-Log "Uninstall exit code: $uninstallCode"
+
+        Get-ScheduledTask -TaskName $uninstallTask -TaskPath $taskRoot -ErrorAction SilentlyContinue |
+            Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
+
+        if ($uninstallCode -eq 0) {
+            Write-Log "Uninstall complete"
+            Start-Sleep -Seconds 3
+        } else {
+            Write-Log "Uninstall returned $uninstallCode -- proceeding with install anyway" "WARN"
+        }
+    } catch {
+        Write-Log "Uninstall task setup failed: $($_.Exception.Message) -- proceeding with install anyway" "WARN"
+    }
+} else {
+    Write-Log "No existing agent installation found -- fresh install"
+}
+
+# -- MSI Install (always a fresh /i after uninstall above) --------------------
+# Standalone SYSTEM task bypasses EDR RMM->PowerShell->msiexec chain block.
+# MSI staged to C:\Windows\Installer\ so IStorage opens from the trusted
+# Windows Installer package cache, not a user-writable temp directory.
+$msiLog   = "$logDir\ToastNotification_msi_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+$taskName = "ToastNotificationRmmInstall"
+
 $stagePath = "$env:windir\Installer\ToastNotification_rmm.msi"
 try {
     Copy-Item -Path $f -Destination $stagePath -Force -ErrorAction Stop
@@ -171,17 +186,13 @@ try {
     $installSource = $f
 }
 
-# Use REINSTALL=ALL REINSTALLMODE=vomus when a prior version is registered so
-# msiexec runs a true reinstall (recaches the package, overwrites files) rather
-# than entering maintenance/reconfiguration mode and 1603-ing on a custom action.
-$msiArgs = "/i `"$installSource`" REINSTALL=ALL REINSTALLMODE=vomus /qn /norestart /l*v `"$msiLog`" CLIENTID=`"$TenantId`" SERVERURL=`"$ServerUrl`""
+$msiArgs = "/i `"$installSource`" /qn /norestart /l*v `"$msiLog`" CLIENTID=`"$TenantId`" SERVERURL=`"$ServerUrl`""
 if ($EnrollmentKey) { $msiArgs += " ENROLLMENTKEY=`"$EnrollmentKey`"" }
 
 Write-Log "MSI log: $msiLog"
 
 $usedTask = $false
 try {
-    # Remove any stale task from a prior crashed run.
     Get-ScheduledTask -TaskName $taskName -TaskPath $taskRoot -ErrorAction SilentlyContinue |
         Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
 
@@ -191,7 +202,7 @@ try {
     $taskDef   = New-ScheduledTask -Action $action -Principal $principal -Settings $settings
     Register-ScheduledTask -TaskName $taskName -TaskPath $taskRoot -InputObject $taskDef -Force | Out-Null
 
-    Write-Log "Starting MSI install via standalone SYSTEM task (msiexec direct)..."
+    Write-Log "Starting MSI install via standalone SYSTEM task..."
     Start-ScheduledTask -TaskName $taskName -TaskPath $taskRoot
     $usedTask = $true
 } catch {
@@ -199,8 +210,6 @@ try {
 }
 
 if ($usedTask) {
-    # Poll until task exits (up to 5 min). Task state is 'Running' while active,
-    # 'Ready' when done. PS scheduled-task cmdlets are available on Win 8.1+ / Server 2012+.
     $deadline = (Get-Date).AddSeconds(300)
     do {
         Start-Sleep -Seconds 5
@@ -213,8 +222,7 @@ if ($usedTask) {
         Stop-ScheduledTask -TaskName $taskName -TaskPath $taskRoot -ErrorAction SilentlyContinue
         $msiExitCode = 1603
     } else {
-        # LastTaskResult is a uint32 matching the msiexec exit code.
-        $info = Get-ScheduledTaskInfo -TaskName $taskName -TaskPath $taskRoot -ErrorAction SilentlyContinue
+        $info        = Get-ScheduledTaskInfo -TaskName $taskName -TaskPath $taskRoot -ErrorAction SilentlyContinue
         $msiExitCode = if ($info) { [int64]$info.LastTaskResult } else { 1619 }
         Write-Log "Task LastTaskResult: $msiExitCode"
     }
@@ -222,8 +230,7 @@ if ($usedTask) {
     Get-ScheduledTask -TaskName $taskName -TaskPath $taskRoot -ErrorAction SilentlyContinue |
         Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
 } else {
-    # Fallback: direct Start-Process (may still hit the EDR chain issue)
-    $proc = Start-Process "$env:windir\System32\msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
+    $proc        = Start-Process "$env:windir\System32\msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
     $msiExitCode = $proc.ExitCode
 }
 
@@ -252,8 +259,6 @@ if ($msiExitCode -eq 0 -or $msiExitCode -eq 3010) {
         Get-Content $msiLog | Select-Object -Last 50 | ForEach-Object { Write-Log "  MSI: $_" "ERROR" }
     }
 }
-
-} # end if (-not $skipMsi)
 
 # -- Write bootstrap.json fallback (camelCase!) -------------------------------
 # Runs when the MSI's own bootstrap writer was AV-blocked (1721). camelCase keys

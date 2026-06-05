@@ -50,6 +50,9 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
              .HasForeignKey(d => d.TenantId)
              .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(d => d.RegistrationToken).IsUnique();
+            // M1 — bound IP columns to 64 chars (covers IPv4 + full IPv6 w/ zone ID).
+            e.Property(d => d.WanIpAddress).HasMaxLength(64);
+            e.Property(d => d.LanIpAddress).HasMaxLength(64);
             e.HasQueryFilter(d => d.TenantId == _tenantProvider.TenantId);
         });
 

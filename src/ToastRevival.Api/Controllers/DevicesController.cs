@@ -120,6 +120,12 @@ public class DevicesController : ControllerBase
             existing.AgentVersion = req.AgentVersion;
             existing.RegistrationToken = tokenHash;
             existing.Status = DeviceStatus.Active;
+            // M1 — WAN is server-derived, always refresh it. LAN is agent-reported:
+            // only overwrite when the incoming value is non-empty so an old agent
+            // (no LAN in payload) never nulls out a previously captured value.
+            existing.WanIpAddress = ClampIp(CloudflareIpValidator.ResolveTrustedClientIp(HttpContext));
+            if (!string.IsNullOrWhiteSpace(req.LanIpAddress))
+                existing.LanIpAddress = ClampIp(req.LanIpAddress);
             device = existing;
             auditAction = "device.re-register";
             await _db.SaveChangesAsync();
@@ -141,6 +147,9 @@ public class DevicesController : ControllerBase
                 OsVersion = req.OsVersion,
                 AgentVersion = req.AgentVersion,
                 RegistrationToken = tokenHash,
+                // M1 — WAN server-derived; LAN straight from the (new) agent payload.
+                WanIpAddress = ClampIp(CloudflareIpValidator.ResolveTrustedClientIp(HttpContext)),
+                LanIpAddress = ClampIp(req.LanIpAddress),
             };
 
             if (!await _license.TryRegisterDeviceAtomicAsync(tenant, device))
@@ -157,9 +166,11 @@ public class DevicesController : ControllerBase
 
         var jwt = _tokens.CreateDeviceToken(device);
 
+        // M1 — bare RemoteIpAddress returns the Cloudflare edge IP in prod; use the
+        // trusted-client resolver (CF-Connecting-IP / XFF aware) like the rate limiter.
         await _audit.LogAsync(req.TenantId, null, auditAction, "Device",
             device.Id.ToString(), new { device.DeviceName, device.Username },
-            HttpContext.Connection.RemoteIpAddress?.ToString());
+            CloudflareIpValidator.ResolveTrustedClientIp(HttpContext));
 
         return Ok(new DeviceTokenResponse(jwt, device.Id, req.TenantId, tenant.SigningKey, tenant.Name));
     }
@@ -405,6 +416,13 @@ public class DevicesController : ControllerBase
         device.LastPing = DateTime.UtcNow;
         if (!string.IsNullOrWhiteSpace(body?.AgentVersion))
             device.AgentVersion = body.AgentVersion;
+        // M1 — refresh network context every heartbeat so the dashboard tracks
+        // network changes (VPN, DHCP, Wi-Fi roaming) within the ~30-min ping cadence.
+        // WAN is server-derived (always refresh). LAN only when the agent sends one,
+        // so an old agent's empty payload never nulls a stored value.
+        device.WanIpAddress = ClampIp(CloudflareIpValidator.ResolveTrustedClientIp(HttpContext));
+        if (!string.IsNullOrWhiteSpace(body?.LanIpAddress))
+            device.LanIpAddress = ClampIp(body.LanIpAddress);
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -635,7 +653,8 @@ public class DevicesController : ControllerBase
                 .Where(m => m.DeviceGroup.TenantId == d.TenantId)
                 .Select(m => m.DeviceGroupId)
                 .Distinct()
-                .ToList());
+                .ToList(),
+            d.WanIpAddress, d.LanIpAddress);
 
     private string? ToPublicUrl(string? value)
     {
@@ -663,6 +682,15 @@ public class DevicesController : ControllerBase
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
         return Convert.ToHexString(bytes).ToLower();
     }
+
+    // M1 — defensive clamp for the Wan/LanIpAddress varchar(64) columns. A real
+    // IPv4/IPv6 string is well under 64 chars; this only guards against an
+    // authenticated agent sending an over-length value, which would otherwise
+    // raise an Npgsql 22001 truncation error and 500 the register/ping write.
+    // Null/empty passes through unchanged so callers keep their own non-empty guards.
+    private const int IpColumnMaxLength = 64;
+    private static string? ClampIp(string? value) =>
+        value is { Length: > IpColumnMaxLength } ? value[..IpColumnMaxLength] : value;
 
     /// <summary>
     /// XT-1 enrollment gate. Returns true when <paramref name="presented"/> is an

@@ -108,6 +108,39 @@ try {
     exit 1
 }
 
+# -- Skip MSI if already at target version ------------------------------------
+# Re-running /i against an already-registered ProductCode enters maintenance/
+# reconfiguration mode and returns 1603 when any custom action fails during
+# repair. Detect this before staging the package: read the server's current
+# version, compare to what is installed in the uninstall registry, and skip
+# the MSI entirely if they match. The pre-start kill + schtasks /Run below
+# still fires to ensure the correct agent process is running.
+$msiSuccess = $false
+$skipMsi    = $false
+try {
+    $feedJson      = (New-Object System.Net.WebClient).DownloadString("$ServerUrl/api/agent/version")
+    $targetVersion = ($feedJson | ConvertFrom-Json).version
+    Write-Log "Server target version: $targetVersion"
+
+    $installedEntry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+        -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -like '*Toast Notification*Agent*' } |
+        Select-Object -First 1
+    $installedVersion = if ($installedEntry) { $installedEntry.DisplayVersion } else { $null }
+    Write-Log "Installed version: $(if ($installedVersion) { $installedVersion } else { 'none' })"
+
+    # Normalize: feed returns "0.4.40", registry stores "0.4.40.0"
+    if ($installedVersion -and ($installedVersion -eq $targetVersion -or $installedVersion -eq "$targetVersion.0")) {
+        Write-Log "Agent is already at v$targetVersion -- skipping MSI, will ensure agent process is running."
+        $msiSuccess = $true
+        $skipMsi    = $true
+    }
+} catch {
+    Write-Log "Version pre-check failed: $_ -- proceeding with MSI." "WARN"
+}
+
+if (-not $skipMsi) {
+
 # -- MSI Install --------------------------------------------------------------
 # Run msiexec via a standalone one-shot SYSTEM scheduled task rather than as a
 # child of this script process. EDR products watch the RMM->PowerShell->msiexec
@@ -138,7 +171,10 @@ try {
     $installSource = $f
 }
 
-$msiArgs = "/i `"$installSource`" /qn /norestart /l*v `"$msiLog`" CLIENTID=`"$TenantId`" SERVERURL=`"$ServerUrl`""
+# Use REINSTALL=ALL REINSTALLMODE=vomus when a prior version is registered so
+# msiexec runs a true reinstall (recaches the package, overwrites files) rather
+# than entering maintenance/reconfiguration mode and 1603-ing on a custom action.
+$msiArgs = "/i `"$installSource`" REINSTALL=ALL REINSTALLMODE=vomus /qn /norestart /l*v `"$msiLog`" CLIENTID=`"$TenantId`" SERVERURL=`"$ServerUrl`""
 if ($EnrollmentKey) { $msiArgs += " ENROLLMENTKEY=`"$EnrollmentKey`"" }
 
 Write-Log "MSI log: $msiLog"
@@ -217,6 +253,8 @@ if ($msiExitCode -eq 0 -or $msiExitCode -eq 3010) {
     }
 }
 
+} # end if (-not $skipMsi)
+
 # -- Write bootstrap.json fallback (camelCase!) -------------------------------
 # Runs when the MSI's own bootstrap writer was AV-blocked (1721). camelCase keys
 # are REQUIRED -- the agent deserializes bootstrap.json case-sensitively.
@@ -247,6 +285,13 @@ if (-not $msiSuccess -and -not (Test-Path $installDir)) {
 }
 
 # -- Start agent --------------------------------------------------------------
+# Kill any agent instance that may have been started by a WiX custom action
+# (StartAgentNow CA fires during install/reconfiguration). Without this, the
+# new schtask /Run hits the primary-worker mutex and exits silently, leaving
+# the dashboard showing the old version.
+Write-Log "Ensuring no agent process is running before start..."
+Get-Process -Name "ToastNotification.Agent" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
 Write-Log "Starting Toast Notification agent..."
 try {
     Start-Process "$env:windir\System32\schtasks.exe" -ArgumentList '/Run /TN "\Toast2IT\ToastNotificationAgentLogon"' -Wait -ErrorAction Stop

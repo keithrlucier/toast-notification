@@ -2,7 +2,23 @@
 
 ## Active Issues
 
-*No issues yet — populated during development.*
+### M2-001 — LAN IP format not validated server-side — OPEN
+**Found by:** Abish Code Sweep M2, Step 5 (security/edge cases) — LOW.
+**Problem:** `LanIpAddress` is agent-reported via the device JWT. After the `ClampIp()` length guard from M1, the value is stored verbatim with no `IPAddress.TryParse` check. An agent could report `"not-an-ip"`. React escapes the value in both the cell and `title` attribute so no XSS risk, but storage of arbitrary strings is inconsistent with the intent of an IP address field.
+**Fix:** Add `if (!IPAddress.TryParse(body?.LanIpAddress, out _)) lanIp = null;` guard in `DevicesController` before the non-empty check on both Register and Ping paths. Small hardening pass; defer to next session.
+**Owner:** Anthony.
+
+### M2-002 — IP address not included in device search — BACKLOG
+**Found by:** Abish Code Sweep M2, Step 5 (regression/UX) — NOTE.
+**Problem:** `Devices.tsx` search (line 135–142) does not include `wanIpAddress` or `lanIpAddress`. Admin searching by IP returns no results.
+**Fix:** Add `|| (d.wanIpAddress ?? '').includes(q) || (d.lanIpAddress ?? '').includes(q)` to the search filter.
+**Owner:** Anthony (frontend, 1-liner).
+
+### M2-003 — Cell shows dash when WAN null but LAN set — BACKLOG
+**Found by:** Abish Code Sweep M2, Step 5 (UX) — NOTE.
+**Problem:** Primary displayed value in the IP cell is `wanIpAddress` only. If WAN is null and LAN is non-null (unlikely in practice but possible), the cell shows `—` while the tooltip shows `LAN: x`. Slightly confusing.
+**Fix:** Display `lanIpAddress` as fallback when `wanIpAddress` is null: `d.wanIpAddress ?? d.lanIpAddress ?? '—'`.
+**Owner:** Anthony (frontend).
 
 ---
 

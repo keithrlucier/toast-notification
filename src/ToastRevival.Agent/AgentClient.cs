@@ -35,6 +35,7 @@ internal static class RegistrationService
             osVersion     = Environment.OSVersion.VersionString,
             agentVersion  = ThisAssembly.Version,
             enrollmentKey = bootstrap.EnrollmentKey,
+            lanIpAddress  = NetworkUtils.GetLocalIPv4(),
         };
 
         try
@@ -663,7 +664,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
     {
         try
         {
-            using var resp = await _http.PostAsJsonAsync("/api/devices/ping", new { agentVersion = ThisAssembly.Version }, ct);
+            using var resp = await _http.PostAsJsonAsync("/api/devices/ping", new { agentVersion = ThisAssembly.Version, lanIpAddress = NetworkUtils.GetLocalIPv4() }, ct);
             DiagLog.Write($"ReportVersion: {ThisAssembly.Version} -> {(int)resp.StatusCode}");
         }
         catch (Exception ex)
@@ -689,7 +690,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
 
             try
             {
-                using var resp = await _http.PostAsJsonAsync("/api/devices/ping", new { agentVersion = ThisAssembly.Version }, ct);
+                using var resp = await _http.PostAsJsonAsync("/api/devices/ping", new { agentVersion = ThisAssembly.Version, lanIpAddress = NetworkUtils.GetLocalIPv4() }, ct);
                 DiagLog.Write($"Ping: {(int)resp.StatusCode}");
             }
             catch (Exception ex)

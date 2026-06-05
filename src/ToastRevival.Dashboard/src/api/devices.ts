@@ -11,6 +11,8 @@ export interface Device {
   lastSeen: string | null;
   registeredAt: string;
   groupIds: string[];
+  wanIpAddress: string | null;
+  lanIpAddress: string | null;
 }
 
 interface DeviceApiResponse {
@@ -28,6 +30,8 @@ interface DeviceApiResponse {
   lastPing?: string | null;
   registeredAt?: string;
   groupIds?: string[];
+  wanIpAddress?: string | null;
+  lanIpAddress?: string | null;
 }
 
 export interface UninstallScriptInfo {
@@ -83,6 +87,8 @@ function normalizeDevice(raw: DeviceApiResponse): Device {
     lastSeen,
     registeredAt: raw.registeredAt ?? new Date(0).toISOString(),
     groupIds: raw.groupIds ?? [],
+    wanIpAddress: raw.wanIpAddress ?? null,
+    lanIpAddress: raw.lanIpAddress ?? null,
   };
 }
 

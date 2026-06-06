@@ -40,6 +40,7 @@ public class TokenService : ITokenService
         return BuildToken(claims.ToArray(), GetExpiresAt("Jwt:ExpiresInMinutes", 60, isMinutes: true));
     }
 
+    // REVIEW-2026-06-06 AA-M5 REJECTED-by-design: 365-day device token with per-request revocation check is the current architecture; DeviceSecurityStamp epoch-based caching is a planned performance optimization for high-fleet-density deployments, not a correctness bug at current scale
     public string CreateDeviceToken(Device device)
     {
         var claims = new[]

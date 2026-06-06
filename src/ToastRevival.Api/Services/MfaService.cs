@@ -75,7 +75,9 @@ public class MfaService
     /// malformed, OtpNet rejects it (wrong digits / outside the ±1 step window),
     /// or the matched step is &lt;= LastTotpStep (replay).
     /// </summary>
-    public bool Verify(AppUser user, string code)
+    // DC-L1: narrowed to internal — not safe for production use (see XML doc above).
+    // MfaServiceTests exercises this via the existing InternalsVisibleTo in ToastRevival.Api.csproj.
+    internal bool Verify(AppUser user, string code)
     {
         if (!TryMatch(user.MfaSecret, code, out var matchedStep)) return false;
 

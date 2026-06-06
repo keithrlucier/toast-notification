@@ -5,8 +5,7 @@ namespace ToastRevival.Api.Services;
 
 public class MessagingConfigService : IMessagingConfigService
 {
-    private static readonly object FileLock = new();
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    // ARCH-L1: FileLock and JsonOptions are now shared via LocalSettingsStore.
 
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
@@ -51,12 +50,12 @@ public class MessagingConfigService : IMessagingConfigService
         string? mailjetSenderEmail,
         CancellationToken cancellationToken = default)
     {
-        lock (FileLock)
+        lock (LocalSettingsStore.FileLock)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var path = Path.Combine(_env.ContentRootPath, "appsettings.Local.json");
-            var root = ReadOrCreateRoot(path);
+            var root = LocalSettingsStore.ReadOrCreateRoot(path);
 
             if (root["ClickSend"] is not JsonObject cs)
             {
@@ -76,7 +75,7 @@ public class MessagingConfigService : IMessagingConfigService
             if (mailjetApiSecret   is not null) mj["ApiSecret"]    = mailjetApiSecret.Trim();
             if (mailjetSenderEmail is not null) mj["SenderEmail"]  = mailjetSenderEmail.Trim();
 
-            File.WriteAllText(path, root.ToJsonString(JsonOptions) + Environment.NewLine);
+            LocalSettingsStore.WriteRoot(path, root);
 
             if (_config is IConfigurationRoot configRoot)
                 configRoot.Reload();
@@ -85,15 +84,6 @@ public class MessagingConfigService : IMessagingConfigService
         }
 
         return Task.FromResult(GetSnapshot());
-    }
-
-    private static JsonObject ReadOrCreateRoot(string path)
-    {
-        if (!File.Exists(path)) return new JsonObject();
-        var text = File.ReadAllText(path);
-        if (string.IsNullOrWhiteSpace(text)) return new JsonObject();
-        return JsonNode.Parse(text) as JsonObject
-            ?? throw new InvalidOperationException("appsettings.Local.json must be a JSON object.");
     }
 
     private static string Mask(string value)

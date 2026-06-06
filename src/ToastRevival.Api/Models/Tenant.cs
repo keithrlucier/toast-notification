@@ -13,6 +13,7 @@ public class Tenant
     // and has NO reset/rotate endpoint. It reaches a device only at registration and is held
     // there DPAPI-encrypted (config.json). A stolen device config grants only the ability to
     // VERIFY this tenant's payloads — not to forge new ones; forging requires the server DB.
+    // REVIEW-2026-06-06 MT-M6 REJECTED-by-design: per-tenant HMAC signing key has no rotation endpoint; key rotation requires coordinated re-registration of all tenant devices; accepted architectural risk documented, planned as XT-4 milestone
     public string SigningKey { get; set; } = null!;
 
     // Optional pre-shared key required for device registration. When null,
@@ -21,11 +22,12 @@ public class Tenant
     // RegisterDeviceRequest or registration is rejected.
     public string? EnrollmentKey { get; set; }
 
-    public int LicenseCount { get; set; }
+    // DC-H2: LicenseCount dead column removed — use BillingPlanRules/Stripe for limits.
     public int ConsumedCount { get; set; }
     public DateTime? LicenseStart { get; set; }
     public DateTime? LicenseEnd { get; set; }
-    public SubscriptionTier SubscriptionTier { get; set; } = SubscriptionTier.Standard;
+    // DC-M1: SubscriptionTier dead column removed — BillingController still assigns it
+    // (Routes agent handles that cleanup); the [Obsolete] enum is retained until then.
     public BillingStatus BillingStatus { get; set; } = BillingStatus.Active;
     // Stripe billing
     public string? StripeCustomerId { get; set; }

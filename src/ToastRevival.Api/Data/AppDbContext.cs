@@ -4,6 +4,12 @@ using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
 
+// DC-M4 — Migration namespace split:
+//   ToastRevival.Api.Migrations      (M1–M6, InitialCreate through PlatformAdminBillingV2)
+//                                    — has the ModelSnapshot; stale as of M9A.
+//   ToastRevival.Api.Data.Migrations (M9A+, RegistrationFlow onward) — ACTIVE namespace.
+// EF Core discovers both at runtime. All new migrations MUST go in Data/Migrations/ and
+// use namespace ToastRevival.Api.Data.Migrations. Never add to the legacy Migrations/ tree.
 namespace ToastRevival.Api.Data;
 
 public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
@@ -26,13 +32,20 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<AssetLibrary> AssetLibrary => Set<AssetLibrary>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<TenantBlocklistEntry> TenantBlocklistEntries => Set<TenantBlocklistEntry>();
-    public DbSet<TenantApiKey> TenantApiKeys => Set<TenantApiKey>();
+    // DC-H1: TenantApiKey (dead table) removed — DbSet and entity config dropped.
     public DbSet<TrialRequest> TrialRequests => Set<TrialRequest>();
     public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // MT-C1 — HasQueryFilter safety note: when _tenantProvider.TenantId is null (unauthenticated
+        // or background context with no tenant set), every HasQueryFilter below evaluates as
+        // (column == null) which produces SQL "WHERE column IS NULL" — zero rows, not unfiltered
+        // data. This is intentional: a missing tenant context produces empty results rather than
+        // leaking cross-tenant data. Background services that need cross-tenant reads MUST call
+        // IgnoreQueryFilters() explicitly.
 
         builder.Entity<AppUser>(e =>
         {
@@ -54,6 +67,8 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.Property(d => d.WanIpAddress).HasMaxLength(64);
             e.Property(d => d.LanIpAddress).HasMaxLength(64);
             e.HasQueryFilter(d => d.TenantId == _tenantProvider.TenantId);
+            // PERF-L2: tenant+status composite for device list / active-device count queries.
+            e.HasIndex(d => new { d.TenantId, d.Status }).HasDatabaseName("IX_Devices_TenantId_Status");
         });
 
         builder.Entity<DeviceGroup>(e =>
@@ -79,6 +94,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             // DGM-M2 — scope through the required DeviceGroup navigation so a direct
             // _db.DeviceGroupMembers query is tenant-isolated like every other
             // tenant-associated entity (DeviceGroupMember has no own TenantId column).
+            // REVIEW-2026-06-06 MT-M1 REJECTED-by-design: join-based filter (m.DeviceGroup.TenantId == tenantId) is the EF Core owned-navigation pattern; adding a redundant TenantId discriminator creates a dual-write consistency risk; orphaned DeviceGroupMember rows are prevented by cascade-delete FK on DeviceGroupId
             e.HasQueryFilter(m => m.DeviceGroup.TenantId == _tenantProvider.TenantId);
         });
 
@@ -102,6 +118,9 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
              .HasForeignKey(n => n.SenderId)
              .OnDelete(DeleteBehavior.Restrict);
             e.HasQueryFilter(n => n.TenantId == _tenantProvider.TenantId);
+            // PERF-L1: tenant-scoped list and range queries (dashboard, analytics).
+            e.HasIndex(n => n.TenantId).HasDatabaseName("IX_Notifications_TenantId");
+            e.HasIndex(n => new { n.TenantId, n.CreatedAt }).HasDatabaseName("IX_Notifications_TenantId_CreatedAt").IsDescending(false, true);
         });
 
         builder.Entity<NotificationDelivery>(e =>
@@ -117,6 +136,9 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.HasIndex(d => new { d.NotificationId, d.DeviceId }).IsUnique();
             // Composite index for the catch-up query (DeviceId, Status, CreatedAt).
             e.HasIndex(d => new { d.DeviceId, d.Status, d.CreatedAt });
+            // PERF-L1: tenant-scoped delivery queries.
+            e.HasIndex(d => d.TenantId).HasDatabaseName("IX_NotificationDeliveries_TenantId");
+            // REVIEW-2026-06-06 PERF-L5 REJECTED-by-design: functional index on DATE(sent_at) requires PostgreSQL-specific DDL outside EF Core model conventions; acceptable at current analytics query volume, planned as a DBA migration when query plans show measurable regression
             e.HasQueryFilter(d => d.TenantId == _tenantProvider.TenantId);
         });
 
@@ -129,6 +151,9 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.HasQueryFilter(a => a.TenantId == _tenantProvider.TenantId);
         });
 
+        // MT-M2: No global query filter by design — AuditLog must be queried with explicit
+        // l.TenantId == tenantId predicates at every read site; any future endpoint missing
+        // this predicate silently exposes cross-tenant audit history.
         // AuditLog intentionally has no global filter — admins can query across tenants.
         // Index on Timestamp supports export/range queries.
         builder.Entity<AuditLog>(e =>
@@ -155,19 +180,6 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.HasQueryFilter(b => b.TenantId == _tenantProvider.TenantId);
         });
 
-        builder.Entity<TenantApiKey>(e =>
-        {
-            e.HasOne(k => k.Tenant)
-             .WithMany()
-             .HasForeignKey(k => k.TenantId)
-             .OnDelete(DeleteBehavior.Cascade);
-            e.Property(k => k.Name).HasMaxLength(100);
-            e.Property(k => k.KeyPrefix).HasMaxLength(16);
-            e.Property(k => k.KeyHash).HasMaxLength(64);
-            e.HasIndex(k => k.KeyHash).IsUnique();
-            e.HasQueryFilter(k => k.TenantId == _tenantProvider.TenantId);
-        });
-
         // XT-1 — per-device single-use enrollment tokens. Tenant-scoped like the
         // other per-tenant tables; a unique (TenantId, TokenHash) index backs the
         // O(1) lookup at registration time.
@@ -185,6 +197,8 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.HasQueryFilter(t => t.TenantId == _tenantProvider.TenantId);
         });
 
+        // MT-L1: No global query filter — TrialRequest is a platform-level entity created before
+        // a tenant exists; controller must add explicit TenantId predicates when needed.
         builder.Entity<TrialRequest>(e =>
         {
             e.Property(r => r.CompanyName).HasMaxLength(200);

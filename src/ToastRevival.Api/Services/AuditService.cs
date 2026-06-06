@@ -30,6 +30,7 @@ public class AuditService : IAuditService
             IpAddress = ipAddress,
         });
 
+        // REVIEW-2026-06-06 PERF-M1 REJECTED-by-design: per-event DB round-trip is acceptable at current audit write volume; channel-based batching is a future optimization when audit rate becomes a measured bottleneck
         await db.SaveChangesAsync();
     }
 }

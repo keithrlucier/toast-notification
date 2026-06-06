@@ -5,8 +5,7 @@ namespace ToastRevival.Api.Services;
 
 public class BillingConfigService : IBillingConfigService
 {
-    private static readonly object FileLock = new();
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    // ARCH-L1: FileLock and JsonOptions are now shared via LocalSettingsStore.
 
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
@@ -57,12 +56,12 @@ public class BillingConfigService : IBillingConfigService
         if (webhookSecret is not null && !webhookSecret.Trim().StartsWith("whsec_", StringComparison.Ordinal))
             throw new ArgumentException("Stripe webhook secrets start with whsec_.");
 
-        lock (FileLock)
+        lock (LocalSettingsStore.FileLock)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var path = LocalSettingsPath();
-            var root = ReadOrCreateRoot(path);
+            var root = LocalSettingsStore.ReadOrCreateRoot(path);
 
             if (root["Stripe"] is not JsonObject stripe)
             {
@@ -74,7 +73,7 @@ public class BillingConfigService : IBillingConfigService
             if (webhookSecret   is not null) stripe["WebhookSecret"]   = webhookSecret.Trim();
             if (perDevicePriceId is not null) stripe["PerDevicePriceId"] = perDevicePriceId.Trim();
 
-            File.WriteAllText(path, root.ToJsonString(JsonOptions) + Environment.NewLine);
+            LocalSettingsStore.WriteRoot(path, root);
 
             if (_config is IConfigurationRoot configRoot)
                 configRoot.Reload();
@@ -89,15 +88,6 @@ public class BillingConfigService : IBillingConfigService
 
     private string LocalSettingsPath() =>
         Path.Combine(_env.ContentRootPath, "appsettings.Local.json");
-
-    private static JsonObject ReadOrCreateRoot(string path)
-    {
-        if (!File.Exists(path)) return new JsonObject();
-        var text = File.ReadAllText(path);
-        if (string.IsNullOrWhiteSpace(text)) return new JsonObject();
-        return JsonNode.Parse(text) as JsonObject
-            ?? throw new InvalidOperationException("appsettings.Local.json must be a JSON object.");
-    }
 
     private static void ValidatePriceId(string priceId)
     {

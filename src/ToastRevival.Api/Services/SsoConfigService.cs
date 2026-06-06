@@ -15,8 +15,7 @@ namespace ToastRevival.Api.Services;
 public class SsoConfigService : ISsoConfigService
 {
     private const string ClearSentinel = "__clear__";
-    private static readonly object FileLock = new();
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    // ARCH-L1: FileLock and JsonOptions are now shared via LocalSettingsStore.
 
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
@@ -43,12 +42,12 @@ public class SsoConfigService : ISsoConfigService
 
     public Task<SsoConfigSnapshot> UpdateAsync(bool? enabled, string? clientId, string? clientSecret, CancellationToken ct = default)
     {
-        lock (FileLock)
+        lock (LocalSettingsStore.FileLock)
         {
             ct.ThrowIfCancellationRequested();
 
             var path = Path.Combine(_env.ContentRootPath, "appsettings.Local.json");
-            var root = ReadOrCreateRoot(path);
+            var root = LocalSettingsStore.ReadOrCreateRoot(path);
 
             if (root["Sso"] is not JsonObject sso)
             {
@@ -76,7 +75,7 @@ public class SsoConfigService : ISsoConfigService
             else if (!string.IsNullOrWhiteSpace(clientSecret))
                 ms["ClientSecret"] = clientSecret.Trim();
 
-            File.WriteAllText(path, root.ToJsonString(JsonOptions) + Environment.NewLine);
+            LocalSettingsStore.WriteRoot(path, root);
 
             if (_config is IConfigurationRoot configRoot)
                 configRoot.Reload();
@@ -85,15 +84,6 @@ public class SsoConfigService : ISsoConfigService
         }
 
         return Task.FromResult(GetSnapshot());
-    }
-
-    private static JsonObject ReadOrCreateRoot(string path)
-    {
-        if (!File.Exists(path)) return new JsonObject();
-        var text = File.ReadAllText(path);
-        if (string.IsNullOrWhiteSpace(text)) return new JsonObject();
-        return JsonNode.Parse(text) as JsonObject
-            ?? throw new InvalidOperationException("appsettings.Local.json must be a JSON object.");
     }
 
     private static string Mask(string value)

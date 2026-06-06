@@ -302,10 +302,14 @@ try {
     # === 8. Push (URL-embedded PAT, never written to disk) ===
     Write-Host "==> Pushing main + $Tag to $PublicRepoUrl"
     $pushUrl = $PublicRepoUrl -replace 'https://', "https://x-access-token:$Pat@"
-    git -C $publicRoot push $pushUrl main
-    if ($LASTEXITCODE -ne 0) { throw "git push (branch) failed" }
-    git -C $publicRoot push $pushUrl --tags
-    if ($LASTEXITCODE -ne 0) { throw "git push (tags) failed" }
+    $prevPush = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
+    git -C $publicRoot push $pushUrl main 2>$null
+    $pushBranchEc = $LASTEXITCODE
+    git -C $publicRoot push $pushUrl --tags 2>$null
+    $pushTagsEc = $LASTEXITCODE
+    $ErrorActionPreference = $prevPush
+    if ($pushBranchEc -ne 0) { throw "git push (branch) failed (exit $pushBranchEc)" }
+    if ($pushTagsEc -ne 0) { throw "git push (tags) failed (exit $pushTagsEc)" }
 
     Write-Host ""
     Write-Host "==> Public mirror release $Tag complete." -ForegroundColor Green

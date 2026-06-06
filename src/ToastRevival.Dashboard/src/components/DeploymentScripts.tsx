@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../api/client';
-
-interface TenantSettingsLite {
-  enrollmentKey: string | null;
-}
+import { getEnrollmentKey } from '../api/tenantSettings';
 
 function triggerDownload(filename: string, content: string) {
   const blob = new Blob([content], { type: 'application/octet-stream' });
@@ -60,13 +56,7 @@ export default function DeploymentScripts() {
       const tmplRes = await fetch('/downloads/install-toast-agent.template.ps1');
       if (!tmplRes.ok) throw new Error(`Template fetch failed (HTTP ${tmplRes.status})`);
       const tmpl = await tmplRes.text();
-      let enrollmentKey = '';
-      try {
-        const settings = await api.get<TenantSettingsLite>('/api/tenant/settings');
-        enrollmentKey = settings.enrollmentKey ?? '';
-      } catch {
-        enrollmentKey = '';
-      }
+      const enrollmentKey = (await getEnrollmentKey()) ?? '';
       const filled = tmpl
         .split('__TENANTID__').join(tenantId)
         .split('__SERVERURL__').join(serverUrl)

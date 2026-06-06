@@ -60,10 +60,20 @@ export default function DocsIntune() {
         <li>Your tenant GUID and enrollment key from Settings → Tenant on the admin dashboard.</li>
       </ul>
 
-      <h3 id="win32-wrap">Step 1 — Wrap the MSI</h3>
+      <h3 id="win32-wrap">Step 1 — Get the <code>.intunewin</code> package</h3>
+      <Callout title="Download it pre-wrapped from your dashboard">
+        <p>
+          The current <code>.intunewin</code> is available directly from{' '}
+          <strong>Devices → Install agent</strong> on the admin dashboard, in the{' '}
+          <strong>Intune — Win32 app</strong> card. The install command, uninstall command, and detection rule
+          on that card are pre-filled with your tenant&apos;s values — copy them straight into the wizard and
+          skip the manual wrap below.
+        </p>
+      </Callout>
       <p>
-        Run IntuneWinAppUtil to package the MSI as a <code>.intunewin</code> file. Place the MSI in a dedicated
-        folder (e.g. <code>C:\IntuneSource</code>) and point the output to a separate folder.
+        Prefer to wrap it yourself (for example to pin a specific version)? Run IntuneWinAppUtil to package the
+        signed MSI as a <code>.intunewin</code> file. Place the MSI in a dedicated folder (e.g.{' '}
+        <code>C:\IntuneSource</code>) and point the output to a separate folder.
       </p>
       <CodeBlock
         language="powershell"

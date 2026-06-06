@@ -498,6 +498,48 @@ public class DevicesController : ControllerBase
     }
 
     /// <summary>
+    /// Metadata for the pre-wrapped Intune Win32 package (.intunewin) served
+    /// statically at /downloads/ (alongside the MSI). The admin Install Agent page
+    /// shows a Download button plus version/size/last-modified, and hides the
+    /// button when the file is not present (Downloads:RootPath not yet populated).
+    /// Anonymous and read-only — the package is identical for every tenant and
+    /// carries no secrets; the per-tenant values live in the install command the
+    /// dashboard builds from the authenticated tenant's settings.
+    /// </summary>
+    [HttpGet("/api/agent/intunewin-info")]
+    [AllowAnonymous]
+    public IActionResult GetIntuneWinInfo()
+    {
+        const string fileName = "ToastNotification.intunewin";
+        // Relative URL by default so the download is same-origin (works with the
+        // browser's download attribute on any deployment host).
+        var url     = _config["Agent:IntuneWinUrl"] ?? "/downloads/" + fileName;
+        var version = _config["Agent:LatestVersion"];
+        var root    = _config["Downloads:RootPath"] ?? "/opt/toast/downloads";
+        var path    = System.IO.Path.Combine(root, fileName);
+
+        DateTime? lastModifiedUtc = null;
+        long sizeBytes = 0;
+        bool available = false;
+        try
+        {
+            if (System.IO.File.Exists(path))
+            {
+                var fi = new System.IO.FileInfo(path);
+                lastModifiedUtc = fi.LastWriteTimeUtc;
+                sizeBytes       = fi.Length;
+                available       = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "intunewin-info: could not stat {Path}", path);
+        }
+
+        return Ok(new { url, version, available, lastModifiedUtc, sizeBytes });
+    }
+
+    /// <summary>
     /// Decommissions a device AND pushes "UninstallAgent" to it via the SignalR hub
     /// if it is currently connected. The agent restores the lock screen, writes the
     /// uninstall trigger file, and fires the SYSTEM updater task which runs

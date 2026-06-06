@@ -1,21 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../api/client';
-
-interface TenantSettingsLite {
-  enrollmentKey: string | null;
-}
-
-let _enrollmentKeyCache: Promise<string | null> | null = null;
-
-function getEnrollmentKey(): Promise<string | null> {
-  if (!_enrollmentKeyCache) {
-    _enrollmentKeyCache = api.get<TenantSettingsLite>('/api/tenant/settings')
-      .then(res => res.enrollmentKey ?? null)
-      .catch(() => null);
-  }
-  return _enrollmentKeyCache;
-}
+import { getEnrollmentKey } from '../api/tenantSettings';
 
 export default function DeployCommand() {
   const { user } = useAuth();

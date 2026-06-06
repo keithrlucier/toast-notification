@@ -5,7 +5,7 @@ import {
   FeatureCloudArrow,
   FeatureLockKey,
 } from '../../components/marketing/FeatureIcons';
-import { useSeo, softwareApplicationLd } from '../../lib/seo';
+import { useSeo, softwareApplicationLd, organizationLd, websiteLd } from '../../lib/seo';
 
 const USE_CASES = [
   {
@@ -32,7 +32,7 @@ export default function Home() {
     description:
       'Toast Notification sends branded, signed, trackable Windows toast notifications for MSPs and IT teams, plus dashboard-managed desktop info overlays and device lock screen branding — no login scripts or GPO.',
     path: '/',
-    jsonLd: softwareApplicationLd(),
+    jsonLd: [softwareApplicationLd(), organizationLd(), websiteLd()],
   });
 
   return (

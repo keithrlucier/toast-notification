@@ -193,12 +193,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(u);
   };
 
-  const register = async (tenantName: string, email: string, password: string) => {
-    const res = await authApi.register({ tenantName, email, password });
-    const u = userFromResponse(res);
-    localStorage.setItem('token', res.token);
-    localStorage.setItem('user', JSON.stringify(u));
-    setUser(u);
+  // DC-M2: register endpoint returns 410 Gone — direct registration is disabled.
+  const register = (_tenantName: string, _email: string, _password: string): Promise<void> => {
+    throw new Error('Direct registration is disabled');
   };
 
   const logout = () => clearSession();

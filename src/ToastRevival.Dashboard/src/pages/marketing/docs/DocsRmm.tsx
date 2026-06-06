@@ -8,12 +8,15 @@ export default function DocsRmm() {
     description:
       'Silent MSI install of the Toast Notification agent through NinjaOne, Datto, ConnectWise Automate, Atera, and any RMM that supports msiexec.',
     path: '/docs/deploy/rmm',
+    ogType: 'article',
     jsonLd: [
       techArticleLd({
         headline: 'RMM silent install',
         description:
           'Silent MSI install with CLIENTID, SERVERURL, and ENROLLMENTKEY properties. Tested with NinjaOne, Datto, ConnectWise Automate, and Atera.',
         path: '/docs/deploy/rmm',
+        datePublished: '2026-05-12',
+        dateModified: '2026-05-12',
       }),
       breadcrumbLd([
         { name: 'Home', path: '/' },

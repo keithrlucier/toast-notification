@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown } from '../../components/marketing/FeatureIcons';
-import { useSeo, breadcrumbLd } from '../../lib/seo';
+import { useSeo, breadcrumbLd, faqLd, pricingProductLd } from '../../lib/seo';
 
 const TIERS = [
   {
@@ -171,6 +171,8 @@ export default function Pricing() {
         { name: 'Home', path: '/' },
         { name: 'Pricing', path: '/pricing' },
       ]),
+      faqLd(FAQ),
+      pricingProductLd(),
     ],
   });
 

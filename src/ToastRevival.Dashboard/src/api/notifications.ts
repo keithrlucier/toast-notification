@@ -89,8 +89,11 @@ export function parseButtons(json: string | null | undefined): ActionButton[] | 
 }
 
 export const notificationsApi = {
-  list: (page = 1, pageSize = 25) =>
-    api.get<NotificationHistoryItem[]>(`/api/notifications?page=${page}&pageSize=${pageSize}`),
+  list: (page = 1, pageSize = 25, search?: string) => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) params.set('search', search);
+    return api.get<NotificationHistoryItem[]>(`/api/notifications?${params.toString()}`);
+  },
 
   get: (id: string) =>
     api.get<NotificationResponse>(`/api/notifications/${id}`),

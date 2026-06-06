@@ -8,12 +8,15 @@ export default function DocsIntune() {
     description:
       'Deploy the Toast Notification agent through Microsoft Intune as a Win32 app or MSIX Line-of-Business app. Covers wrapping the MSI with IntuneWinAppUtil, install commands, detection rules, and tenant ID delivery.',
     path: '/docs/deploy/intune',
+    ogType: 'article',
     jsonLd: [
       techArticleLd({
         headline: 'Intune deployment',
         description:
           'Deploy the Toast Notification agent through Microsoft Intune as a Win32 app (recommended for MSPs) or MSIX Line-of-Business app.',
         path: '/docs/deploy/intune',
+        datePublished: '2026-05-12',
+        dateModified: '2026-05-12',
       }),
       breadcrumbLd([
         { name: 'Home', path: '/' },

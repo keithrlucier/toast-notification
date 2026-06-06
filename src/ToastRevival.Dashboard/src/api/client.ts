@@ -4,6 +4,9 @@ export const AUTH_UNAUTHORIZED_EVENT = 'toast:auth-unauthorized';
 export const AUTH_MESSAGE_STORAGE_KEY = 'toast:auth-message';
 export const SESSION_EXPIRED_MESSAGE = 'Your session expired. Please sign in again.';
 
+// Bearer-only auth — CSRF is not a risk with this pattern since browser auto-attach
+// (cookies) is not used. Any future cookie-based auth path must add SameSite=Strict
+// or anti-CSRF tokens as a precondition. See REVIEW-2026-06-06 INJ-I1.
 export function getToken(): string | null {
   return localStorage.getItem('token');
 }

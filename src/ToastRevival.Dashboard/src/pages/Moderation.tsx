@@ -293,7 +293,6 @@ function BlocklistTab({ items, newTerm, onNewTermChange, onAdd, onRemove, adding
               <tr>
                 <th>Term</th>
                 <th>Added</th>
-                <th>Added by</th>
                 <th></th>
               </tr>
             </thead>
@@ -307,9 +306,6 @@ function BlocklistTab({ items, newTerm, onNewTermChange, onAdd, onRemove, adding
                   </td>
                   <td style={{ color: 'var(--text-dim)' }}>
                     {new Date(b.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </td>
-                  <td style={{ color: 'var(--text-dim)' }}>
-                    {b.createdByEmail ?? '—'}
                   </td>
                   <td>
                     <button

@@ -8,12 +8,15 @@ export default function DocsStore() {
     description:
       'Install the Toast Notification agent from the Microsoft Store. Best for individual users, BYOD endpoints, and quick proof-of-concept rollouts.',
     path: '/docs/deploy/store',
+    ogType: 'article',
     jsonLd: [
       techArticleLd({
         headline: 'Microsoft Store deployment',
         description:
           'Install the signed MSIX from the Microsoft Store. Lowest-friction path for individual users and BYOD endpoints.',
         path: '/docs/deploy/store',
+        datePublished: '2026-05-12',
+        dateModified: '2026-05-12',
       }),
       breadcrumbLd([
         { name: 'Home', path: '/' },

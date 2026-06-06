@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { devicesApi, type Device } from '../api/devices';
 import { notificationsApi, type NotificationHistoryItem } from '../api/notifications';
@@ -42,18 +42,18 @@ export default function Dashboard() {
 
   const online       = devices.filter(d => d.isOnline).length;
   const offline      = devices.length - online;
-  const sent7d       = notifications.filter(n => {
-    const age = Date.now() - new Date(n.createdAt).getTime();
-    return age < 7 * 86400 * 1000;
-  }).length;
+  const sent7d = useMemo(
+    () => notifications.filter(n => Date.now() - new Date(n.createdAt).getTime() < 7 * 86400 * 1000).length,
+    [notifications],
+  );
 
-  const deliveryRate = (() => {
+  const deliveryRate = useMemo(() => {
     const relevant = notifications.filter(n => n.targetDeviceCount > 0);
     if (!relevant.length) return null;
     const total = relevant.reduce((s, n) => s + n.targetDeviceCount, 0);
     const delivered = relevant.reduce((s, n) => s + n.deliveredCount, 0);
     return Math.round((delivered / total) * 100);
-  })();
+  }, [notifications]);
 
   if (loading) {
     return (

@@ -8,12 +8,15 @@ export default function DocsModeration() {
     description:
       'How Toast Notification scans outgoing notifications, configures per-tenant moderation policy, and handles the admin approval queue.',
     path: '/docs/moderation',
+    ogType: 'article',
     jsonLd: [
       techArticleLd({
         headline: 'Content moderation in Toast Notification',
         description:
           'Configure per-tenant scanning thresholds, custom blocklist terms, Azure Content Safety credentials, and the admin approval queue.',
         path: '/docs/moderation',
+        datePublished: '2026-05-12',
+        dateModified: '2026-05-12',
       }),
       breadcrumbLd([
         { name: 'Home', path: '/' },

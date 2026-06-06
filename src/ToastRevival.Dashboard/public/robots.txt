@@ -2,16 +2,10 @@
 # Marketing surfaces are public and crawlable. The authenticated dashboard,
 # the API, and the SignalR hub are private and must not be indexed.
 
+# AI training opt-out: /.well-known/tdmrep.json
+
 User-agent: *
 Allow: /
-Allow: /pricing
-Allow: /security
-Allow: /docs
-Allow: /llms
-Allow: /llms.txt
-Allow: /sitemap.xml
-Allow: /og-card.png
-Allow: /favicon.svg
 
 # Auth surfaces — login forms render no content of value to a search index.
 Disallow: /login
@@ -36,10 +30,5 @@ Disallow: /settings/
 # Backend surfaces. Always 401/404 to anon, but excluded for crawler hygiene.
 Disallow: /api/
 Disallow: /hubs/
-
-# Content Signals Policy for automated clients.
-# Public marketing and documentation content may be used for search and AI
-# answers with attribution. Public content may not be used for AI training.
-Content-Signal: search=yes, ai-input=yes, ai-train=no
 
 Sitemap: https://toastnotification.com/sitemap.xml

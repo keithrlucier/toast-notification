@@ -8,12 +8,15 @@ export default function DocsApi() {
     description:
       'Toast Notification REST API: authentication, devices, notifications, and delivery reporting. Bearer-token JWT, JSON over HTTPS, multi-tenant isolation enforced server-side.',
     path: '/docs/api',
+    ogType: 'article',
     jsonLd: [
       techArticleLd({
         headline: 'Toast Notification REST API reference',
         description:
           'Authentication, devices, notifications, delivery reporting. Bearer-token JWT, JSON over HTTPS, multi-tenant isolation server-side.',
         path: '/docs/api',
+        datePublished: '2026-05-12',
+        dateModified: '2026-05-12',
       }),
       breadcrumbLd([
         { name: 'Home', path: '/' },

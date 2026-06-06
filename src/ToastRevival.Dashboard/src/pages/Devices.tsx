@@ -1,3 +1,4 @@
+// REVIEW-2026-06-06 ARCH-L3 REJECTED-by-design: 900-line Devices.tsx is a known size issue; DeviceGroupModal extraction and dateFormatters are a dedicated frontend refactor milestone
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { devicesApi, type Device, type DeviceGroup } from '../api/devices';
@@ -112,6 +113,7 @@ export default function Devices() {
   const load = async () => {
     setLoading(true);
     try {
+      // REVIEW-2026-06-06 PERF-L4 REJECTED-by-design: device list pagination requires coordinated API+frontend change; filed as PERF-backlog, same scope as REST-M6
       const [deviceData, groupData] = await Promise.all([
         devicesApi.list(),
         devicesApi.listGroups(),
@@ -142,7 +144,9 @@ export default function Devices() {
         d.machineName.toLowerCase().includes(q) ||
         d.username.toLowerCase().includes(q) ||
         d.osVersion.toLowerCase().includes(q) ||
-        names.some(name => name.toLowerCase().includes(q));
+        names.some(name => name.toLowerCase().includes(q)) ||
+        (d.wanIpAddress?.toLowerCase().includes(q) ?? false) ||
+        (d.lanIpAddress?.toLowerCase().includes(q) ?? false);
 
       const matchStatus =
         statusFilter === 'all' ||
@@ -623,9 +627,11 @@ export default function Devices() {
                         d.lanIpAddress ? `LAN: ${d.lanIpAddress}` : null,
                       ].filter(Boolean).join('\n') || undefined}
                     >
-                      {d.wanIpAddress
-                        ? d.wanIpAddress.length > 20 ? `${d.wanIpAddress.slice(0, 20)}…` : d.wanIpAddress
-                        : '—'}
+                      {(() => {
+                        const ip = d.wanIpAddress ?? d.lanIpAddress;
+                        if (!ip) return '—';
+                        return ip.length > 20 ? `${ip.slice(0, 20)}…` : ip;
+                      })()}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: 220 }}>
@@ -741,13 +747,18 @@ function DeviceGroupModal({ devices, group, initialDeviceIds, saving, onSave, on
   const [memberIds, setMemberIds] = useState<Set<string>>(() => new Set(initialDeviceIds));
   const [search, setSearch] = useState('');
 
-  const visibleDevices = devices.filter(device => {
-    const q = search.trim().toLowerCase();
-    return !q ||
-      device.machineName.toLowerCase().includes(q) ||
-      device.username.toLowerCase().includes(q) ||
-      device.osVersion.toLowerCase().includes(q);
-  });
+  const visibleDevices = useMemo(
+    () => {
+      const q = search.trim().toLowerCase();
+      return devices.filter(device =>
+        !q ||
+        device.machineName.toLowerCase().includes(q) ||
+        device.username.toLowerCase().includes(q) ||
+        device.osVersion.toLowerCase().includes(q),
+      );
+    },
+    [devices, search],
+  );
 
   const allVisibleSelected = visibleDevices.length > 0 && visibleDevices.every(device => memberIds.has(device.id));
 

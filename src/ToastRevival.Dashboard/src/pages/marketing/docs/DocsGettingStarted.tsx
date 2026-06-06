@@ -8,12 +8,15 @@ export default function DocsGettingStarted() {
     description:
       'Request trial access, install the Windows agent after approval, send your first toast notification, and configure device appearance — desktop info overlay and lock screen branding.',
     path: '/docs/getting-started',
+    ogType: 'article',
     jsonLd: [
       techArticleLd({
         headline: 'Getting started with Toast Notification',
         description:
           'From approved trial to first delivered notification in four steps: set password, open install values, install agent, send notification.',
         path: '/docs/getting-started',
+        datePublished: '2026-05-27',
+        dateModified: '2026-05-27',
       }),
       breadcrumbLd([
         { name: 'Home', path: '/' },

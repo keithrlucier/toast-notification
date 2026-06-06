@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import React from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DOCS_PATHS } from './routes/docsRoutes';
@@ -20,7 +21,6 @@ import Compose from './pages/Compose';
 import History from './pages/History';
 import Moderation from './pages/Moderation';
 import Users from './pages/Users';
-import Analytics from './pages/Analytics';
 import TenantSettings from './pages/TenantSettings';
 import Assets from './pages/Assets';
 import AuditLog from './pages/AuditLog';
@@ -31,8 +31,10 @@ import PlatformTenants from './pages/PlatformTenants';
 import PlatformTenantDetail from './pages/PlatformTenantDetail';
 import PlatformUsers from './pages/PlatformUsers';
 
-// Marketing chunks — lazy so the dashboard bundle doesn't pull in the marketing CSS / pages
+// Lazy-loaded chunks — Analytics is split to keep the initial dashboard bundle lean;
+// marketing chunks are lazy so the dashboard bundle doesn't pull in marketing CSS/pages
 // for already-authenticated users, and the public marketing bundle doesn't pull in Recharts.
+const Analytics = React.lazy(() => import('./pages/Analytics'));
 const MarketingLayout = lazy(() => import('./components/marketing/MarketingLayout'));
 const Home = lazy(() => import('./pages/marketing/Home'));
 const Pricing = lazy(() => import('./pages/marketing/Pricing'));
@@ -48,6 +50,20 @@ const Security = lazy(() => import('./pages/marketing/Security'));
 const Llms = lazy(() => import('./pages/marketing/Llms'));
 const Privacy = lazy(() => import('./pages/marketing/legal/Privacy'));
 const Terms = lazy(() => import('./pages/marketing/legal/Terms'));
+
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean}> {
+  constructor(props: {children: React.ReactNode}) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) return (
+      <div style={{padding: '2rem', textAlign: 'center'}}>
+        <h2>Something went wrong.</h2>
+        <button onClick={() => window.location.reload()}>Refresh</button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
 
 function MarketingFallback() {
   return (
@@ -136,7 +152,7 @@ const router = createBrowserRouter([
     ),
     children: [
       { path: '/dashboard',   element: <Dashboard /> },
-      { path: '/analytics',   element: <Analytics /> },
+      { path: '/analytics',   element: <Suspense fallback={<div>Loading...</div>}><Analytics /></Suspense> },
       { path: '/devices',     element: <Devices /> },
       {
         path: '/devices/install',
@@ -230,8 +246,10 @@ const router = createBrowserRouter([
 
 export default function App() {
   return (
-    <AuthProvider>
-      <RouterProvider router={router} />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

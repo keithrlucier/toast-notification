@@ -96,10 +96,10 @@ export default function History() {
 
   const PAGE_SIZE = 25;
 
-  const load = async (p: number) => {
+  const load = async (p: number, q?: string) => {
     setLoading(true);
     try {
-      const data = await notificationsApi.list(p, PAGE_SIZE);
+      const data = await notificationsApi.list(p, PAGE_SIZE, q ?? search);
       setNotifications(data);
       setPage(p);
     } catch (err) {
@@ -111,11 +111,12 @@ export default function History() {
 
   useEffect(() => { void load(1); }, []);
 
-  const filtered = notifications.filter(n =>
-    !search ||
-    n.title.toLowerCase().includes(search.toLowerCase()) ||
-    n.status.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    void load(1, value);
+  };
+
+  const filtered = notifications;
 
   return (
     <div>
@@ -140,7 +141,7 @@ export default function History() {
           type="search"
           placeholder="Search by title or status..."
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => handleSearchChange(e.target.value)}
           style={{
             width: '100%',
             background: 'var(--bg-secondary)',

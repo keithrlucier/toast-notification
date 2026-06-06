@@ -1,3 +1,4 @@
+// REVIEW-2026-06-06 ARCH-M5 REJECTED-by-design: 1053-line Compose.tsx is a known size issue; AssetPickerModal and MultiSelectList extraction are a dedicated frontend refactor milestone
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { notificationsApi, type SendNotificationRequest, type ActionButton, type TemplateDbRecord, type SaveTemplateRequest } from '../api/notifications';
@@ -137,6 +138,7 @@ export default function Compose() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); }, []);
 
+  // REVIEW-2026-06-06 PERF-L7 REJECTED-by-design: Compose mount re-fetches are intentional to ensure freshness after navigation away; SWR/React Query caching is a frontend optimization milestone
   useEffect(() => {
     void devicesApi.list().then(setDevices).catch(() => {});
     void devicesApi.listGroups().then(setGroups).catch(() => {});
@@ -194,7 +196,7 @@ export default function Compose() {
     setError('');
     try {
       const result = await notificationsApi.send(buildRequest());
-      setSuccess(`Notification sent (ID: ${result.id.slice(0, 8)}…). Status: ${result.status}`);
+      setSuccess(`Notification queued for delivery (ID: ${result.id.slice(0, 8)}…). Status: ${result.status}`);
       setTimeout(() => navigate('/history'), 2000);
     } catch (err) {
       // Tenant-wide MFA enforcement: the send was rejected pending a step-up. Show

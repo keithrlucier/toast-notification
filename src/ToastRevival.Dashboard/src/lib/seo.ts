@@ -15,6 +15,8 @@ export interface SeoOptions {
   path: string;
   /** Optional OG/Twitter image absolute URL. Defaults to /og-card.png. */
   image?: string;
+  /** Alt text for og:image and twitter:image. Defaults to the page title. */
+  imageAlt?: string;
   /** Append " - Toast Notification" to the title. Defaults to true; pass false when the page already includes the brand. */
   appendSiteName?: boolean;
   /** og:type. Defaults to "website". */
@@ -66,6 +68,7 @@ export function useSeo(options: SeoOptions) {
     description,
     path,
     image = DEFAULT_OG_IMAGE,
+    imageAlt,
     appendSiteName = true,
     ogType = 'website',
     jsonLd,
@@ -87,11 +90,17 @@ export function useSeo(options: SeoOptions) {
     ensureMeta('meta[property="og:site_name"]', 'property', 'og:site_name').setAttribute('content', SITE_NAME);
     ensureMeta('meta[property="og:image"]', 'property', 'og:image').setAttribute('content', image);
 
+    const resolvedImageAlt = imageAlt ?? fullTitle;
+    ensureMeta('meta[property="og:image:alt"]', 'property', 'og:image:alt').setAttribute('content', resolvedImageAlt);
+
     ensureMeta('meta[name="twitter:card"]', 'name', 'twitter:card').setAttribute('content', 'summary_large_image');
     ensureMeta('meta[name="twitter:title"]', 'name', 'twitter:title').setAttribute('content', fullTitle);
     ensureMeta('meta[name="twitter:description"]', 'name', 'twitter:description').setAttribute('content', description);
     ensureMeta('meta[name="twitter:image"]', 'name', 'twitter:image').setAttribute('content', image);
+    ensureMeta('meta[name="twitter:image:alt"]', 'name', 'twitter:image:alt').setAttribute('content', resolvedImageAlt);
     ensureMeta('meta[name="twitter:url"]', 'name', 'twitter:url').setAttribute('content', url);
+    ensureMeta('meta[name="twitter:site"]', 'name', 'twitter:site').setAttribute('content', '@Toast2IT');
+    ensureMeta('meta[name="twitter:creator"]', 'name', 'twitter:creator').setAttribute('content', '@Toast2IT');
 
     let script: HTMLScriptElement | null = null;
     if (jsonLd) {
@@ -109,7 +118,7 @@ export function useSeo(options: SeoOptions) {
       const existing = document.getElementById(JSONLD_SCRIPT_ID);
       if (existing) existing.remove();
     };
-  }, [title, description, path, image, appendSiteName, ogType, jsonLd]);
+  }, [title, description, path, image, imageAlt, appendSiteName, ogType, jsonLd]);
 }
 
 /** Helpers for common JSON-LD shapes. */
@@ -206,10 +215,13 @@ export function pricingProductLd(): Record<string, unknown> {
   };
 }
 
+// REVIEW-2026-06-06 SEO-L8 REJECTED-by-design: machine-readable OpenAPI spec requires authoring the full specification; linked to REST-M1 and DEVOPS-H4 CI pipeline milestone for automatic generation
 export function techArticleLd(opts: {
   headline: string;
   description: string;
   path: string;
+  datePublished?: string;
+  dateModified?: string;
 }): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
@@ -218,6 +230,10 @@ export function techArticleLd(opts: {
     description: opts.description,
     inLanguage: 'en',
     url: publicUrl(opts.path),
+    ...(opts.datePublished && { datePublished: opts.datePublished }),
+    ...(opts.dateModified || opts.datePublished
+      ? { dateModified: opts.dateModified ?? opts.datePublished }
+      : {}),
     isPartOf: {
       '@type': 'WebSite',
       name: SITE_NAME,
@@ -228,6 +244,42 @@ export function techArticleLd(opts: {
       name: 'Toast2IT, LLC',
       url: SITE_URL,
     },
+  };
+}
+
+export function websiteLd(): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: SITE_NAME,
+    alternateName: 'Toast2IT',
+    url: SITE_URL,
+  };
+}
+
+export function organizationLd(): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: 'Toast2IT LLC',
+    url: SITE_URL,
+    logo: { '@type': 'ImageObject', url: `${SITE_URL}/logo.png` },
+    sameAs: ['https://github.com/keithrlucier/toast-notification'],
+  };
+}
+
+export function faqLd(items: Array<{ q: string; a: string }>): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map(item => ({
+      '@type': 'Question',
+      name: item.q,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: item.a,
+      },
+    })),
   };
 }
 

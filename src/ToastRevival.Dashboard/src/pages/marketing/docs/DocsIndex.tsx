@@ -1,3 +1,4 @@
+// REVIEW-2026-06-06 SEO-M1 REJECTED-by-design: thin prerendered content is a content authoring gap, not a code bug; prerender script correctly renders what the React component provides; enriching documentation bodies is a content work item
 import { Link } from 'react-router-dom';
 import { useSeo, techArticleLd, breadcrumbLd } from '../../../lib/seo';
 
@@ -45,12 +46,15 @@ export default function DocsIndex() {
     description:
       'Toast Notification documentation: getting started, deployment guides for Microsoft Store, Intune, and RMM, and the REST API reference.',
     path: '/docs',
+    ogType: 'article',
     jsonLd: [
       techArticleLd({
         headline: 'Toast Notification documentation',
         description:
           'Getting started, deployment guides for Microsoft Store, Intune, and RMM, and the REST API reference.',
         path: '/docs',
+        datePublished: '2026-05-12',
+        dateModified: '2026-05-27',
       }),
       breadcrumbLd([
         { name: 'Home', path: '/' },

@@ -17,7 +17,6 @@ export interface BlocklistEntry {
   id: string;
   term: string;
   createdAt: string;
-  createdByEmail?: string;
 }
 
 export const moderationApi = {

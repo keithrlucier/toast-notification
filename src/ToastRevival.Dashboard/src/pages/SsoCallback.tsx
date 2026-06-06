@@ -25,7 +25,7 @@ export default function SsoCallback() {
 
     // Clear the fragment so the token isn't left sitting in the address bar /
     // history once we navigate.
-    window.history.replaceState(null, '', window.location.pathname);
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
 
     if (token && setSessionFromToken(token)) {
       navigate('/dashboard', { replace: true });

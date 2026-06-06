@@ -70,6 +70,7 @@ function isRecentlyOnline(status: string | undefined, lastSeen: string | null): 
   return Date.now() - seenAt <= 45 * 60 * 1000;
 }
 
+// REVIEW-2026-06-06 REST-L6 REJECTED-by-design: the machineName/lastPing normalizer works correctly and the 70-line translation layer is the safe consolidation boundary; removing the aliases is a breaking refactor requiring coordinated API+client change
 function normalizeDevice(raw: DeviceApiResponse): Device {
   const lastSeen = raw.lastSeen ?? raw.lastPing ?? null;
   const machineName = raw.machineName ?? raw.deviceName ?? 'Unknown device';

@@ -685,6 +685,9 @@ internal static class SelfUpdateService
         }
     }
 
+    private const uint WTD_REVOKE_NONE       = 0;
+    private const uint WTD_REVOKE_WHOLECHAIN = 0x00000002;
+
     private static uint WinVerifyTrustResult(string filePath)
     {
         var actionId = new Guid("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
@@ -703,7 +706,7 @@ internal static class SelfUpdateService
             pPolicyCallbackData = IntPtr.Zero,
             pSIPClientData      = IntPtr.Zero,
             dwUIChoice          = 2,
-            fdwRevocationChecks = 0,
+            fdwRevocationChecks = WTD_REVOKE_WHOLECHAIN, // WSEC-H1: check full chain revocation
             dwUnionChoice       = 1,
             pFile               = filePtr,
             dwStateAction       = 1,

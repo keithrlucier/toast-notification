@@ -1,3 +1,8 @@
+# UPDATE FEED URL: Hardcoded to https://releases.toastnotification.com/agent/win-x64/
+# Self-hosted deployments: Override by setting TOAST_UPDATE_FEED_URL environment variable
+# or by passing -FeedUrl parameter (add parameter to this script if needed).
+# Registry override: HKLM:\SOFTWARE\Toast2IT\UpdateFeedUrl (read by UpdateService.GetFeedUrl)
+
 # Build a Velopack release package for the MSI/RMM auto-update channel.
 #
 # Prerequisites (run once):

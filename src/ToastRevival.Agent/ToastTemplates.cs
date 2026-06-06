@@ -440,6 +440,15 @@ internal static class ToastTemplateBuilder
         return Enum.TryParse(value, ignoreCase: true, out scenario);
     }
 
+    // WSEC-L1: Allowlist for ms-winsoundevent URIs. Only well-known OS event prefixes
+    // are accepted; arbitrary event names could reference undocumented Windows sound APIs.
+    private static readonly string[] AllowedSoundEventPrefixes = [
+        "ms-winsoundevent:Notification.",
+        "ms-winsoundevent:Alarm.",
+        "ms-winsoundevent:Reminder.",
+        "ms-winsoundevent:Call.",
+    ];
+
     private static void ApplyAudio(AppNotificationBuilder builder, string? audioSetting)
     {
         if (string.IsNullOrWhiteSpace(audioSetting)) return;
@@ -457,6 +466,12 @@ internal static class ToastTemplateBuilder
         if (Uri.TryCreate(audioSetting, UriKind.Absolute, out var uri)
             && (uri.Scheme is "http" or "https" or "ms-winsoundevent"))
         {
+            // WSEC-L1: For ms-winsoundevent URIs, restrict to the known OS event prefixes.
+            if (uri.Scheme is "ms-winsoundevent")
+            {
+                if (!AllowedSoundEventPrefixes.Any(p => audioSetting.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+                    throw new ArgumentException($"Unrecognized ms-winsoundevent URI: {audioSetting}");
+            }
             builder.SetAudioUri(uri);
             return;
         }

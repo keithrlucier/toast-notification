@@ -264,6 +264,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
 
         var hubUrl = new Uri(new Uri(config.ServerUrl), "/hubs/notifications").ToString();
 
+        // REVIEW-2026-06-06 WSEC-M4 REJECTED-by-design: certificate pinning intentionally omitted; Toast agent is deployed in MSP environments where corporate SSL inspection proxies (Zscaler, Palo Alto, etc.) with custom trusted root CAs are standard infrastructure; pinning would prevent agent operation behind standard MSP security tooling
         _hub = new HubConnectionBuilder()
             .WithUrl(hubUrl, opts =>
             {
@@ -750,6 +751,7 @@ internal static class InteractionFallback
 
 internal static class ToastUrlLauncher
 {
+    // REVIEW-2026-06-06 WSEC-M5 REJECTED-by-design: action button URLs are HMAC-signed by the server before delivery; scheme restriction to http/https is the appropriate guard; UseShellExecute=true for http/https-only URLs opens only what the Windows default browser would open; per-tenant hostname allowlist requires UX-breaking admin configuration not warranted by the HMAC-signed threat model
     public static bool OpenIfAllowed(string? encodedUrl)
     {
         if (string.IsNullOrWhiteSpace(encodedUrl)) return false;

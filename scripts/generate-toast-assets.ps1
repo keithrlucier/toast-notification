@@ -1,3 +1,8 @@
+# ONE-TIME BOOTSTRAP SCRIPT — No longer called by any build pipeline.
+# Last known use: initial asset generation (date unknown).
+# Safe to delete if toast agent assets are committed to the repo.
+# See Docs/Assets/ for the committed brand PNGs.
+
 [CmdletBinding()]
 param(
     [string] $OutputDir

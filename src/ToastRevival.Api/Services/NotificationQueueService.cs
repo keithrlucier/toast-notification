@@ -18,8 +18,17 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
     /// </summary>
     private static readonly TimeSpan OrphanThreshold = TimeSpan.FromMinutes(5);
 
-    private readonly Channel<Guid> _channel = Channel.CreateUnbounded<Guid>(
-        new UnboundedChannelOptions { SingleReader = true });
+    // PERF-M2: bounded channel provides backpressure — callers receive false from Enqueue()
+    // when full (capacity 10,000) and can return 503 rather than silently queueing unbounded.
+    // FullMode.Wait causes WriteAsync to back-pressure; TryWrite returns false when full,
+    // which is what Enqueue() surfaces to callers.
+    private readonly Channel<Guid> _channel = Channel.CreateBounded<Guid>(
+        new BoundedChannelOptions(10_000)
+        {
+            FullMode     = BoundedChannelFullMode.Wait,
+            SingleReader = true,
+            SingleWriter = false,
+        });
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHubContext<NotificationHub> _hub;
     private readonly ILogger<NotificationQueueService> _logger;
@@ -43,10 +52,15 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
     // a successful TryWrite; consumer decrements after a successful read.
     private int _queueDepth;
 
-    public void Enqueue(Guid notificationId)
+    // PERF-M2: returns false when channel is full so callers can respond 503.
+    public bool Enqueue(Guid notificationId)
     {
         if (_channel.Writer.TryWrite(notificationId))
+        {
             Interlocked.Increment(ref _queueDepth);
+            return true;
+        }
+        return false;
     }
 
     public int QueueDepth => Volatile.Read(ref _queueDepth);
@@ -149,25 +163,22 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var threshold = DateTime.UtcNow - OrphanThreshold;
-        var orphans = await db.Notifications
+        var cutoff = DateTime.UtcNow - OrphanThreshold;
+
+        // PERF-M3: single bulk UPDATE instead of ToListAsync + foreach to avoid
+        // materializing full entities just to set two columns.
+        var count = await db.Notifications
             .IgnoreQueryFilters()
-            .Where(n => n.Status == NotificationStatus.Sending && n.SentAt < threshold)
-            .ToListAsync(ct);
+            .Where(n => n.Status == NotificationStatus.Sending && n.SentAt < cutoff)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(n => n.Status, NotificationStatus.Failed)
+                .SetProperty(n => n.CompletedAt, DateTime.UtcNow),
+                ct);
 
-        if (orphans.Count == 0) return;
-
-        var now = DateTime.UtcNow;
-        foreach (var n in orphans)
-        {
-            n.Status = NotificationStatus.Failed;
-            n.CompletedAt = now;
-        }
-        await db.SaveChangesAsync(ct);
-
-        _logger.LogWarning(
-            "Recovered {Count} orphan Sending notification(s) older than {ThresholdMinutes}m to Failed; pending deliveries left intact for catch-up",
-            orphans.Count, OrphanThreshold.TotalMinutes);
+        if (count > 0)
+            _logger.LogWarning(
+                "Recovered {Count} orphan Sending notification(s) older than {ThresholdMinutes}m to Failed; pending deliveries left intact for catch-up",
+                count, OrphanThreshold.TotalMinutes);
     }
 
     private async Task ProcessAsync(Guid notificationId, CancellationToken ct)
@@ -213,22 +224,47 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
         int sent = 0;
         foreach (var delivery in notification.Deliveries)
         {
-            try
+            // REL-L2: retry up to 3 attempts with exponential back-off before giving up.
+            // On final failure the delivery is left as Pending (not Failed permanently)
+            // so the catch-up polling mechanism can serve it when the agent reconnects.
+            bool delivered = false;
+            Exception? lastEx = null;
+            for (int attempt = 0; attempt < 3; attempt++)
             {
-                // Send (payloadJson, signature) as separate args. Pre-serialized JSON
-                // ensures the agent verifies the exact byte sequence we signed; otherwise
-                // SignalR's transport-side serializer could produce a different encoding
-                // than the one we HMAC'd over.
-                await _hub.Clients
-                    .Group($"device-{delivery.DeviceId}")
-                    .SendAsync("ReceiveNotification", payloadJson, signature, ct);
+                try
+                {
+                    // Send (payloadJson, signature) as separate args. Pre-serialized JSON
+                    // ensures the agent verifies the exact byte sequence we signed; otherwise
+                    // SignalR's transport-side serializer could produce a different encoding
+                    // than the one we HMAC'd over.
+                    await _hub.Clients
+                        .Group($"device-{delivery.DeviceId}")
+                        .SendAsync("ReceiveNotification", payloadJson, signature, ct);
+                    delivered = true;
+                    break;
+                }
+                catch (Exception ex) when (attempt < 2)
+                {
+                    lastEx = ex;
+                    _logger.LogDebug(ex, "Transient push failure to device {DeviceId} (attempt {Attempt}/3)", delivery.DeviceId, attempt + 1);
+                    await Task.Delay(TimeSpan.FromSeconds(1 << attempt), ct);
+                }
+                catch (Exception ex)
+                {
+                    lastEx = ex;
+                }
+            }
+
+            if (delivered)
+            {
                 sent++;
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogWarning(ex, "Failed to push to device {DeviceId}", delivery.DeviceId);
-                delivery.Status = DeliveryStatus.Failed;
-                delivery.ErrorMessage = ex.Message;
+                // Leave as Pending so catch-up polling can retry on agent reconnect.
+                _logger.LogWarning(lastEx, "Failed to push to device {DeviceId} after 3 attempts — leaving Pending for catch-up", delivery.DeviceId);
+                delivery.ErrorMessage = lastEx?.Message;
+                // Status stays at its current value (not marking Failed) to enable catch-up.
             }
         }
 

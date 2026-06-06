@@ -2,7 +2,11 @@ namespace ToastRevival.Api.Services;
 
 public interface INotificationQueueService
 {
-    void Enqueue(Guid notificationId);
+    /// <summary>
+    /// Enqueues a notification for dispatch. Returns false when the channel is full
+    /// (capacity 10,000); callers should return 503 to the sender in that case.
+    /// </summary>
+    bool Enqueue(Guid notificationId);
 
     /// <summary>
     /// Current depth of the in-memory dispatch channel. Tracked via

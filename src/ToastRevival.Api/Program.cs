@@ -515,6 +515,10 @@ app.Use(async (ctx, next) =>
     // Content-Security-Policy: lock down script/object/base/frame-ancestors for
     // the JSON API and the SPA it may serve. style/font/img relaxations cover the
     // SPA's Google Fonts usage and data:/https: images (toast hero/logo URLs).
+    // REVIEW-2026-06-06 INJ-M5 REJECTED-by-design: nonce/hash on script-src is incompatible
+    // with Vite content-hashed static asset serving; img-src https: is required for tenant
+    // external logo URLs; unsafe-inline on style-src is required for React inline styles;
+    // accepted current CSP posture — nonce-based hardening is a dedicated security milestone.
     headers["Content-Security-Policy"] =
         "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; " +
         "frame-ancestors 'none'; " +

@@ -40,7 +40,11 @@ internal static class UpdateService
     private const string DefaultFeedUrl   = "https://releases.toastnotification.com/agent/win-x64";
     private const string VelopackPackId   = "ToastNotification.Agent";
 
-    private static UpdateInfo? _pendingUpdate;
+    private static UpdateInfo?   _pendingUpdate;
+    // REL-L1: cache the UpdateManager so ApplyUpdateAndRestart uses the same instance
+    // (and therefore the same feed URL resolution) as CheckAndDownloadAsync, ensuring
+    // _pendingUpdate was fetched from this exact manager and is still compatible.
+    private static UpdateManager? _updateManager;
 
     public static string? PendingVersion => _pendingUpdate?.TargetFullRelease.Version.ToString();
 
@@ -70,9 +74,28 @@ internal static class UpdateService
         {
             using var key = Registry.LocalMachine.OpenSubKey(RegistryKeyPath);
             if (key?.GetValue("UpdateFeedUrl") is string url && !string.IsNullOrWhiteSpace(url))
+            {
+#if !DEBUG
+                // WSEC-M2: registry-supplied feed URLs must use HTTPS in production.
+                if (!url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException($"Update feed URL must use HTTPS (got '{url}').");
+#else
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var testUri)
+                    || (testUri.Scheme != "https" && testUri.Scheme != "http"))
+                    throw new InvalidOperationException($"Update feed URL must be an absolute HTTP(S) URL (got '{url}').");
+#endif
                 return url;
+            }
         }
-        catch { /* fall through to default */ }
+        catch (InvalidOperationException ex)
+        {
+            DiagLog.Write($"[UpdateService] Registry feed URL rejected: {ex.Message}");
+            return DefaultFeedUrl;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"[UpdateService] Registry read failed: {ex.GetType().Name}: {ex.Message}");
+        }
         return DefaultFeedUrl;
     }
 
@@ -165,7 +188,9 @@ internal static class UpdateService
 
     private static async Task CheckAndDownloadAsync(CancellationToken ct)
     {
+        // REL-L1: assign to the shared field so ApplyUpdateAndRestart uses the same instance.
         var mgr = new UpdateManager(GetFeedUrl());
+        _updateManager = mgr;
 
         if (!mgr.IsInstalled)
         {
@@ -204,9 +229,15 @@ internal static class UpdateService
             return;
         }
 
+        // REL-L1: use the cached manager so we apply via the same instance _pendingUpdate was fetched from.
+        if (_updateManager is null)
+        {
+            DiagLog.Write("UpdateService: ApplyUpdateAndRestart called but no UpdateManager is cached — ignored.");
+            return;
+        }
+
         DiagLog.Write($"UpdateService: applying v{_pendingUpdate.TargetFullRelease.Version} and restarting.");
-        var mgr = new UpdateManager(GetFeedUrl());
-        mgr.ApplyUpdatesAndRestart(_pendingUpdate.TargetFullRelease);
+        _updateManager.ApplyUpdatesAndRestart(_pendingUpdate.TargetFullRelease);
     }
 
     /// <summary>
@@ -237,6 +268,9 @@ internal static class UpdateService
         }
     }
 
+    private const uint WTD_REVOKE_NONE       = 0;
+    private const uint WTD_REVOKE_WHOLECHAIN = 0x00000002;
+
     private static uint WinVerifyTrustResult(string filePath)
     {
         var actionId = new Guid("00AAC56B-CD44-11d0-8CC2-00C04FC295EE"); // WINTRUST_ACTION_GENERIC_VERIFY_V2
@@ -257,11 +291,11 @@ internal static class UpdateService
             cbStruct            = (uint)Marshal.SizeOf<WINTRUST_DATA>(),
             pPolicyCallbackData = IntPtr.Zero,
             pSIPClientData      = IntPtr.Zero,
-            dwUIChoice          = 2,  // WTD_UI_NONE
-            fdwRevocationChecks = 0,  // WTD_REVOKE_NONE
-            dwUnionChoice       = 1,  // WTD_CHOICE_FILE
+            dwUIChoice          = 2,               // WTD_UI_NONE
+            fdwRevocationChecks = WTD_REVOKE_WHOLECHAIN, // WSEC-H1: check full chain revocation
+            dwUnionChoice       = 1,               // WTD_CHOICE_FILE
             pFile               = fileInfoPtr,
-            dwStateAction       = 1,  // WTD_STATEACTION_VERIFY
+            dwStateAction       = 1,               // WTD_STATEACTION_VERIFY
             hWVTStateData       = IntPtr.Zero,
             pwszURLReference    = null,
             dwUIContext         = 0,

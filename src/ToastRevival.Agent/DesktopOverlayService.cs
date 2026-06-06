@@ -113,7 +113,15 @@ internal sealed class DesktopOverlayService : IDisposable
         if (fields.Contains("tenant") && !string.IsNullOrWhiteSpace(tenantName))
             lines.Add(new OverlayLine(null, tenantName!.Trim()));
         if (fields.Contains("customtext") && !string.IsNullOrWhiteSpace(config.CustomText))
-            lines.Add(new OverlayLine(null, config.CustomText!.Trim()));
+        {
+            // WSEC-L3: Cap custom text length to prevent runaway box dimensions from
+            // server-supplied content. 256 chars is generous for a desktop overlay label.
+            const int MaxCustomTextLength = 256;
+            var customText = config.CustomText!.Trim();
+            if (customText.Length > MaxCustomTextLength)
+                customText = customText[..MaxCustomTextLength];
+            lines.Add(new OverlayLine(null, customText));
+        }
 
         return lines;
     }
@@ -240,6 +248,13 @@ internal sealed class DesktopOverlayService : IDisposable
 
         int boxW = contentW + pad * 2;
         int boxH = lineH * lines.Count + lineGap * (lines.Count - 1) + pad * 2;
+
+        // WSEC-L3: Clamp box dimensions to sane screen bounds (4K ceiling).
+        // Prevents an oversized overlay if a font metric or line count is unexpectedly large.
+        const int MaxBoxW = 3840;
+        const int MaxBoxH = 2160;
+        boxW = Math.Min(boxW, MaxBoxW);
+        boxH = Math.Min(boxH, MaxBoxH);
 
         // 32bpp ARGB: alpha channel carries the rounded-rect mask (transparent
         // outside the panel, opaque inside). Inside the panel the pixels are

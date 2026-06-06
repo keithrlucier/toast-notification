@@ -35,7 +35,7 @@ services:
       Jwt__Issuer:                   ToastNotification
       Jwt__Audience:                 ToastNotification
       Jwt__ExpiresInMinutes:         480
-      Jwt__MfaElevationExpiresInMinutes: 480
+      Jwt__MfaElevationExpiresInMinutes: 15
       Jwt__DeviceTokenExpiresInDays: 365
 
       # CORS — the public URL of your dashboard (no trailing slash)
@@ -55,6 +55,10 @@ services:
       ContentSafety__Endpoint: ${CONTENT_SAFETY_ENDPOINT:-}
       ContentSafety__Key:      ${CONTENT_SAFETY_KEY:-}
 
+      # SSO — Microsoft Entra ID / Azure AD single sign-on (optional)
+      Sso__Microsoft__ClientId: ${SSO_MICROSOFT_CLIENT_ID:-}
+      # REVIEW-2026-06-06 DEVOPS-M5 REJECTED-by-design: plain env-var secrets beyond file permissions are current posture; AWS Secrets Manager integration is planned infrastructure investment requiring budget decision and IaC work
+
       # Billing — disabled for self-hosted deployments.
       # Stripe keys intentionally left empty; LicenseService allows unlimited devices.
       Stripe__SecretKey:      ""
@@ -69,6 +73,12 @@ services:
     restart: unless-stopped
     depends_on:
       - toast-api
+    # TLS NOTE: This compose stack serves HTTP only on port 80.
+    # For production self-hosted deployments, place a TLS terminator in front:
+    # Option 1 (Caddy): Add a caddy service with automatic Let's Encrypt
+    # Option 2 (Nginx proxy): Use jwilder/nginx-proxy with nginx-letsencrypt
+    # Option 3 (Cloud): Use cloud load balancer TLS termination (AWS ALB, Cloudflare)
+    # Never expose port 80 directly in production without a TLS terminator.
     ports:
       - "80:80"
 

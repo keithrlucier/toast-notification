@@ -91,6 +91,7 @@ internal static class ConfigStore
         File.Move(temp, path, overwrite: true);
     }
 
+    // REVIEW-2026-06-06 WSEC-M3 REJECTED-by-design: DPAPI CurrentUser scope is correct for per-user agent installation; MachineKey scope would expose the HMAC signing key to all users on the machine, which is a worse threat model in shared-workstation MSP environments
     // DPAPI CurrentUser scope: only the OS user account that wrote the config can
     // read it. An attacker with admin credentials on the endpoint can still read
     // SYSTEM-scope data, but not per-user CurrentUser-scope data without the user's

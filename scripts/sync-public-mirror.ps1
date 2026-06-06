@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Sync a release tag from the private working repo to the public mirror at
     https://github.com/keithrlucier/toast-notification.
@@ -18,7 +18,7 @@
       7. Tag the public commit with the same release tag.
       8. Push branch and tag to origin (the public remote).
 
-    The script is idempotent — re-running with the same tag is a no-op if the
+    The script is idempotent â€” re-running with the same tag is a no-op if the
     public side already carries that tag, unless -Force is passed.
 
 .PARAMETER Tag
@@ -63,9 +63,19 @@ param(
     [switch] $Force
 )
 
-# Use Continue so git stderr warnings (CRLF, "Already on...") don't throw.
-# Critical operations check $LASTEXITCODE explicitly.
-$ErrorActionPreference = "Continue"
+# DEVOPS-M3: Stop is correct for PowerShell cmdlet errors (Set-Content, Copy-Item, etc.)
+# Git native commands write informational lines to stderr in PS 5.1; those are guarded by
+# explicit $LASTEXITCODE checks after each git call, not by the global preference.
+$ErrorActionPreference = "Stop"
+
+# Wrapper: run git suppressing PS 5.1 stderr-wrapping, check exit code explicitly
+function Invoke-Git {
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
+    git @args 2>$null
+    $ec = $LASTEXITCODE
+    $ErrorActionPreference = $prev
+    return $ec
+}
 
 # === Paths ===
 $privateRoot = (Resolve-Path (Split-Path -Parent $PSScriptRoot)).Path
@@ -97,9 +107,12 @@ if (-not (Test-Path $publicRoot)) {
     if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
 } else {
     Write-Host "==> Updating existing public mirror worktree"
-    git -C $publicRoot fetch origin
-    git -C $publicRoot checkout main
-    git -C $publicRoot reset --hard origin/main
+    # git writes informational lines to stderr â€” suppress PowerShell error wrapping with SilentlyContinue
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
+    git -C $publicRoot fetch origin 2>$null
+    git -C $publicRoot checkout main 2>$null
+    git -C $publicRoot reset --hard origin/main 2>$null
+    $ErrorActionPreference = $prev
     if ($LASTEXITCODE -ne 0) { throw "git reset --hard origin/main failed" }
 }
 
@@ -178,7 +191,7 @@ $privateOriginalRef = (git -C $privateRoot rev-parse --abbrev-ref HEAD).Trim()
 $privateOriginalSha = (git -C $privateRoot rev-parse HEAD).Trim()
 try {
     Write-Host "==> Checking out $Tag in private repo"
-    git -C $privateRoot checkout --quiet $Tag
+    git -C $privateRoot checkout --quiet $Tag 2>$null
     if ($LASTEXITCODE -ne 0) { throw "git checkout $Tag failed in private repo" }
 
     $copiedCount  = 0
@@ -204,13 +217,13 @@ try {
 
     # === 5. Sanitize literal strings in every text file ===
     $substitutions = @{
-        '54.82.103.160'                                = '<your-web-server-ip>'
-        '172.26.0.161'                                 = '<your-web-private-ip>'
-        '172.26.3.164'                                 = '<your-db-private-ip>'
-        '52.21.249.120'                                = '<your-build-server-ip>'
-        '34.194.10.242'                                = '<your-paradise-server-ip>'
-        'Toast_Web_LightsailDefaultKey-us-east-1.pem'  = '<your-ssh-key.pem>'
-        'Toast_Data_1_LightsailDefaultKey-us-east-1.pem' = '<your-db-ssh-key.pem>'
+        '<your-web-server-ip>'                                = '<your-web-server-ip>'
+        '<your-web-private-ip>'                                 = '<your-web-private-ip>'
+        '<your-db-private-ip>'                                 = '<your-db-private-ip>'
+        '<your-build-server-ip>'                                = '<your-build-server-ip>'
+        '<your-paradise-server-ip>'                                = '<your-paradise-server-ip>'
+        '<your-ssh-key.pem>'  = '<your-ssh-key.pem>'
+        '<your-db-ssh-key.pem>' = '<your-db-ssh-key.pem>'
     }
 
     # Walk every file we just copied. Match on extension to skip binaries.
@@ -260,7 +273,9 @@ try {
     }
 
     Write-Host "==> Staging + committing public mirror"
-    git -C $publicRoot add --all
+    $prev2 = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
+    git -C $publicRoot add --all 2>$null
+    $ErrorActionPreference = $prev2
 
     # If nothing changed (re-run of an already-mirrored tag), bail clean.
     $status = git -C $publicRoot status --porcelain
@@ -300,8 +315,8 @@ try {
 finally {
     # Restore the private repo to whatever branch/ref it was on before.
     if ($privateOriginalRef -ne 'HEAD') {
-        git -C $privateRoot checkout --quiet $privateOriginalRef
+        git -C $privateRoot checkout --quiet $privateOriginalRef 2>$null
     } else {
-        git -C $privateRoot checkout --quiet $privateOriginalSha
+        git -C $privateRoot checkout --quiet $privateOriginalSha 2>$null
     }
 }

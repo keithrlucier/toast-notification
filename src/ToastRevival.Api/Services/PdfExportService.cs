@@ -9,6 +9,12 @@ public interface IPdfExportService
 {
     byte[] GenerateAuditLogPdf(IList<AuditLog> logs, string tenantName, int days);
     byte[] GenerateDeliveryReportPdf(Notification notification, IList<NotificationDelivery> deliveries, string tenantName);
+
+    // PERF-H3: async wrappers that offload CPU-bound QuestPDF work to the thread pool,
+    // preventing blocked thread-pool threads during PDF generation.
+    // Callers (AuditController etc.) should migrate to these async versions.
+    Task<byte[]> GenerateAuditLogPdfAsync(IList<AuditLog> logs, string tenantName, int days);
+    Task<byte[]> GenerateDeliveryReportPdfAsync(Notification notification, IList<NotificationDelivery> deliveries, string tenantName);
 }
 
 public class PdfExportService : IPdfExportService
@@ -189,6 +195,14 @@ public class PdfExportService : IPdfExportService
             });
         }).GeneratePdf();
     }
+
+    // PERF-H3: async wrappers — offload synchronous QuestPDF generation to the thread pool.
+    // Callers (AuditController, etc.) should migrate to these to avoid blocking thread-pool threads.
+    public Task<byte[]> GenerateAuditLogPdfAsync(IList<AuditLog> logs, string tenantName, int days) =>
+        Task.Run(() => GenerateAuditLogPdf(logs, tenantName, days));
+
+    public Task<byte[]> GenerateDeliveryReportPdfAsync(Notification notification, IList<NotificationDelivery> deliveries, string tenantName) =>
+        Task.Run(() => GenerateDeliveryReportPdf(notification, deliveries, tenantName));
 
     // Helpers to reduce repetition
     private static void Cell(TableDescriptor table, string bg, string value, bool mono = false)

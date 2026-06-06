@@ -1,0 +1,27 @@
+# Exclude credentials and sensitive docs
+Docs/
+.env
+.env.*
+*.env
+
+# Exclude scripts and dev tools
+scripts/
+.github/
+.gitignore
+.editorconfig
+README.md
+
+# Exclude Development appsettings — should never be baked into the Release image
+src/ToastRevival.Api/appsettings.Development.json
+
+# Exclude build artifacts
+**/bin/
+**/obj/
+**/node_modules/
+src/ToastRevival.Dashboard/dist/
+src/ToastRevival.Dashboard/node_modules/
+artifacts/
+
+# Exclude test projects
+**/Tests/
+**/test/

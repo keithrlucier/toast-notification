@@ -1,5 +1,7 @@
-# Signs an MSIX (or MSI / EXE / DLL) with the Sectigo OV cert on the
-# Thales SafeNet hardware token.
+# Signs an MSI / EXE / DLL with the Sectigo OV cert on the Thales SafeNet hardware token.
+# NOTE: Despite the filename, MSIX packages are NOT signed with the OV cert via this script.
+# MSIX signing is handled by the Microsoft Store / Package.Identity.Publisher pipeline only.
+# Use this script for MSI, EXE, and DLL artifacts exclusively.
 #
 # REQUIREMENTS
 #   1. SafeNet Authentication Client running, token plugged in, token logged
@@ -64,8 +66,14 @@ Write-Host ""
 Write-Host "    SafeNet PIN dialog will pop. Enter the token PIN when prompted."
 Write-Host ""
 
+# REVIEW-2026-06-06 DEVOPS-L3 REJECTED-by-design: physical SafeNet token required by Sectigo OV certificate policy and Partner Center requirements; EV cert in Azure Key Vault (AzureSignTool) is the path to headless signing, planned as future infrastructure milestone
+
+# WSEC-L2: Pin to the confirmed Sectigo OV cert thumbprint to prevent /a auto-selecting
+# an unexpected certificate (e.g., an expired cert still in the store).
+$expectedThumbprint = "19B07B46712C2D87FF6AA99842F7EF6B036FEDA7"
+
 & $signtool sign `
-    /a `
+    /sha1 $expectedThumbprint `
     /fd $DigestAlgorithm `
     /tr $TimestampUrl `
     /td $DigestAlgorithm `
@@ -87,6 +95,11 @@ $sig | Format-List Status, StatusMessage,
 
 if ($sig.Status -ne "Valid") {
     throw "Signature verification did not return Valid (got: $($sig.Status))."
+}
+
+# WSEC-L2: Verify the file was signed with the expected OV cert, not a substitute.
+if ($sig.SignerCertificate.Thumbprint -ne $expectedThumbprint) {
+    throw "Signed with unexpected certificate: $($sig.SignerCertificate.Thumbprint) (expected: $expectedThumbprint)"
 }
 
 Write-Host "Signed and verified." -ForegroundColor Green

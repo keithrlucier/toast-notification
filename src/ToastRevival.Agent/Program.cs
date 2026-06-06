@@ -702,7 +702,9 @@ namespace ToastRevival.Agent
             // we also dump the same content to a file so support always has something to read.
             try { AttachConsole(0xFFFFFFFFu); } catch { /* best-effort */ }
 
-            var dumpPath = Path.Combine(Path.GetTempPath(), "toastnotification-diag.txt");
+            // WSEC-L4: Use a randomized temp filename to prevent symlink attacks and
+            // information disclosure via predictable paths in shared-temp environments.
+            var dumpPath = Path.Combine(Path.GetTempPath(), $"toastnotification-diag-{Path.GetRandomFileName()}.txt");
             using var sink = new DualWriter(dumpPath);
 
             sink.WriteLine($"Toast Notification Agent — version {ThisAssembly.Version}");

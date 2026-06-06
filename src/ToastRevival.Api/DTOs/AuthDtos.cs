@@ -3,13 +3,7 @@ using ToastRevival.Api.Models;
 
 namespace ToastRevival.Api.DTOs;
 
-// Legacy — kept for backwards compat; new flow uses RegisterInitRequest
-public record RegisterRequest(
-    [Required] string TenantName,
-    [Required, EmailAddress] string Email,
-    [Required, MinLength(8)] string Password,
-    string? Subdomain = null,
-    string? DisplayName = null);
+// DC-L5: RegisterRequest removed — Register() action deleted (was dead 410 code).
 
 // Two-step registration flow
 public record RegisterInitRequest(
@@ -45,18 +39,20 @@ public record VerifySmsRequest(
     [Required] Guid UserId,
     [Required] string Code);
 
+// AA-M3: MinLength updated to 12 to match hardened password policy.
 public record SetPasswordRequest(
     [Required] Guid UserId,
     [Required] string Token,
-    [Required, MinLength(8)] string Password);
+    [Required, MinLength(12)] string Password);
 
 public record ForgotPasswordRequest(
     [Required, EmailAddress] string Email);
 
+// AA-M3: MinLength updated to 12 to match hardened password policy.
 public record ResetPasswordRequest(
     [Required] Guid UserId,
     [Required] string Token,
-    [Required, MinLength(8)] string Password);
+    [Required, MinLength(12)] string Password);
 
 public record LoginRequest(
     [Required, EmailAddress] string Email,
@@ -79,9 +75,11 @@ public record LoginTotpVerifyRequest(
     [Required] Guid UserId,
     [Required] string Code);
 
+// AA-M1: RefreshToken removed — it was generated but never stored in DB and
+// had no exchange endpoint. The Dashboard frontend (authApi.register) cleanup
+// is handled by the Frontend agent. Token is the session JWT.
 public record AuthResponse(
     string Token,
-    string RefreshToken,
     DateTime ExpiresAt,
     Guid UserId,
     Guid TenantId,

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.Services;
@@ -65,27 +66,45 @@ public sealed class HealthController : ControllerBase
         _queue = queue;
     }
 
+    /// <summary>
+    /// DOS-L3: Public liveness probe — returns minimal response only.
+    /// Detailed fields (latency, queue depth, uptime) are on /api/health/detail
+    /// which requires authentication to prevent information disclosure.
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken ct)
     {
         var dbCheck = await CheckDbAsync(ct);
+        var allHealthy = dbCheck.Healthy;
+        var statusText = allHealthy ? "healthy" : "degraded";
 
-        // Queue depth is an in-memory channel counter; reading it is free.
-        // We capture it but don't fail the health check on a positive value
-        // (a queue with items is normal during a burst). External probes
-        // that want to alert on stuck-queue scenarios watch the trend over
-        // time, not a single sample.
+        // DOS-L3: Public endpoint returns only status — no version, uptime, latency, or depth.
+        var body = new { status = statusText };
+
+        return allHealthy
+            ? Ok(body)
+            : StatusCode(StatusCodes.Status503ServiceUnavailable, body);
+    }
+
+    /// <summary>
+    /// DOS-L3: Detailed health probe — requires Bearer token.
+    /// Returns full diagnostic fields (version, uptimeSeconds, db latency, queue depth).
+    /// </summary>
+    [HttpGet("detail")]
+    [Authorize]
+    public async Task<IActionResult> GetDetail(CancellationToken ct)
+    {
+        var dbCheck = await CheckDbAsync(ct);
         var queueDepth = _queue.QueueDepth;
-
         var allHealthy = dbCheck.Healthy;
         var statusText = allHealthy ? "healthy" : "degraded";
 
         var body = new
         {
-            status      = statusText,
-            version     = AssemblyVersion,
+            status        = statusText,
+            version       = AssemblyVersion,
             uptimeSeconds = (int)(DateTime.UtcNow - ProcessStartUtc).TotalSeconds,
-            checks      = new
+            checks = new
             {
                 db = new
                 {
@@ -95,7 +114,7 @@ public sealed class HealthController : ControllerBase
                 },
                 queue = new
                 {
-                    healthy = true,           // depth is not a failure signal on its own
+                    healthy = true,
                     depth   = queueDepth,
                 },
             },

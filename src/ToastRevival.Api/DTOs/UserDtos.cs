@@ -11,9 +11,10 @@ public record UserResponse(
     DateTime? LastLogin,
     DateTime CreatedAt);
 
+// AA-M10: Password removed from InviteUserRequest — never accepted from client.
+// A secure temp password is generated internally in UsersController.Invite.
 public record InviteUserRequest(
     [Required, EmailAddress] string Email,
-    [Required, MinLength(8)] string Password,
     UserRole Role = UserRole.Technician);
 
 public record UpdateRoleRequest([Required] UserRole Role);

@@ -6,11 +6,14 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Extensions;
 using ToastRevival.Api.Hubs;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Utilities;
 
 namespace ToastRevival.Api.Controllers;
+
+// REVIEW-2026-06-06 ARCH-M4 REJECTED-by-design: 607-line TenantController is a known size issue; split is planned for a dedicated refactor milestone
 
 [ApiController]
 [Route("api/[controller]")]
@@ -554,21 +557,18 @@ public class TenantController : ControllerBase
         return new string('•', 8) + key[^4..];
     }
 
-    // CFG-4: accept only our own logo asset path (relative, or absolute pointing at
-    // /assets/logos/ which is reduced to relative). Anything else — an external URL —
-    // stores null, exactly like NormalizeLockScreenUrlForStorage below. The logo is
-    // fetched by the agent (as the notification icon) via ToPublicUrl, so an arbitrary
-    // external value here is a blind own-fleet SSRF; this is the gate that stops it.
-    private static string? NormalizeLogoUrlForStorage(string? logoUrl)
+    // ARCH-L4: Extract shared body into NormalizeAssetUrlForStorage.
+    // CFG-4: accept only our own asset paths. An external URL stores null to prevent SSRF.
+    private static string? NormalizeAssetUrlForStorage(string? url, string prefix)
     {
-        var trimmed = logoUrl?.Trim();
+        var trimmed = url?.Trim();
         if (string.IsNullOrWhiteSpace(trimmed)) return null;
 
-        if (trimmed.StartsWith("/assets/logos/", StringComparison.OrdinalIgnoreCase))
+        if (trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             return trimmed;
 
         if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
-            && uri.AbsolutePath.StartsWith("/assets/logos/", StringComparison.OrdinalIgnoreCase))
+            && uri.AbsolutePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
         {
             return uri.PathAndQuery;
         }
@@ -576,31 +576,12 @@ public class TenantController : ControllerBase
         return null;
     }
 
-    // Accepts only our own lock screen asset path (relative, or absolute pointing
-    // at /assets/lockscreen/ which is reduced to relative). Anything else — empty,
-    // an external URL, a different path — stores null. This is the gate that stops
-    // an admin from repointing every device's lock screen at an arbitrary URL the
-    // agent would then download.
-    private static string? NormalizeLockScreenUrlForStorage(string? imageUrl)
-    {
-        var trimmed = imageUrl?.Trim();
-        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+    private static string? NormalizeLogoUrlForStorage(string? logoUrl) =>
+        NormalizeAssetUrlForStorage(logoUrl, "/assets/logos/");
 
-        if (trimmed.StartsWith("/assets/lockscreen/", StringComparison.OrdinalIgnoreCase))
-            return trimmed;
+    private static string? NormalizeLockScreenUrlForStorage(string? imageUrl) =>
+        NormalizeAssetUrlForStorage(imageUrl, "/assets/lockscreen/");
 
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
-            && uri.AbsolutePath.StartsWith("/assets/lockscreen/", StringComparison.OrdinalIgnoreCase))
-        {
-            return uri.PathAndQuery;
-        }
-
-        return null;
-    }
-
-    private bool IsAdmin()
-    {
-        var role = Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
-        return role >= UserRole.Admin;
-    }
+    // ARCH-M1: Delegates to the shared ClaimsPrincipalExtensions.IsAdmin().
+    private bool IsAdmin() => User.IsAdmin();
 }

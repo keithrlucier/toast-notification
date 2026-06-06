@@ -6,6 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Lets the test project exercise internal helpers (e.g. AppearanceConfigBuilder). -->
     <InternalsVisibleTo Include="ToastRevival.Api.Tests" />
@@ -13,6 +18,8 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.AI.ContentSafety" Version="1.0.0" />
+    <!-- REL-H3: Polly retry + circuit-breaker for outbound HTTP clients. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="8.0.7" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.27" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="8.0.27" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.16">

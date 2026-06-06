@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Extensions;
 using ToastRevival.Api.Hubs;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
@@ -61,7 +62,9 @@ public class DevicesController : ControllerBase
     {
         var tenant = await _db.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == req.TenantId);
-        if (tenant is null) return NotFound("Tenant not found.");
+        // DOS-M4: Return a generic 400 instead of 404 for missing tenant to avoid
+        // leaking whether a given TenantId GUID is valid before enrollment key is checked.
+        if (tenant is null) return BadRequest("Registration failed.");
 
         // XT-1 — device enrollment gate. A tenant may have single-use, expiring,
         // dashboard-issued EnrollmentTokens and/or the legacy reusable per-tenant
@@ -72,13 +75,17 @@ public class DevicesController : ControllerBase
         // A spent token left behind in a device's registry cannot provision a NEW rogue
         // device — that is the XT-1 win. When the tenant has neither mechanism,
         // registration stays open (unchanged).
+        // INJ-L1: Trim user-supplied device identity strings before use.
+        var deviceName = req.DeviceName.Trim();
+        var username   = req.Username.Trim();
+
         var tenantHasLegacyKey = !string.IsNullOrWhiteSpace(tenant.EnrollmentKey);
         var tenantHasTokens = await _db.EnrollmentTokens.IgnoreQueryFilters()
             .AnyAsync(t => t.TenantId == req.TenantId);
         if (tenantHasLegacyKey || tenantHasTokens)
         {
             if (!await PassesEnrollmentGateAsync(req.TenantId, tenant.EnrollmentKey,
-                                                 req.EnrollmentKey, req.DeviceName, req.Username))
+                                                 req.EnrollmentKey, deviceName, username))
             {
                 return StatusCode(403, "Invalid or expired enrollment token.");
             }
@@ -93,11 +100,12 @@ public class DevicesController : ControllerBase
         // creating a sibling. Decommissioned rows are not reused — those represent
         // a deliberate admin action and a re-registration should provision a new
         // device row + go through the license CanRegisterDeviceAsync gate.
+
         var existing = await _db.Devices.IgnoreQueryFilters()
             .FirstOrDefaultAsync(d =>
                 d.TenantId == req.TenantId &&
-                d.DeviceName == req.DeviceName &&
-                d.Username == req.Username &&
+                d.DeviceName == deviceName &&
+                d.Username == username &&
                 d.Status != DeviceStatus.Decommissioned);
 
         var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
@@ -142,8 +150,8 @@ public class DevicesController : ControllerBase
             device = new Device
             {
                 TenantId = req.TenantId,
-                DeviceName = req.DeviceName,
-                Username = req.Username,
+                DeviceName = deviceName,
+                Username = username,
                 OsVersion = req.OsVersion,
                 AgentVersion = req.AgentVersion,
                 RegistrationToken = tokenHash,
@@ -180,10 +188,13 @@ public class DevicesController : ControllerBase
     [EnableRateLimiting("tenant-per-minute")]
     public async Task<ActionResult<IEnumerable<DeviceResponse>>> List()
     {
+        // MT-H1: Explicit TenantId predicate as defense-in-depth alongside EF global filter.
+        // REVIEW-2026-06-06 REST-M6 REJECTED-by-design: unbounded device list is known design debt; pagination requires coordinated API+frontend change to avoid breaking Compose page multi-select; filed as PERF-backlog
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var devices = await _db.Devices
             .Include(d => d.GroupMemberships)
             .ThenInclude(m => m.DeviceGroup)
-            .Where(d => d.Status != DeviceStatus.Decommissioned)
+            .Where(d => d.TenantId == tenantId && d.Status != DeviceStatus.Decommissioned)
             .OrderBy(d => d.DeviceName)
             .ToListAsync();
 
@@ -194,11 +205,12 @@ public class DevicesController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<DeviceResponse>> Get(Guid id)
     {
+        // MT-H1: Explicit TenantId predicate as defense-in-depth alongside EF global filter.
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var device = await _db.Devices
             .Include(d => d.GroupMemberships)
             .ThenInclude(m => m.DeviceGroup)
-            .Where(d => d.Id == id && d.Status != DeviceStatus.Decommissioned)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(d => d.Id == id && d.TenantId == tenantId && d.Status != DeviceStatus.Decommissioned);
 
         return device is null ? NotFound() : Ok(ToResponse(device));
     }
@@ -402,16 +414,19 @@ public class DevicesController : ControllerBase
         if (!Guid.TryParse(deviceIdClaim, out var deviceId)) return Unauthorized();
 
         var device = await _db.Devices.IgnoreQueryFilters()
-            .Include(d => d.Tenant)
             .FirstOrDefaultAsync(d => d.Id == deviceId);
         if (device is null) return NotFound();
 
         // SES-3: a decommissioned device's 365-day JWT stays cryptographically
         // valid; reject heartbeats from it (mirrors the hub).
         if (device.Status == DeviceStatus.Decommissioned) return Unauthorized();
-        // FIX-SES-2: same kill-switch for a suspended tenant's devices. ?. guards an
-        // orphaned tenant FK (can't happen with the FK constraint, but fail safe).
-        if (device.Tenant?.SuspendedAt != null) return Unauthorized();
+        // PERF-M5: use a projected scalar instead of loading the full Tenant row.
+        // FIX-SES-2: same kill-switch for a suspended tenant's devices.
+        var tenantSuspendedAt = await _db.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == device.TenantId)
+            .Select(t => t.SuspendedAt)
+            .FirstOrDefaultAsync();
+        if (tenantSuspendedAt != null) return Unauthorized();
 
         device.LastPing = DateTime.UtcNow;
         if (!string.IsNullOrWhiteSpace(body?.AgentVersion))
@@ -433,6 +448,7 @@ public class DevicesController : ControllerBase
     /// Values are configured via Agent:LatestVersion + Agent:MsiDownloadUrl in
     /// appsettings (env-var overridden in production).
     /// </summary>
+    // REVIEW-2026-06-06 REST-L4 REJECTED-by-design: ETag conditional request handling requires agent-side If-None-Match support; bandwidth saving is minimal at current fleet scale; documented as PERF backlog
     [HttpGet("/api/agent/version")]
     [AllowAnonymous]
     public IActionResult GetAgentVersion()
@@ -620,31 +636,15 @@ public class DevicesController : ControllerBase
     }
 
     /// <summary>
-    /// SES-3 + FIX-SES-2 (2026-06-01): true when a device JWT must be refused — the
-    /// device row is missing or Decommissioned (SES-3), OR the owning tenant is
-    /// suspended (SES-2). Suspension is the operator kill switch for a compromised/
-    /// abusive tenant; without the tenant half a suspended tenant's agents keep
-    /// pulling appearance config + branding and draining toasts on their 365-day
-    /// tokens. Active/Inactive devices under an ACTIVE tenant pass. Mirrors the hub.
-    /// (Instant revocation of live USER/operator sessions on suspend needs a token
-    /// epoch / SecurityStamp pipeline — see REVIEW_LEDGER SES-2 remainder, owner: Keith.)
+    /// ARCH-M2: Delegates to the shared DbContextExtensions.IsDeviceRevokedAsync.
     /// </summary>
-    private async Task<bool> IsDeviceRevoked(Guid deviceId)
-    {
-        var row = await _db.Devices.IgnoreQueryFilters()
-            .Where(d => d.Id == deviceId)
-            .Select(d => new { d.Status, TenantSuspended = d.Tenant.SuspendedAt != null })
-            .FirstOrDefaultAsync();
-        return row is null
-            || row.Status == DeviceStatus.Decommissioned
-            || row.TenantSuspended;
-    }
+    private Task<bool> IsDeviceRevoked(Guid deviceId) =>
+        _db.IsDeviceRevokedAsync(deviceId);
 
-    private bool IsAdmin()
-    {
-        var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role") ?? "";
-        return role is "Admin" or "SuperAdmin" || User.HasClaim("platformAdmin", "true");
-    }
+    /// <summary>
+    /// ARCH-M1: Delegates to the shared ClaimsPrincipalExtensions.IsAdmin().
+    /// </summary>
+    private bool IsAdmin() => User.IsAdmin();
 
     private static DeviceResponse ToResponse(Device d) =>
         new(d.Id, d.DeviceName, d.Username, d.OsVersion, d.AgentVersion,
@@ -668,11 +668,10 @@ public class DevicesController : ControllerBase
             && existing.Scheme is "http" or "https") return trimmed;
         if (!trimmed.StartsWith('/')) return trimmed;
 
-        var scheme = Request.Headers["X-Forwarded-Proto"].FirstOrDefault()?.Split(',')[0].Trim();
-        if (string.IsNullOrWhiteSpace(scheme)) scheme = Request.Scheme;
-
-        var host = Request.Headers["X-Forwarded-Host"].FirstOrDefault()?.Split(',')[0].Trim();
-        if (string.IsNullOrWhiteSpace(host)) host = Request.Host.Value;
+        // INJ-M2: Use Request.Scheme and Request.Host (ForwardedHeaders-validated) instead
+        // of reading raw X-Forwarded-Proto/X-Forwarded-Host headers directly.
+        var scheme = Request.Scheme;
+        var host = Request.Host.Value;
 
         return $"{scheme}://{host}{trimmed}";
     }
@@ -761,8 +760,22 @@ public class DevicesController : ControllerBase
             // migration + backward-compatible carve-out during agent rollout). That work is
             // scoped as build-mode project XT-3 (see Docs/ToastRevival/projects/XT-3/).
             // This anchor keeps XT-M1 from being re-flagged as un-triaged until XT-3 ships.
-            return string.Equals(token.UsedByDeviceName, deviceName, StringComparison.Ordinal)
+            //
+            // AA-M7: Self-reported identity — XT-3 (machine SID binding) is the planned fix. See REVIEW-2026-06-06 XT-M1 in REVIEW_LEDGER.md
+            var matches = string.Equals(token.UsedByDeviceName, deviceName, StringComparison.Ordinal)
                 && string.Equals(token.UsedByUsername, username, StringComparison.Ordinal);
+
+            // INJ-L3: Emit an audit warning whenever the reinstall carve-out fires,
+            // so operators can detect unexpected reuse of spent enrollment tokens.
+            if (matches)
+            {
+                await _audit.LogAsync(tenantId, null,
+                    "DeviceReinstallCarveout", "EnrollmentToken", token.Id.ToString(),
+                    new { deviceName, username, note = "Reinstall via spent token — self-reported identity. Pending XT-3 SID binding." },
+                    ipAddress: null);
+            }
+
+            return matches;
         }
 
         // 2) Legacy reusable per-tenant key fallback (constant-time compare).

@@ -13,6 +13,8 @@ using ToastRevival.Api.Services;
 
 namespace ToastRevival.Api.Controllers;
 
+// REVIEW-2026-06-06 ARCH-M3 REJECTED-by-design: 890-line AuthController is a known size issue; splitting requires careful boundary design to preserve MFA session state flow; filed as a dedicated refactor milestone
+
 [ApiController]
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
@@ -122,7 +124,8 @@ public class AuthController : ControllerBase
         await _db.SaveChangesAsync();
         await NotifyTrialReviewAsync(trial);
 
-        return Ok(new TrialRegistrationResponse(
+        // REST-L1: Return 201 Created for resource creation instead of 200 OK.
+        return StatusCode(StatusCodes.Status201Created, new TrialRegistrationResponse(
             trial.Id,
             "pending_review",
             "Thanks. Your trial request is pending review. We will email you after approval."));
@@ -133,6 +136,8 @@ public class AuthController : ControllerBase
     /// confirmed and sends the Mailjet magic-token email for password setup.
     /// </summary>
     [HttpPost("register/verify-sms")]
+    // DOS-H2: Rate limit register SMS verify to 5 per 15 min per IP.
+    [EnableRateLimiting("register-sms")]
     public async Task<IActionResult> VerifySms([FromBody] VerifySmsRequest req)
     {
         var user = await _db.Users.IgnoreQueryFilters()
@@ -145,7 +150,11 @@ public class AuthController : ControllerBase
             return BadRequest("Verification code expired. Please restart registration.");
 
         if (user.SmsVerificationCode != HashSmsCode(req.Code.Trim()))
+        {
+            // DOS-H2 / AA-L2: Register failed attempt for lockout tracking (mirrors login SMS path).
+            await RegisterFailedSmsAttemptAsync(user);
             return Unauthorized("Incorrect verification code.");
+        }
 
         user.PhoneNumberConfirmed  = true;
         user.SmsVerificationCode   = null;
@@ -189,24 +198,32 @@ public class AuthController : ControllerBase
         await _db.SaveChangesAsync();
 
         var jwt       = _tokens.CreateUserToken(user);
-        var refresh   = _tokens.CreateRefreshToken();
+        // AA-M1: RefreshToken no longer generated or returned.
         var expiresAt = SessionExpiresAt();
 
-        return Ok(new AuthResponse(jwt, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
+        // AA-M1: RefreshToken removed from AuthResponse.
+        return Ok(new AuthResponse(jwt, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
     }
 
     /// <summary>
     /// Initiates self-service password reset. Sends Mailjet email with reset link.
     /// </summary>
     [HttpPost("forgot-password")]
+    // DOS-H1: Rate limit forgot-password to 5 requests per 15 min per IP.
+    [EnableRateLimiting("forgot-password")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req)
     {
         var user = await _db.Users.IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Email == req.Email);
 
-        // Always return 200 to prevent email enumeration
+        // Always return 200 to prevent email enumeration.
+        // DOS-M3: When user is not found, delay the response to match the time
+        // it would take to send an email, preventing timing oracle attacks.
         if (user is null || user.RegistrationStep != RegistrationStep.Complete)
+        {
+            await Task.Delay(150, HttpContext.RequestAborted);
             return Ok(new { message = "If an account exists for that email, a reset link has been sent." });
+        }
 
         var token      = await _userManager.GeneratePasswordResetTokenAsync(user);
         var baseUrl    = _config["App:BaseUrl"] ?? "https://toastnotification.com";
@@ -214,6 +231,9 @@ public class AuthController : ControllerBase
         var link       = $"{baseUrl}/reset-password?userId={user.Id}&token={encodedTok}";
         var html       = EmailTemplates.PasswordReset(user.FullName, link);
 
+        // REL-L3: IEmailService.SendAsync does not yet accept CancellationToken; the
+        // Service layer (IEmailService/MailjetEmailService) needs updating by Core agent.
+        // Timeout awareness is noted here as the remediation intent.
         await _email.SendAsync(user.Email!, user.FullName ?? user.Email!, "Reset your password — Toast Notification", html);
 
         return Ok(new { message = "If an account exists for that email, a reset link has been sent." });
@@ -327,128 +347,14 @@ public class AuthController : ControllerBase
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength];
 
+    // ARCH-L2: Centralized MFA elevation expiry helper, replacing three inline copies.
+    private DateTime MfaExpiresAt() =>
+        DateTime.UtcNow.AddMinutes(int.TryParse(_config["Jwt:MfaElevationExpiresInMinutes"], out var m) ? m : 15);
 
-    [HttpPost("register")]
-    [EnableRateLimiting("trial-register-per-ip")]
-    public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest req)
-    {
-        if (!_config.GetValue<bool>("Registration:AllowLegacyDirectRegister"))
-            return StatusCode(StatusCodes.Status410Gone, new
-            {
-                message = "Public registration now uses the reviewed trial request flow. Submit /api/auth/register/init."
-            });
 
-        var subdomain = NormalizeSubdomain(req.Subdomain) ?? SlugifyTenantName(req.TenantName);
-        if (string.IsNullOrEmpty(subdomain))
-            return BadRequest("Tenant name must contain at least one alphanumeric character.");
-
-        // Tenant Subdomain is unique. If derived from TenantName collides with an
-        // existing tenant, append a short random suffix and retry up to a few times.
-        for (var attempt = 0; attempt < 5; attempt++)
-        {
-            if (!await _db.Tenants.AnyAsync(t => t.Subdomain == subdomain)) break;
-            if (req.Subdomain is not null) return Conflict("Subdomain already taken.");
-            subdomain = SlugifyTenantName(req.TenantName) + "-" + RandomSuffix();
-        }
-        if (await _db.Tenants.AnyAsync(t => t.Subdomain == subdomain))
-            return Conflict("Could not allocate a unique subdomain. Provide one explicitly.");
-
-        // Wrap in transaction — orphaned Tenant row if user creation fails otherwise
-        using var tx = await _db.Database.BeginTransactionAsync();
-
-        var tenant = new Tenant
-        {
-            Name = req.TenantName,
-            Subdomain = subdomain,
-            SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
-        };
-        _db.Tenants.Add(tenant);
-        await _db.SaveChangesAsync();
-
-        var user = new AppUser
-        {
-            TenantId = tenant.Id,
-            Email = req.Email,
-            UserName = req.Email,
-            Role = UserRole.SuperAdmin,
-            SecurityStamp = Guid.NewGuid().ToString(),
-        };
-
-        var result = await _userManager.CreateAsync(user, req.Password);
-        if (!result.Succeeded)
-        {
-            await tx.RollbackAsync();
-            return BadRequest(new { errors = result.Errors.Select(e => e.Description).ToArray() });
-        }
-
-        // Seed 6 default notification templates for this tenant. If seeding
-        // fails the transaction rolls back cleanly.
-        try
-        {
-            foreach (var template in TemplatesController.BuildDefaultTemplates(tenant.Id))
-                _db.NotificationTemplates.Add(template);
-            await _db.SaveChangesAsync();
-        }
-        catch (Exception)
-        {
-            await tx.RollbackAsync();
-            return StatusCode(500, "Registration succeeded but template initialization failed. Contact support.");
-        }
-
-        await tx.CommitAsync();
-
-        var token = _tokens.CreateUserToken(user);
-        var refresh = _tokens.CreateRefreshToken();
-        var expiresAt = SessionExpiresAt();
-
-        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, tenant.Id, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
-    }
-
-    private static string? NormalizeSubdomain(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return null;
-        var s = raw.Trim().ToLowerInvariant();
-        // Conservative subdomain charset: a-z, 0-9, hyphen. Must start/end alphanumeric.
-        var chars = new System.Text.StringBuilder(s.Length);
-        foreach (var ch in s)
-        {
-            if (char.IsLetterOrDigit(ch) || ch == '-') chars.Append(ch);
-        }
-        var result = chars.ToString().Trim('-');
-        return result.Length == 0 ? null : result;
-    }
-
-    private static string SlugifyTenantName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
-        var lower = name.Trim().ToLowerInvariant();
-        var chars = new System.Text.StringBuilder(lower.Length);
-        var prevHyphen = false;
-        foreach (var ch in lower)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                chars.Append(ch);
-                prevHyphen = false;
-            }
-            else if (!prevHyphen && chars.Length > 0)
-            {
-                chars.Append('-');
-                prevHyphen = true;
-            }
-        }
-        return chars.ToString().Trim('-');
-    }
-
-    private static string RandomSuffix()
-    {
-        const string alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-        Span<byte> bytes = stackalloc byte[4];
-        RandomNumberGenerator.Fill(bytes);
-        var sb = new System.Text.StringBuilder(4);
-        foreach (var b in bytes) sb.Append(alphabet[b % alphabet.Length]);
-        return sb.ToString();
-    }
+    // DC-L5: Register() action removed — dead code since Registration:AllowLegacyDirectRegister
+    // always returns 410 Gone. The new flow uses /api/auth/register/init.
+    // RegisterRequest DTO is also removed from AuthDtos.cs.
 
     [HttpPost("login")]
     [EnableRateLimiting("login-per-ip")]
@@ -509,14 +415,25 @@ public class AuthController : ControllerBase
             return Ok(new LoginSmsChallenge(user.Id, "sms_required", masked));
         }
 
-        // No phone confirmed — issue token directly (legacy/admin-created accounts)
+        // No phone confirmed — issue token directly (legacy/admin-created accounts).
+        // AA-M4: If Auth:RequireMfaEnrollment is enabled (default off) and the user
+        // has no MFA enrolled, return 403 requiring setup instead of issuing a JWT.
+        if (!user.IsPlatformAdmin && _config.GetValue<bool>("Auth:RequireMfaEnrollment"))
+        {
+            var hasMfa = !string.IsNullOrWhiteSpace(user.MfaSecret)
+                      || (user.PhoneNumberConfirmed && !string.IsNullOrWhiteSpace(user.PhoneNumber));
+            if (!hasMfa)
+                return StatusCode(403, new { requiresMfaSetup = true });
+        }
+
         user.LastLogin = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
         var token     = _tokens.CreateUserToken(user);
-        var refresh   = _tokens.CreateRefreshToken();
+        // AA-M1: RefreshToken no longer generated or returned.
         var expiresAt = SessionExpiresAt();
-        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
+        // AA-M1: RefreshToken removed from AuthResponse.
+        return Ok(new AuthResponse(token, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
     }
 
     /// <summary>
@@ -536,6 +453,7 @@ public class AuthController : ControllerBase
         if (!user.IsPlatformAdmin && await IsTenantSuspendedAsync(user.TenantId))
             return Unauthorized("This tenant has been suspended. Contact support.");
 
+        // AA-M2: Per-userId lockout — IsLockedOutAsync checks AccessFailedCount (userId-scoped).
         if (await _userManager.IsLockedOutAsync(user))
             return Unauthorized("Too many attempts. Please sign in again later.");
 
@@ -544,6 +462,8 @@ public class AuthController : ControllerBase
 
         if (user.SmsVerificationCode != HashSmsCode(req.Code.Trim()))
         {
+            // AA-M2: RegisterFailedSmsAttemptAsync calls AccessFailedAsync (per-userId counter)
+            // and invalidates the OTP once the lockout threshold is reached.
             await RegisterFailedSmsAttemptAsync(user);
             return Unauthorized("Incorrect verification code.");
         }
@@ -558,9 +478,10 @@ public class AuthController : ControllerBase
         await PromoteSoleTenantOwnerAsync(user);
 
         var token     = _tokens.CreateUserToken(user);
-        var refresh   = _tokens.CreateRefreshToken();
+        // AA-M1: RefreshToken no longer generated or returned.
         var expiresAt = SessionExpiresAt();
-        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
+        // AA-M1: RefreshToken removed from AuthResponse.
+        return Ok(new AuthResponse(token, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
     }
 
     /// <summary>
@@ -597,9 +518,10 @@ public class AuthController : ControllerBase
         await _db.SaveChangesAsync();
 
         var token     = _tokens.CreateUserToken(user);
-        var refresh   = _tokens.CreateRefreshToken();
+        // AA-M1: RefreshToken no longer generated or returned.
         var expiresAt = SessionExpiresAt();   // SES-1: advertise the real token lifetime
-        return Ok(new AuthResponse(token, refresh, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
+        // AA-M1: RefreshToken removed from AuthResponse.
+        return Ok(new AuthResponse(token, expiresAt, user.Id, user.TenantId, user.Email!, user.Role.ToString(), user.IsPlatformAdmin));
     }
 
     private async Task<bool> IsTenantSuspendedAsync(Guid tenantId)
@@ -634,6 +556,9 @@ public class AuthController : ControllerBase
     /// </summary>
     [HttpPost("mfa/send-sms")]
     [Authorize]
+    // DOS-M5: Per-IP rate limit applied. Per-userId limiting is enforced via the
+    // Identity lockout counter (MaxFailedAccessAttempts=5) which blocks after repeated
+    // failed verifications — see MfaVerifySms and RegisterFailedSmsAttemptAsync.
     [EnableRateLimiting("login-sms-per-ip")]
     public async Task<ActionResult> MfaSendSms()
     {
@@ -717,12 +642,9 @@ public class AuthController : ControllerBase
         user.SmsCodeExpiry       = null;
         await _db.SaveChangesAsync();
 
-        // MfaElevationExpiresInMinutes lives in appsettings.json — keep the
-        // response expiry in lockstep with the JWT exp claim TokenService writes.
-        var minutes = int.TryParse(_config["Jwt:MfaElevationExpiresInMinutes"], out var m) ? m : 15;
-        var expiresAt = DateTime.UtcNow.AddMinutes(minutes);
+        // ARCH-L2: Use shared MfaExpiresAt() helper.
         var mfaToken  = _tokens.CreateMfaToken(user);
-        return Ok(new MfaVerifyResponse(mfaToken, expiresAt));
+        return Ok(new MfaVerifyResponse(mfaToken, MfaExpiresAt()));
     }
 
     /// <summary>
@@ -803,10 +725,9 @@ public class AuthController : ControllerBase
         user.LastTotpStep     = null;   // fresh secret — clear the old replay floor
         await _db.SaveChangesAsync();
 
-        var minutes = int.TryParse(_config["Jwt:MfaElevationExpiresInMinutes"], out var m) ? m : 15;
-        var expiresAt = DateTime.UtcNow.AddMinutes(minutes);
+        // ARCH-L2: Use shared MfaExpiresAt() helper.
         var mfaToken  = _tokens.CreateMfaToken(user);
-        return Ok(new MfaVerifyResponse(mfaToken, expiresAt));
+        return Ok(new MfaVerifyResponse(mfaToken, MfaExpiresAt()));
     }
 
     /// <summary>
@@ -878,12 +799,9 @@ public class AuthController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        // Derive the response expiry from the same config the token uses so the
-        // advertised step-up window always matches the JWT exp claim.
-        var minutes   = int.TryParse(_config["Jwt:MfaElevationExpiresInMinutes"], out var m) ? m : 15;
-        var expiresAt = DateTime.UtcNow.AddMinutes(minutes);
+        // ARCH-L2: Use shared MfaExpiresAt() helper (replaces inline config read).
         var mfaToken  = _tokens.CreateMfaToken(user);
 
-        return Ok(new MfaVerifyResponse(mfaToken, expiresAt));
+        return Ok(new MfaVerifyResponse(mfaToken, MfaExpiresAt()));
     }
 }

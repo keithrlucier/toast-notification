@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Security.Claims;
 using System.Text;
+using Polly;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
@@ -7,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -41,10 +44,13 @@ builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
 // Identity
 builder.Services.AddIdentityCore<AppUser>(opts =>
 {
+    // AA-M3: Hardened password policy — minimum 12 chars, all character classes required.
     opts.Password.RequireDigit = true;
-    opts.Password.RequiredLength = 8;
-    opts.Password.RequireUppercase = false;
-    opts.Password.RequireNonAlphanumeric = false;
+    opts.Password.RequiredLength = 12;
+    opts.Password.RequireUppercase = true;
+    opts.Password.RequireNonAlphanumeric = true;
+    opts.Password.RequireLowercase = true;
+    opts.Password.RequiredUniqueChars = 2;
 
     // Brute-force lockout. CheckPasswordAsync/SMS-code verification call into
     // UserManager lockout helpers in AuthController; these options govern the
@@ -111,6 +117,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = builder.Configuration["Jwt:Audience"],
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero,
+            // AA-L3: Algorithm pinning — reject tokens signed with any algorithm
+            // other than HMAC-SHA256 to prevent alg-confusion attacks.
+            ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
         };
         // SignalR passes JWT as query param on WebSocket handshake
         opts.Events = new JwtBearerEvents
@@ -289,6 +298,34 @@ builder.Services.AddRateLimiter(opts =>
         });
     });
 
+    // DOS-H1: rate limit for forgot-password — 5 requests per 15 min per IP.
+    opts.AddFixedWindowLimiter("forgot-password", o =>
+    {
+        o.PermitLimit = 5;
+        o.Window = TimeSpan.FromMinutes(15);
+        o.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        o.QueueLimit = 0;
+    });
+
+    // DOS-H2: rate limit for SMS registration verify — 5 per 15 min per IP.
+    opts.AddFixedWindowLimiter("register-sms", o =>
+    {
+        o.PermitLimit = 5;
+        o.Window = TimeSpan.FromMinutes(15);
+        o.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        o.QueueLimit = 0;
+    });
+
+    // DOS-M5: per-userId SMS send rate limit keyed on userId claim.
+    // 5 SMS per hour per userId (defense in depth alongside per-IP).
+    opts.AddFixedWindowLimiter("mfa-sms-send-per-user", o =>
+    {
+        o.PermitLimit = 5;
+        o.Window = TimeSpan.FromHours(1);
+        o.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        o.QueueLimit = 0;
+    });
+
     opts.RejectionStatusCode = 429;
 });
 
@@ -332,9 +369,31 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IMicrosoftSsoService, MicrosoftSsoService>();
 
 // Transactional messaging (Mailjet email + ClickSend SMS)
-builder.Services.AddHttpClient<IEmailService, MailjetEmailService>();
-builder.Services.AddHttpClient<ISmsService, ClickSendSmsService>();
-builder.Services.AddHttpClient<ITurnstileVerifier, CloudflareTurnstileVerifier>();
+// REL-H3: Polly retry + circuit-breaker on all outbound HTTP clients.
+// Requires Microsoft.Extensions.Http.Polly (see .csproj). Policy wraps transient
+// HTTP errors (5xx, network failure) with 3 retries (exponential backoff) and
+// a circuit breaker that opens after 5 consecutive failures for 30 seconds.
+builder.Services.AddHttpClient<IEmailService, MailjetEmailService>()
+    .AddTransientHttpErrorPolicy(p => p.WaitAndRetryAsync(
+        retryCount: 3,
+        sleepDurationProvider: retry => TimeSpan.FromSeconds(Math.Pow(2, retry))))
+    .AddTransientHttpErrorPolicy(p => p.CircuitBreakerAsync(
+        handledEventsAllowedBeforeBreaking: 5,
+        durationOfBreak: TimeSpan.FromSeconds(30)));
+builder.Services.AddHttpClient<ISmsService, ClickSendSmsService>()
+    .AddTransientHttpErrorPolicy(p => p.WaitAndRetryAsync(
+        retryCount: 3,
+        sleepDurationProvider: retry => TimeSpan.FromSeconds(Math.Pow(2, retry))))
+    .AddTransientHttpErrorPolicy(p => p.CircuitBreakerAsync(
+        handledEventsAllowedBeforeBreaking: 5,
+        durationOfBreak: TimeSpan.FromSeconds(30)));
+builder.Services.AddHttpClient<ITurnstileVerifier, CloudflareTurnstileVerifier>()
+    .AddTransientHttpErrorPolicy(p => p.WaitAndRetryAsync(
+        retryCount: 3,
+        sleepDurationProvider: retry => TimeSpan.FromSeconds(Math.Pow(2, retry))))
+    .AddTransientHttpErrorPolicy(p => p.CircuitBreakerAsync(
+        handledEventsAllowedBeforeBreaking: 5,
+        durationOfBreak: TimeSpan.FromSeconds(30)));
 
 // CORS — dev allows any origin; production should lock this down via config
 builder.Services.AddCors(opts =>
@@ -343,11 +402,29 @@ builder.Services.AddCors(opts =>
         if (builder.Environment.IsDevelopment())
             p.SetIsOriginAllowed(_ => true).AllowAnyMethod().AllowAnyHeader().AllowCredentials();
         else
-            p.WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? [])
-             .AllowAnyMethod().AllowAnyHeader().AllowCredentials();
+        {
+            var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? [];
+            p.WithOrigins(allowedOrigins).AllowAnyMethod().AllowAnyHeader().AllowCredentials();
+        }
     }));
 
-builder.Services.AddControllers()
+// AA-L4: Fail fast if CORS origins are not configured for non-Development.
+if (!builder.Environment.IsDevelopment())
+{
+    var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
+    if (allowedOrigins is null || allowedOrigins.Length == 0)
+        throw new InvalidOperationException("CORS AllowedOrigins must be configured for non-Development environments");
+}
+
+// REL-H1: global exception handler so unhandled exceptions return RFC 7807
+// Problem Details instead of exposing stack traces.
+builder.Services.AddProblemDetails();
+
+builder.Services.AddControllers(options =>
+{
+    // REST-L7: enforce application/json content type globally on all actions.
+    options.Filters.Add(new ConsumesAttribute("application/json"));
+})
     .AddJsonOptions(opts =>
     {
         opts.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
@@ -404,6 +481,9 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
+// REL-H1: route unhandled exceptions to ErrorController for consistent Problem Details.
+app.UseExceptionHandler("/error");
+
 app.Use(async (ctx, next) =>
 {
     var headers = ctx.Response.Headers;
@@ -435,9 +515,25 @@ app.Use(async (ctx, next) =>
 
 if (app.Environment.IsDevelopment())
 {
+    // REVIEW-2026-06-06 REST-M1 REJECTED-by-design: Swagger exposure in production gated on CI/CD OpenAPI generation (DEVOPS-H4); will be added to ci.yml build artifact after that gate ships
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// REST-M3: Correlation ID middleware — stamps every response with X-Request-Id
+// using the current trace ID or a fresh GUID if no trace is available.
+app.Use(async (ctx, next) =>
+{
+    var traceId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N");
+    ctx.Response.OnStarting(() =>
+    {
+        ctx.Response.Headers["X-Request-Id"] = traceId;
+        return Task.CompletedTask;
+    });
+    await next();
+});
+
+// REVIEW-2026-06-06 REST-M2 REJECTED-by-design: URL versioning deferred; fleet rollout is managed via MSI self-update channel with coordinated agent releases; URL versioning adds routing complexity without solving the coordinated-deployment problem at current fleet scale
 
 app.UseRateLimiter();
 app.UseCors();

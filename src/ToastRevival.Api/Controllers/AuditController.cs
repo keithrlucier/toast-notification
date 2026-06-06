@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
+using ToastRevival.Api.Extensions;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
 using ToastRevival.Api.Utilities;
@@ -83,10 +84,16 @@ public class AuditController : ControllerBase
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
 
+        // PERF-H2/DOS-L1: Cap export at 50,000 rows to prevent memory exhaustion.
+        const int exportCap = 50_000;
         var logs = await _db.AuditLogs
             .Where(l => l.TenantId == tenantId && l.Timestamp >= since)
             .OrderByDescending(l => l.Timestamp)
+            .Take(exportCap)
             .ToListAsync();
+
+        if (logs.Count == exportCap)
+            Response.Headers["X-Truncated"] = "true";
 
         var tenantName = await _db.Tenants
             .Where(t => t.Id == tenantId)
@@ -108,11 +115,8 @@ public class AuditController : ControllerBase
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private bool IsAdmin()
-    {
-        var role = Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
-        return role >= UserRole.Admin;
-    }
+    // ARCH-M1: Delegates to the shared ClaimsPrincipalExtensions.IsAdmin().
+    private bool IsAdmin() => User.IsAdmin();
 
     private static string BuildAuditCsv(IList<AuditLog> logs)
     {

@@ -15,24 +15,26 @@ public record TemplateResponse(
     string Scenario,
     bool IsDefault);
 
+// INJ-M1: AbsoluteHttpUrl validation added to HeroImageUrl and LogoImageUrl.
 public record CreateTemplateRequest(
     string Name,
     string? Title,
     string? BodyLine1,
     string? BodyLine2,
-    string? HeroImageUrl,
-    string? LogoImageUrl,
+    [AbsoluteHttpUrl] string? HeroImageUrl,
+    [AbsoluteHttpUrl] string? LogoImageUrl,
     string? ActionButtonsJson,
     string? AudioSetting,
     string? Scenario);
 
+// INJ-M1: AbsoluteHttpUrl validation added to HeroImageUrl and LogoImageUrl.
 public record UpdateTemplateRequest(
     string Name,
     string? Title,
     string? BodyLine1,
     string? BodyLine2,
-    string? HeroImageUrl,
-    string? LogoImageUrl,
+    [AbsoluteHttpUrl] string? HeroImageUrl,
+    [AbsoluteHttpUrl] string? LogoImageUrl,
     string? ActionButtonsJson,
     string? AudioSetting,
     string? Scenario);

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Extensions;
 using ToastRevival.Api.Models;
 
 namespace ToastRevival.Api.Controllers;
@@ -50,8 +51,9 @@ public class BlocklistController : ControllerBase
         if (string.IsNullOrWhiteSpace(term) || term.Length > 500)
             return BadRequest("Term must be 1–500 characters.");
 
+        // MT-M4: Explicit TenantId predicate in duplicate-term check.
         // Duplicate guard (unique index will catch this too, but friendlier error)
-        if (await _db.TenantBlocklistEntries.AnyAsync(b => b.Term == term))
+        if (await _db.TenantBlocklistEntries.AnyAsync(b => b.Term == term && b.TenantId == tenantId))
             return Conflict("Term already in blocklist.");
 
         var entry = new TenantBlocklistEntry
@@ -63,7 +65,9 @@ public class BlocklistController : ControllerBase
         _db.TenantBlocklistEntries.Add(entry);
         await _db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(List), new BlocklistEntryResponse(entry.Id, entry.Term, entry.CreatedAt));
+        // REST-L3: routeValues was the DTO instead of null; fixed to pass null routeValues
+        // and the response as the value argument.
+        return CreatedAtAction(nameof(List), null, new BlocklistEntryResponse(entry.Id, entry.Term, entry.CreatedAt));
     }
 
     [HttpDelete("{id:guid}")]
@@ -81,9 +85,6 @@ public class BlocklistController : ControllerBase
         return NoContent();
     }
 
-    private bool IsAdminOrAbove()
-    {
-        var role = User.FindFirstValue("role");
-        return role is nameof(UserRole.Admin) or nameof(UserRole.SuperAdmin);
-    }
+    // ARCH-M1: Delegates to the shared ClaimsPrincipalExtensions.IsAdmin().
+    private bool IsAdminOrAbove() => User.IsAdmin();
 }

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Extensions;
 using ToastRevival.Api.Hubs;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
@@ -58,16 +59,18 @@ public class NotificationsController : ControllerBase
         var senderId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var role     = Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
 
-        // Tenant gate, checked before any target resolution or moderation work. One
-        // projection covers both: (1) FIX-SES-2 — a suspended tenant (the operator kill
-        // switch) cannot send at all; suspension previously only blocked login + new-device
-        // registration, so a suspended tenant's already-issued operator session kept
-        // toasting the fleet. (2) Tenant-wide MFA enforcement — when on, EVERY send needs
-        // a fresh step-up (same mechanism as the broadcast gate below; HasFreshMfa checks
-        // mfa=true AND that the elevation is within the freshness window, not the exp).
+        // PERF-M4: consolidate both Tenants reads into one projection covering all needed fields.
+        // (1) FIX-SES-2 — suspended tenant kill switch. (2) MFA enforcement gate.
+        // (3) ModerationRequireApprovalAll and (4) ModerationBlockedMessage for moderation path below.
         var tenantGate = await _db.Tenants.IgnoreQueryFilters()
             .Where(t => t.Id == tenantId)
-            .Select(t => new { t.RequireMfa, Suspended = t.SuspendedAt != null })
+            .Select(t => new
+            {
+                t.RequireMfa,
+                Suspended = t.SuspendedAt != null,
+                t.ModerationRequireApprovalAll,
+                t.ModerationBlockedMessage
+            })
             .FirstOrDefaultAsync();
         if (tenantGate?.Suspended == true)
             return StatusCode(403, new
@@ -137,11 +140,9 @@ public class NotificationsController : ControllerBase
         // notification routes to PendingReview regardless of moderation engine output,
         // unless it was Block (which stays Block — admin approval is for review-tier
         // content, not for content the tenant policy already rejected).
-        var (requireApprovalAll, blockedMessage) = await _db.Tenants
-            .IgnoreQueryFilters()
-            .Where(t => t.Id == tenantId)
-            .Select(t => new ValueTuple<bool, string?>(t.ModerationRequireApprovalAll, t.ModerationBlockedMessage))
-            .FirstOrDefaultAsync();
+        // PERF-M4: use values already fetched in the tenantGate projection above.
+        var requireApprovalAll = tenantGate?.ModerationRequireApprovalAll ?? false;
+        var blockedMessage = tenantGate?.ModerationBlockedMessage;
 
         if (requireApprovalAll && moderationResult.Decision == ModerationDecision.Pass)
         {
@@ -253,7 +254,12 @@ public class NotificationsController : ControllerBase
         var p    = Math.Max(1, page);
         var size = Math.Clamp(pageSize, 1, 100);
 
+        // MT-H2: Explicit TenantId predicate as defense-in-depth alongside EF global filter.
+        // REVIEW-2026-06-06 REST-M5 REJECTED-by-design: pagination envelope would break existing dashboard client expecting bare array; coordinated API+frontend change filed as REST-refactor milestone
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+
         var items = await _db.Notifications
+            .Where(n => n.TenantId == tenantId)
             .OrderByDescending(n => n.CreatedAt)
             .Skip((p - 1) * size)
             .Take(size)
@@ -420,9 +426,11 @@ public class NotificationsController : ControllerBase
             .FirstOrDefaultAsync(notif => notif.Id == id && notif.TenantId == tenantId);
         if (notification is null) return NotFound();
 
+        // MT-M5: Add explicit TenantId filter on child deliveries (parent Notification
+        // already filtered by TenantId above, but child rows need their own predicate).
         var deliveries = await _db.NotificationDeliveries
             .Include(d => d.Device)
-            .Where(d => d.NotificationId == id)
+            .Where(d => d.NotificationId == id && d.TenantId == tenantId)
             .OrderBy(d => d.DeliveredAt ?? d.CreatedAt)
             .ToListAsync();
 
@@ -468,7 +476,30 @@ public class NotificationsController : ControllerBase
         return sb.ToString();
     }
 
-    private static string EscapeCsvTitle(string value) => value.Replace("\"", "\"\"");
+    // INJ-M3: Prefix formula-trigger characters to prevent CSV injection.
+    private static string EscapeCsvTitle(string title)
+    {
+        if (string.IsNullOrEmpty(title)) return title;
+        if (title[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
+            title = "'" + title;
+        return title.Replace("\"", "\"\"");
+    }
+
+    // INJ-M4: Exposed as internal static so TemplatesController can reuse the same validation.
+    internal static bool TryNormalizeActionButtonsJson(string json, out string? normalizedJson, out string? error)
+    {
+        try
+        {
+            var element = JsonDocument.Parse(json).RootElement;
+            return TryNormalizeActionButtons(element, out normalizedJson, out error);
+        }
+        catch
+        {
+            normalizedJson = null;
+            error = "Action buttons must be valid JSON.";
+            return false;
+        }
+    }
 
     private static bool TryNormalizeActionButtons(object? rawButtons, out string? normalizedJson, out string? error)
     {
@@ -604,36 +635,28 @@ public class NotificationsController : ControllerBase
         string.Equals(value, "Url", StringComparison.OrdinalIgnoreCase) ? "Url" : "Action";
 
     /// <summary>
-    /// SES-3 + FIX-SES-2 (2026-06-01): returns true when a device JWT must be refused —
-    /// the device row is missing or Decommissioned (SES-3), OR the owning tenant is
-    /// suspended (SES-2). A suspended tenant is the operator kill switch; without the
-    /// tenant half a suspended tenant's agents keep draining their Pending toasts on a
-    /// 365-day token. Mirrors NotificationHub.OnConnectedAsync; IgnoreQueryFilters() to
-    /// match the device-context paths.
+    /// ARCH-M2: Delegates to the shared DbContextExtensions.IsDeviceRevokedAsync.
     /// </summary>
-    private async Task<bool> IsDeviceRevoked(Guid deviceId)
-    {
-        var row = await _db.Devices.IgnoreQueryFilters()
-            .Where(d => d.Id == deviceId)
-            .Select(d => new { d.Status, TenantSuspended = d.Tenant.SuspendedAt != null })
-            .FirstOrDefaultAsync();
-        return row is null
-            || row.Status == DeviceStatus.Decommissioned
-            || row.TenantSuspended;
-    }
+    private Task<bool> IsDeviceRevoked(Guid deviceId) =>
+        _db.IsDeviceRevokedAsync(deviceId);
 
     private async Task<List<Guid>> ResolveTargetDeviceIds(SendNotificationRequest req, Guid tenantId)
     {
-        IQueryable<Device> query = _db.Devices.Where(d => d.Status == DeviceStatus.Active);
+        // MT-H5: Explicit TenantId predicates on All and Device paths to prevent
+        // cross-tenant device targeting if global query filter is bypassed.
+        IQueryable<Device> query = _db.Devices.Where(d => d.TenantId == tenantId && d.Status == DeviceStatus.Active);
 
         return req.TargetType switch
         {
+            // MT-H5: TenantId already in base query above.
             TargetType.All => await query.Select(d => d.Id).ToListAsync(),
 
+            // MT-H5: TenantId already in base query above.
             TargetType.Device when req.TargetIds?.Count > 0 =>
                 await query.Where(d => req.TargetIds.Contains(d.Id))
                            .Select(d => d.Id).ToListAsync(),
 
+            // MT-H5/AA-M9: TargetType.Group already correct — both sides carry TenantId.
             TargetType.Group when req.TargetIds?.Count > 0 =>
                 await _db.DeviceGroupMembers
                     .Where(m => req.TargetIds.Contains(m.DeviceGroupId)

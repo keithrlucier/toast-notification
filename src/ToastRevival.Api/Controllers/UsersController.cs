@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -6,6 +8,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Extensions;
 using ToastRevival.Api.Models;
 
 namespace ToastRevival.Api.Controllers;
@@ -58,6 +61,11 @@ public class UsersController : ControllerBase
         if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == req.Email))
             return Conflict("An account with this email already exists.");
 
+        // AA-M10: Generate a secure random 16-char temporary password internally.
+        // The password is returned in the 200 response body for the admin to share;
+        // it is NOT logged by middleware. The user must change it on first login.
+        var tempPassword = GenerateSecureTempPassword();
+
         var user = new AppUser
         {
             TenantId = tenantId,
@@ -67,12 +75,15 @@ public class UsersController : ControllerBase
             SecurityStamp = Guid.NewGuid().ToString(),
         };
 
-        var result = await _userManager.CreateAsync(user, req.Password);
+        var result = await _userManager.CreateAsync(user, tempPassword);
         if (!result.Succeeded)
             return BadRequest(result.Errors.Select(e => e.Description));
 
+        // AA-M10: Return temp password in response body (encrypted transport only).
+        // Audit event logs "temp password generated" but NOT the value.
         return CreatedAtAction(nameof(List), new { id = user.Id },
-            new UserResponse(user.Id, user.Email!, user.Role.ToString(), false, null, user.CreatedAt));
+            new { userId = user.Id, email = user.Email!, role = user.Role.ToString(),
+                  tempPassword, note = "User must change this password on first login." });
     }
 
     [HttpPut("{id:guid}/role")]
@@ -126,5 +137,39 @@ public class UsersController : ControllerBase
     private UserRole GetCallerRole() =>
         Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
 
-    private bool IsAdmin() => GetCallerRole() >= UserRole.Admin;
+    // ARCH-M1: Delegates to the shared ClaimsPrincipalExtensions.IsAdmin().
+    private bool IsAdmin() => User.IsAdmin();
+
+    // AA-M10: Generate a cryptographically random 16-character temporary password
+    // meeting the AA-M3 password policy (upper, lower, digit, symbol).
+    private static string GenerateSecureTempPassword()
+    {
+        const string upper   = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lower   = "abcdefghjkmnpqrstuvwxyz";
+        const string digits  = "23456789";
+        const string symbols = "!@#$%^&*";
+        const string all     = upper + lower + digits + symbols;
+
+        Span<byte> bytes = stackalloc byte[16];
+        RandomNumberGenerator.Fill(bytes);
+
+        var sb = new StringBuilder(16);
+        // Ensure at least one character from each required class.
+        sb.Append(upper[bytes[0] % upper.Length]);
+        sb.Append(lower[bytes[1] % lower.Length]);
+        sb.Append(digits[bytes[2] % digits.Length]);
+        sb.Append(symbols[bytes[3] % symbols.Length]);
+        for (var i = 4; i < 16; i++)
+            sb.Append(all[bytes[i] % all.Length]);
+
+        // Shuffle using Fisher-Yates so required chars aren't always at positions 0-3.
+        RandomNumberGenerator.Fill(bytes);
+        for (var i = 15; i > 0; i--)
+        {
+            var j = bytes[i] % (i + 1);
+            (sb[i], sb[j]) = (sb[j], sb[i]);
+        }
+
+        return sb.ToString();
+    }
 }

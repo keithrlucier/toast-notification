@@ -7,8 +7,10 @@ using Microsoft.EntityFrameworkCore;
 using Stripe;
 using Stripe.Checkout;
 using ToastRevival.Api.Data;
+using ToastRevival.Api.Extensions;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
+using ToastRevival.Api.Utilities;
 
 namespace ToastRevival.Api.Controllers;
 
@@ -84,6 +86,8 @@ public class BillingController : ControllerBase
     public async Task<IActionResult> UpdateStripeConfig([FromBody] UpdateStripeConfigRequest req)
     {
         if (!IsPlatformAdmin()) return Forbid();
+        // AA-M8: POST stripe-config requires fresh MFA elevation (same pattern as SystemController).
+        if (RequireFreshMfaCheck() is { } mfaErr) return mfaErr;
         try
         {
             var snapshot = await _billingConfig.UpdateStripeConfigAsync(
@@ -155,7 +159,17 @@ public class BillingController : ControllerBase
             },
         };
 
-        var session = await sessionService.CreateAsync(sessionOpts);
+        // REL-M1: Wrap Stripe SDK call in try/catch; return 503 on StripeException.
+        Session session;
+        try
+        {
+            session = await sessionService.CreateAsync(sessionOpts);
+        }
+        catch (StripeException ex)
+        {
+            _logger.LogWarning("Stripe CreateCheckout failed: {Message}", ex.Message);
+            return Problem(detail: "Billing checkout is temporarily unavailable. Please try again.", statusCode: 503);
+        }
         return Ok(new { url = session.Url });
     }
 
@@ -189,7 +203,17 @@ public class BillingController : ControllerBase
             ReturnUrl = _config["Stripe:CancelUrl"] ?? "http://localhost:5173/billing",
         };
 
-        var portalSession = await portalService.CreateAsync(portalOpts);
+        // REL-M1: Wrap Stripe SDK call in try/catch; return 503 on StripeException.
+        Stripe.BillingPortal.Session portalSession;
+        try
+        {
+            portalSession = await portalService.CreateAsync(portalOpts);
+        }
+        catch (StripeException ex)
+        {
+            _logger.LogWarning("Stripe CreatePortal failed: {Message}", ex.Message);
+            return Problem(detail: "Billing portal is temporarily unavailable. Please try again.", statusCode: 503);
+        }
         return Ok(new { url = portalSession.Url });
     }
 
@@ -206,11 +230,12 @@ public class BillingController : ControllerBase
         if (tenant is null) return NotFound();
 
         if (string.IsNullOrWhiteSpace(tenant.StripeCustomerId))
-            return Ok(new { invoices = Array.Empty<object>() });
+            return Problem(detail: "Stripe billing is not configured.", statusCode: 503);
 
         var secretKey = _config["Stripe:SecretKey"];
         if (string.IsNullOrWhiteSpace(secretKey) || secretKey.StartsWith("sk_test_REPLACE"))
-            return Ok(new { invoices = Array.Empty<object>() });
+            // REST-L9: consistent 503 instead of empty-array when Stripe not configured.
+            return Problem(detail: "Stripe billing is not configured.", statusCode: 503);
 
         StripeConfiguration.ApiKey = secretKey;
 
@@ -242,6 +267,8 @@ public class BillingController : ControllerBase
     [HttpPost("webhook")]
     [AllowAnonymous]
     [DisableRateLimiting]
+    // DOS-L2: Cap Stripe webhook body size to 64 KB to prevent large-body DoS.
+    [RequestSizeLimit(65_536)]
     public async Task<IActionResult> Webhook()
     {
         if (!_config.GetValue<bool>("Billing:Enabled"))
@@ -285,39 +312,41 @@ public class BillingController : ControllerBase
             return BadRequest("Invalid signature.");
         }
 
-        // Capture the root IServiceProvider before returning — HttpContext is recycled
-        // after the response is sent, but the root provider outlives the request.
-        var services = HttpContext.RequestServices;
-        _ = Task.Run(() => HandleStripeEventAsync(stripeEvent, services));
+        // REL-H2: Use IServiceScopeFactory to create a fresh scope in the background task
+        // instead of capturing HttpContext.RequestServices (which is request-scoped and
+        // disposed after the response is sent). Each handler already creates its own scope.
+        // TODO: Store evt.Id as idempotency key to prevent duplicate processing on replay.
+        var scopeFactory = HttpContext.RequestServices.GetRequiredService<IServiceScopeFactory>();
+        _ = Task.Run(() => HandleStripeEventAsync(stripeEvent, scopeFactory));
         return Ok();
     }
 
     // ── Stripe event handler ──────────────────────────────────────────────────
 
-    private async Task HandleStripeEventAsync(Event evt, IServiceProvider services)
+    private async Task HandleStripeEventAsync(Event evt, IServiceScopeFactory scopeFactory)
     {
         try
         {
             switch (evt.Type)
             {
                 case "checkout.session.completed":
-                    await HandleCheckoutCompleted(evt, services);
+                    await HandleCheckoutCompleted(evt, scopeFactory);
                     break;
 
                 case "customer.subscription.updated":
-                    await HandleSubscriptionUpdated(evt, services);
+                    await HandleSubscriptionUpdated(evt, scopeFactory);
                     break;
 
                 case "customer.subscription.deleted":
-                    await HandleSubscriptionDeleted(evt, services);
+                    await HandleSubscriptionDeleted(evt, scopeFactory);
                     break;
 
                 case "invoice.payment_failed":
-                    await HandlePaymentFailed(evt, services);
+                    await HandlePaymentFailed(evt, scopeFactory);
                     break;
 
                 case "invoice.paid":
-                    await HandleInvoicePaid(evt, services);
+                    await HandleInvoicePaid(evt, scopeFactory);
                     break;
 
                 default:
@@ -331,13 +360,14 @@ public class BillingController : ControllerBase
         }
     }
 
-    private async Task HandleCheckoutCompleted(Event evt, IServiceProvider services)
+    // REL-H2: All handlers now accept IServiceScopeFactory and create their own scope.
+    private async Task HandleCheckoutCompleted(Event evt, IServiceScopeFactory scopeFactory)
     {
         if (evt.Data.Object is not Session session) return;
         if (!session.Metadata.TryGetValue("tenantId", out var tenantIdStr)) return;
         if (!Guid.TryParse(tenantIdStr, out var tenantId)) return;
 
-        using var scope = services.CreateScope();
+        using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var tenant = await db.Tenants.IgnoreQueryFilters()
@@ -352,27 +382,25 @@ public class BillingController : ControllerBase
         tenant.BillingStatus        = ResolveBillingStatus(sub.Status);
         tenant.LicenseStart         = sub.CurrentPeriodStart;
         tenant.LicenseEnd           = sub.CurrentPeriodEnd;
-        tenant.SubscriptionTier     = SubscriptionTier.Standard;
-        tenant.LicenseCount         = 0;
+        // DC-M1: SubscriptionTier and LicenseCount are obsolete dead columns — removed assignments.
         tenant.PastDueAt            = null;
 
         await db.SaveChangesAsync();
         _logger.LogInformation("Tenant {TenantId} activated per-device billing.", tenantId);
     }
 
-    private async Task HandleSubscriptionUpdated(Event evt, IServiceProvider services)
+    private async Task HandleSubscriptionUpdated(Event evt, IServiceScopeFactory scopeFactory)
     {
         if (evt.Data.Object is not Subscription sub) return;
 
-        using var scope = services.CreateScope();
+        using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var tenant = await db.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.StripeSubscriptionId == sub.Id);
         if (tenant is null) return;
 
-        tenant.SubscriptionTier = SubscriptionTier.Standard;
-        tenant.LicenseCount     = 0;
+        // DC-M1: SubscriptionTier and LicenseCount are obsolete dead columns — removed assignments.
         tenant.LicenseStart     = sub.CurrentPeriodStart;
         tenant.LicenseEnd       = sub.CurrentPeriodEnd;
         tenant.BillingStatus    = ResolveBillingStatus(sub.Status);
@@ -386,11 +414,11 @@ public class BillingController : ControllerBase
         _logger.LogInformation("Tenant {TenantId} subscription updated with status {Status}.", tenant.Id, tenant.BillingStatus);
     }
 
-    private async Task HandleSubscriptionDeleted(Event evt, IServiceProvider services)
+    private async Task HandleSubscriptionDeleted(Event evt, IServiceScopeFactory scopeFactory)
     {
         if (evt.Data.Object is not Subscription sub) return;
 
-        using var scope = services.CreateScope();
+        using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var tenant = await db.Tenants.IgnoreQueryFilters()
@@ -405,11 +433,11 @@ public class BillingController : ControllerBase
         _logger.LogInformation("Tenant {TenantId} subscription canceled", tenant.Id);
     }
 
-    private async Task HandlePaymentFailed(Event evt, IServiceProvider services)
+    private async Task HandlePaymentFailed(Event evt, IServiceScopeFactory scopeFactory)
     {
         if (evt.Data.Object is not Invoice invoice) return;
 
-        using var scope = services.CreateScope();
+        using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var tenant = await db.Tenants.IgnoreQueryFilters()
@@ -423,11 +451,11 @@ public class BillingController : ControllerBase
         _logger.LogWarning("Tenant {TenantId} payment failed — grace period started", tenant.Id);
     }
 
-    private async Task HandleInvoicePaid(Event evt, IServiceProvider services)
+    private async Task HandleInvoicePaid(Event evt, IServiceScopeFactory scopeFactory)
     {
         if (evt.Data.Object is not Invoice invoice) return;
 
-        using var scope = services.CreateScope();
+        using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var tenant = await db.Tenants.IgnoreQueryFilters()
@@ -443,11 +471,24 @@ public class BillingController : ControllerBase
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private bool IsAdmin() =>
-        Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) && r >= UserRole.Admin;
+    // ARCH-M1: Delegates to shared extension.
+    private bool IsAdmin() => User.IsAdmin();
 
-    private bool IsPlatformAdmin() =>
-        User.FindFirstValue("platformAdmin") == "true";
+    // ARCH-M1: Delegates to shared extension.
+    private bool IsPlatformAdmin() => User.IsPlatformAdmin();
+
+    /// <summary>
+    /// AA-M8: Requires a fresh MFA step-up for sensitive platform-admin billing actions.
+    /// Returns null when the action may proceed; a 403 otherwise.
+    /// </summary>
+    private IActionResult? RequireFreshMfaCheck()
+        => User.HasFreshMfa(_config)
+            ? null
+            : StatusCode(403, new
+            {
+                error = "mfa_required",
+                message = "This action requires MFA verification. Verify your authenticator and try again."
+            });
 
     private async Task<string> CreateStripeCustomerAsync(Tenant tenant)
     {

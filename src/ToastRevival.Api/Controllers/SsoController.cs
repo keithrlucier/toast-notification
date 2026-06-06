@@ -213,6 +213,7 @@ public class SsoController : ControllerBase
         // a plain session token and the user steps up natively when a gate demands it.
         // Without this an Entra-MFA'd SSO admin was fail-closed OUT of the very actions
         // the owner wants gated, with no native way to elevate.
+        // REVIEW-2026-06-06 AA-M6 REJECTED-by-design: JWT-in-fragment is current SSO callback mechanism; exchange-code pattern requires persistent server-side token store (Redis or DB session) that the current stateless API does not include; accepted risk documented, planned as SSO-hardening milestone
         var jwt = identity.MfaSatisfied ? _tokens.CreateMfaToken(user) : _tokens.CreateUserToken(user);
         return Redirect($"{FrontendBase()}/sso/callback#token={Uri.EscapeDataString(jwt)}");
     }

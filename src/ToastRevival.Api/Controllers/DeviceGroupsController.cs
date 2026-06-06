@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Extensions;
 using ToastRevival.Api.Models;
 
 namespace ToastRevival.Api.Controllers;
@@ -124,8 +125,10 @@ public class DeviceGroupsController : ControllerBase
         var group = await _db.DeviceGroups.FirstOrDefaultAsync(g => g.Id == id && g.TenantId == GetTenantId());
         if (group is null) return NotFound("Device group not found.");
 
+        // MT-H4: Explicit TenantId predicate in device existence check.
+        var tenantId = GetTenantId();
         var deviceExists = await _db.Devices
-            .AnyAsync(d => d.Id == req.DeviceId && d.Status != DeviceStatus.Decommissioned);
+            .AnyAsync(d => d.Id == req.DeviceId && d.TenantId == tenantId && d.Status != DeviceStatus.Decommissioned);
         if (!deviceExists) return NotFound("Device not found.");
 
         var alreadyMember = await _db.DeviceGroupMembers
@@ -141,7 +144,8 @@ public class DeviceGroupsController : ControllerBase
         group.DeviceCount = await ActiveMemberCount(id) + 1;
         await _db.SaveChangesAsync();
 
-        return Ok();
+        // REST-L8: 204 NoContent is the correct response for a member-add operation with no body.
+        return NoContent();
     }
 
     [HttpPut("{id:guid}/members")]
@@ -157,15 +161,18 @@ public class DeviceGroupsController : ControllerBase
             .Distinct()
             .ToList();
 
+        // MT-H4: Explicit TenantId predicate in bulk device validation.
+        // MT-L2: Use generic error message that doesn't confirm whether device IDs exist.
+        var groupTenantId = GetTenantId();
         var validDeviceIds = requested.Count == 0
             ? new List<Guid>()
             : await _db.Devices
-                .Where(d => requested.Contains(d.Id) && d.Status != DeviceStatus.Decommissioned)
+                .Where(d => requested.Contains(d.Id) && d.TenantId == groupTenantId && d.Status != DeviceStatus.Decommissioned)
                 .Select(d => d.Id)
                 .ToListAsync();
 
         if (validDeviceIds.Count != requested.Count)
-            return BadRequest("One or more devices do not exist in this tenant.");
+            return BadRequest("One or more device IDs are invalid.");
 
         var valid = validDeviceIds.ToHashSet();
         var existing = await _db.DeviceGroupMembers
@@ -226,10 +233,11 @@ public class DeviceGroupsController : ControllerBase
 
     private Task<bool> GroupNameExists(Guid tenantId, string name, Guid? excludeId = null)
     {
-        var normalized = name.ToLower();
+        // PERF-L3: Use EF.Functions.ILike (PostgreSQL case-insensitive LIKE) instead of
+        // g.Name.ToLower() == normalized, which cannot use a B-tree index.
         return _db.DeviceGroups
             .AnyAsync(g => g.TenantId == tenantId
-                && g.Name.ToLower() == normalized
+                && EF.Functions.ILike(g.Name, name)
                 && (excludeId == null || g.Id != excludeId.Value));
     }
 
@@ -237,9 +245,6 @@ public class DeviceGroupsController : ControllerBase
         _db.DeviceGroupMembers
             .CountAsync(m => m.DeviceGroupId == groupId && m.Device.Status == DeviceStatus.Active);
 
-    private bool IsAdmin()
-    {
-        var role = Enum.TryParse<UserRole>(User.FindFirstValue("role"), out var r) ? r : UserRole.Technician;
-        return role >= UserRole.Admin;
-    }
+    // ARCH-M1: Delegates to the shared ClaimsPrincipalExtensions.IsAdmin().
+    private bool IsAdmin() => User.IsAdmin();
 }

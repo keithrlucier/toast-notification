@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -57,6 +58,15 @@ public class TemplatesController : ControllerBase
         var tenantId = GetTenantId();
         if (tenantId == Guid.Empty) return Unauthorized();
 
+        // INJ-M4: Validate and normalize ActionButtonsJson before DB write.
+        string? normalizedButtonsJson = null;
+        if (!string.IsNullOrWhiteSpace(req.ActionButtonsJson))
+        {
+            if (!NotificationsController.TryNormalizeActionButtonsJson(
+                    req.ActionButtonsJson, out normalizedButtonsJson, out var btnError))
+                return BadRequest(btnError);
+        }
+
         var template = new NotificationTemplate
         {
             TenantId          = tenantId,
@@ -67,7 +77,7 @@ public class TemplatesController : ControllerBase
             BodyLine2Template = req.BodyLine2?.Trim(),
             HeroImageUrl      = req.HeroImageUrl?.Trim(),
             LogoImageUrl      = req.LogoImageUrl?.Trim(),
-            ActionButtonsJson = req.ActionButtonsJson,
+            ActionButtonsJson = normalizedButtonsJson,
             AudioSetting      = req.AudioSetting,
             Scenario          = ParseScenario(req.Scenario),
             IsDefault         = false,
@@ -109,13 +119,22 @@ public class TemplatesController : ControllerBase
         if (template is null) return NotFound();
         if (template.IsDefault) return BadRequest("Default templates cannot be edited.");
 
+        // INJ-M4: Validate and normalize ActionButtonsJson before DB write.
+        string? normalizedUpdateButtonsJson = null;
+        if (!string.IsNullOrWhiteSpace(req.ActionButtonsJson))
+        {
+            if (!NotificationsController.TryNormalizeActionButtonsJson(
+                    req.ActionButtonsJson, out normalizedUpdateButtonsJson, out var btnErr))
+                return BadRequest(btnErr);
+        }
+
         template.Name              = req.Name.Trim();
         template.TitleTemplate     = req.Title?.Trim();
         template.BodyLine1Template = req.BodyLine1?.Trim();
         template.BodyLine2Template = req.BodyLine2?.Trim();
         template.HeroImageUrl      = req.HeroImageUrl?.Trim();
         template.LogoImageUrl      = req.LogoImageUrl?.Trim();
-        template.ActionButtonsJson = req.ActionButtonsJson;
+        template.ActionButtonsJson = normalizedUpdateButtonsJson;
         template.AudioSetting      = req.AudioSetting;
         template.Scenario          = ParseScenario(req.Scenario);
         template.UpdatedAt         = DateTime.UtcNow;

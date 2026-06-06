@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
+using ToastRevival.Api.Extensions;
 using ToastRevival.Api.Models;
 
 namespace ToastRevival.Api.Controllers;
@@ -36,25 +37,35 @@ public class AnalyticsController : ControllerBase, IActionFilter
         days = Math.Clamp(days, 1, 365);
         var since = DateTime.UtcNow.Date.AddDays(-days);
 
+        // MT-H3: Explicit TenantId predicate as defense-in-depth alongside EF global filter.
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+
         var sentCount = await _db.Notifications
-            .Where(n => n.SentAt >= since)
+            .Where(n => n.TenantId == tenantId && n.SentAt >= since)
             .CountAsync();
 
-        // Materialize statuses; avoids translating enum.ToString() server-side
-        var statuses = await _db.NotificationDeliveries
-            .Where(d => d.CreatedAt >= since)
-            .Select(d => d.Status)
+        // PERF-H1: Server-side GROUP BY instead of materializing all rows into memory.
+        var statusCounts = await _db.NotificationDeliveries
+            .Where(d => d.TenantId == tenantId && d.CreatedAt >= since)
+            .GroupBy(d => d.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
             .ToListAsync();
 
-        var total     = statuses.Count;
-        var delivered = statuses.Count(s => s == DeliveryStatus.Delivered || s == DeliveryStatus.Clicked || s == DeliveryStatus.Dismissed);
-        var clicked   = statuses.Count(s => s == DeliveryStatus.Clicked);
+        var total     = statusCounts.Sum(x => x.Count);
+        var delivered = statusCounts
+            .Where(x => x.Status == DeliveryStatus.Delivered
+                     || x.Status == DeliveryStatus.Clicked
+                     || x.Status == DeliveryStatus.Dismissed)
+            .Sum(x => x.Count);
+        var clicked   = statusCounts
+            .Where(x => x.Status == DeliveryStatus.Clicked)
+            .Sum(x => x.Count);
 
         var deliveryRate     = total     > 0 ? Math.Round((double)delivered / total     * 100, 1) : 0.0;
         var interactionRate  = delivered > 0 ? Math.Round((double)clicked   / delivered * 100, 1) : 0.0;
 
         var activeDeviceCount = await _db.Devices
-            .Where(d => d.LastPing >= DateTime.UtcNow.AddHours(-24) && d.Status == DeviceStatus.Active)
+            .Where(d => d.TenantId == tenantId && d.LastPing >= DateTime.UtcNow.AddHours(-24) && d.Status == DeviceStatus.Active)
             .CountAsync();
 
         return Ok(new { sentCount, deliveryRate, interactionRate, activeDeviceCount });
@@ -66,14 +77,17 @@ public class AnalyticsController : ControllerBase, IActionFilter
         days = Math.Clamp(days, 1, 365);
         var since = DateTime.UtcNow.Date.AddDays(-days);
 
+        // MT-H3: Explicit TenantId predicate as defense-in-depth alongside EF global filter.
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+
         var sentByDay = await _db.Notifications
-            .Where(n => n.SentAt >= since && n.SentAt != null)
+            .Where(n => n.TenantId == tenantId && n.SentAt >= since && n.SentAt != null)
             .GroupBy(n => n.SentAt!.Value.Date)
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .ToListAsync();
 
         var deliveredByDay = await _db.NotificationDeliveries
-            .Where(d => d.DeliveredAt >= since && d.DeliveredAt != null
+            .Where(d => d.TenantId == tenantId && d.DeliveredAt >= since && d.DeliveredAt != null
                 && (d.Status == DeliveryStatus.Delivered || d.Status == DeliveryStatus.Clicked))
             .GroupBy(d => d.DeliveredAt!.Value.Date)
             .Select(g => new { Date = g.Key, Count = g.Count() })
@@ -101,19 +115,21 @@ public class AnalyticsController : ControllerBase, IActionFilter
         days = Math.Clamp(days, 1, 365);
         var since = DateTime.UtcNow.Date.AddDays(-days);
 
-        var rawStatuses = await _db.NotificationDeliveries
-            .Where(d => d.CreatedAt >= since)
-            .Select(d => d.Status)
+        // MT-H3: Explicit TenantId predicates added as defense-in-depth per MT-H3 remediation.
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+
+        // PERF-H1: Server-side GROUP BY instead of materializing all rows into memory.
+        var statusCounts = await _db.NotificationDeliveries
+            .Where(d => d.TenantId == tenantId && d.CreatedAt >= since)
+            .GroupBy(d => d.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
             .ToListAsync();
 
-        var byStatus = rawStatuses
-            .GroupBy(s => s)
-            .ToDictionary(g => g.Key.ToString(), g => g.Count());
+        var byStatus = statusCounts.ToDictionary(x => x.Status.ToString(), x => x.Count);
 
-        // Join notifications with their template categories for the period.
-        // Both sides carry global tenant query filters so no explicit TenantId filter needed.
+        // MT-H3: Explicit TenantId predicates added as defense-in-depth per MT-H3 remediation.
         var rawCategories = await _db.Notifications
-            .Where(n => n.SentAt >= since && n.TemplateId != null)
+            .Where(n => n.TenantId == tenantId && n.SentAt >= since && n.TemplateId != null)
             .Join(
                 _db.NotificationTemplates,
                 n => n.TemplateId,

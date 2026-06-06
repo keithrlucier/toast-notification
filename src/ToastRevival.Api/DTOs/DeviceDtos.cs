@@ -4,8 +4,9 @@ namespace ToastRevival.Api.DTOs;
 
 public record RegisterDeviceRequest(
     [Required] Guid TenantId,
-    [Required] string DeviceName,
-    [Required] string Username,
+    // INJ-L1: MaxLength added to prevent oversized values from breaking DB write.
+    [Required, MaxLength(256)] string DeviceName,
+    [Required, MaxLength(256)] string Username,
     string? OsVersion = null,
     string? AgentVersion = null,
     string? EnrollmentKey = null,

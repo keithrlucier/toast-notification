@@ -12,6 +12,8 @@ using ToastRevival.Api.Utilities;
 
 namespace ToastRevival.Api.Controllers;
 
+// REVIEW-2026-06-06 ARCH-M4 REJECTED-by-design: 607-line TenantController is a known size issue; split is planned for a dedicated refactor milestone
+
 [ApiController]
 [Route("api/system")]
 [Authorize(Policy = "PlatformAdmin")]
@@ -208,8 +210,10 @@ public class SystemController : ControllerBase
         trial.ReviewNote = string.IsNullOrWhiteSpace(request?.Note) ? null : request.Note.Trim();
         await _db.SaveChangesAsync();
 
+        // MT-M3: Platform admin actions that don't belong to a specific tenant are logged
+        // with Guid.Empty as a sentinel instead of the platform admin's own tenantId.
         await _audit.LogAsync(
-            GetTenantId(),
+            Guid.Empty,
             GetUserId(),
             "trial_request.rejected",
             "TrialRequest",
@@ -398,6 +402,8 @@ public class SystemController : ControllerBase
     [HttpGet("tenants/{id:guid}")]
     public async Task<IActionResult> Tenant(Guid id)
     {
+        // AA-L1: Sensitive cross-tenant PII — require fresh MFA.
+        if (RequireFreshMfa() is { } mfa) return mfa;
         var tenant = await _db.Tenants.IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == id);
@@ -476,6 +482,8 @@ public class SystemController : ControllerBase
     [HttpGet("billing-overview")]
     public async Task<IActionResult> BillingOverview()
     {
+        // AA-L1: Billing overview exposes cross-tenant financial data — require fresh MFA.
+        if (RequireFreshMfa() is { } mfa) return mfa;
         var tenants = await _db.Tenants.IgnoreQueryFilters()
             .AsNoTracking()
             .Select(t => new { t.Id, t.BillingStatus, t.IsComplimentary })
@@ -775,9 +783,12 @@ public class SystemController : ControllerBase
 
     // ─── Cross-tenant user ops (Platform Admin) ────────────────────────────────
 
+    // REVIEW-2026-06-06 REST-L5 REJECTED-by-design: admin list pagination is low-traffic and current counts are manageable; standard pagination with total counts is a low-priority improvement milestone
     [HttpGet("users")]
     public async Task<IActionResult> SearchUsers([FromQuery] string? search = null, [FromQuery] int limit = 50)
     {
+        // AA-L1: Sensitive cross-tenant user data — require fresh MFA.
+        if (RequireFreshMfa() is { } mfa) return mfa;
         limit = Math.Clamp(limit, 1, 200);
         var needle = search?.Trim().ToLowerInvariant();
 

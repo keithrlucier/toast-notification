@@ -2,6 +2,19 @@
 
 ---
 
+## FIX-BUILD-VERSION-001 — No build-time guard that MSI binary version == csproj version (2026-06-06, OPEN — owner: Keith/Anthony)
+
+**Surface:** `scripts/build-msi.ps1`.
+**Symptom (root of the 2026-06-05 3-hour loss):** `build-msi.ps1 -Version <X>` sets only the WiX `ProductVersion` (the MSI wrapper). The agent binary version comes independently from `ToastRevival.Agent.csproj` (`<Version>`/`<AssemblyVersion>`/`<FileVersion>`). Nothing asserts the two agree, so a stale or un-bumped csproj silently ships a wrapper/binary mismatch — exactly the 0.4.38-binary-in-a-0.4.40-package incident.
+
+**Interim mitigation (this session):** manual post-build verification — extract the exe from the MSI via `msiexec /a` and compare FileVersion + MD5 against the compiled exe, and read the MSI `ProductVersion` from the Property table (see TEST-LOG 2026-06-06).
+
+**Proposed fix (not yet implemented):** add an assertion in `build-msi.ps1` after `dotnet publish` — read the published exe's `FileVersion` and `throw` if it does not equal the `-Version` argument (normalized to 3 fields). Fails the build loudly instead of shipping a mismatch. ~10 lines, no behavioral risk.
+
+**Why OPEN, not deferred:** this is a real gap with an owner; it stays OPEN until the assertion is in the build script. Anchored here so it isn't re-discovered the hard way a third time.
+
+---
+
 ## FIX-UPLOAD-413-001 — nginx 413 Request Entity Too Large on uploads (2026-05-27, RESOLVED)
 
 **Surface:** `/etc/nginx/sites-enabled/toast` on TOASTWEB1.

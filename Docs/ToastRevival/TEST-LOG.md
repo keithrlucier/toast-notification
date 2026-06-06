@@ -1,5 +1,34 @@
 # ToastRevival - Test Log
 
+## Agent 0.4.41 release build — binary-version + CA-type verification (2026-06-06, PRE-SIGN)
+
+**Build:** `scripts/build-msi.ps1 -Version 0.4.41.0` at HEAD `cc0cb03` (version-bump commit on top of `7471ee4` — the Repair-CA-immediate 2762 fix). MSI: `artifacts/installer/ToastNotification.Agent-0.4.41.0.msi` (76.9 MB, **unsigned** — signing is the pending Keith gate).
+
+**Why this verification exists:** the 2026-06-05 session lost 3+ hours because the MSI on the server carried a 0.4.38 binary inside a 0.4.40 wrapper (uploaded 3 min before the version-bump commit). Standing pre-deploy gate: prove the binary *inside the package* matches the intended version before announcing live.
+
+**Verification (gold-standard — binary extracted from the package, not the loose publish dir):**
+- Publish-dir exe `ToastNotification.Agent.exe`: FileVersion **0.4.41**, ProductVersion `0.4.41+cc0cb03…` (informational version carries the build commit SHA), MD5 `EB8E1F12765DC297759EC087B14A6AB5`.
+- MSI `ProductVersion` (Property table via WindowsInstaller COM): **0.4.41.0**.
+- Binary **inside** the MSI (administrative install `msiexec /a` → `…\Toast Notification\ToastNotification.Agent.exe`): FileVersion **0.4.41**, MD5 `EB8E1F12765DC297759EC087B14A6AB5` — **byte-identical to the compiled exe (MD5 match = TRUE)**.
+
+**CustomAction-type proof (7471ee4 is compiled into THIS package)** — read from the MSI `CustomAction` table:
+
+| Action | Type | Phase |
+|---|---|---|
+| RepairScheduledTask | 98 | immediate ✓ (the 2762 fix) |
+| RepairUpdaterTask | 98 | immediate ✓ (the 2762 fix) |
+| KillAgent | 98 | immediate (production-proven reference) |
+| InstallScheduledTask | 3170 | deferred ✓ (correct — pre-Finalize) |
+| InstallUpdaterTask | 3170 | deferred ✓ |
+
+Type 98 = exe-from-directory (34) + ignore-return (64), immediate → legal after InstallFinalize → 2762 cannot fire. Deferred CAs carry the 0x400 in-script bit (the 3170 / 1122 rows).
+
+**Three version surfaces bumped in lockstep (commit `cc0cb03`):** csproj `Version`/`AssemblyVersion`/`FileVersion`, `appsettings.json Agent:LatestVersion`, `Package.appxmanifest Version` — all 0.4.40 → 0.4.41(.0).
+
+**Status:** Build staged + verified. PENDING (needs Keith): sign EXE (Thales PIN) → rebuild MSI via wix-direct against the signed publish dir (NOT `build-msi.ps1` — it re-publishes and clobbers the signed exe) → sign MSI → deploy to TOASTWEB1 `/opt/toast/downloads/ToastNotification.msi` → bump `Agent__LatestVersion` in `/opt/toast/.env` → `systemctl restart toast-api` → verify `/api/agent/version` → mirror tag **v0.5.42**.
+
+---
+
 ## MFA-7 — SMS step-up downgrade guard (v0.5.26, Code Review remediation)
 
 **Finding:** A user with an enrolled TOTP authenticator (`MfaSecret` set) could elevate the

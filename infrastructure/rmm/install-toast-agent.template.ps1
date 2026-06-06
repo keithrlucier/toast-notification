@@ -108,6 +108,50 @@ try {
     exit 1
 }
 
+# -- Idempotency: skip the whole MSI dance if already at-or-above this version -
+# Re-running /i against an already-registered ProductCode enters maintenance/
+# reconfiguration mode; a custom-action failure there 1603s and rolls the product
+# back -- and the uninstall-first path below would have ALREADY removed the
+# previously-healthy install, leaving the device broken. Reading the MSI's own
+# ProductVersion and short-circuiting when the endpoint is current makes this
+# script a true no-op on healthy devices instead of a destructive reinstall.
+# (Mirrors the same-or-newer guard in install-toast-agent.ps1.)
+$msiVersion = $null
+try {
+    $wi  = New-Object -ComObject WindowsInstaller.Installer
+    $db  = $wi.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $wi, @($f, 0))
+    $vw  = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @("SELECT Value FROM Property WHERE Property = 'ProductVersion'"))
+    $vw.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $vw, $null)
+    $rec = $vw.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $vw, $null)
+    if ($rec) { $msiVersion = [Version]$rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, @(1)) }
+    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($vw)
+    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($db)
+    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($wi)
+    Write-Log "MSI ProductVersion: $msiVersion"
+} catch {
+    Write-Log "Could not read MSI ProductVersion -- proceeding without same-version skip ($($_.Exception.Message))" "WARN"
+}
+
+$installedEntry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+    -ErrorAction SilentlyContinue |
+    Where-Object { $_.DisplayName -like '*Toast Notification*Agent*' } |
+    Select-Object -First 1
+
+if ($installedEntry -and $msiVersion) {
+    try {
+        $installedVer = [Version]$installedEntry.DisplayVersion
+        if ($installedVer -ge $msiVersion) {
+            Write-Log "Agent already at version $installedVer (MSI is $msiVersion) -- already current, nothing to do."
+            Remove-Item $f -Force -ErrorAction SilentlyContinue
+            Write-Log "Script finished successfully (no-op: already current)"
+            exit 0
+        }
+        Write-Log "Installed $installedVer is older than MSI $msiVersion -- upgrading."
+    } catch {
+        Write-Log "Version compare failed ($($_.Exception.Message)) -- proceeding with install" "WARN"
+    }
+}
+
 # -- Uninstall any existing agent first ---------------------------------------
 # Running /i against an already-registered ProductCode enters maintenance/
 # reconfiguration mode and 1603s on custom action failures. Rollbacks from
@@ -115,11 +159,6 @@ try {
 # so the subsequent install is always a fresh install with no upgrade/repair
 # complexity, no rollback state, no mutex races from CA-spawned processes.
 $taskRoot = "\"
-
-$installedEntry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' `
-    -ErrorAction SilentlyContinue |
-    Where-Object { $_.DisplayName -like '*Toast Notification*Agent*' } |
-    Select-Object -First 1
 
 if ($installedEntry) {
     $productCode      = $installedEntry.PSChildName
@@ -253,10 +292,19 @@ if ($msiExitCode -eq 0 -or $msiExitCode -eq 3010) {
 } else {
     Write-Log "MSI install failed with exit code $msiExitCode" "ERROR"
     if (Test-Path $msiLog) {
-        Write-Log "--- MSI log (first 50 lines) ---"
-        Get-Content $msiLog | Select-Object -First 50 | ForEach-Object { Write-Log "  MSI: $_" "ERROR" }
-        Write-Log "--- MSI log (last 50 lines) ---"
-        Get-Content $msiLog | Select-Object -Last 50 | ForEach-Object { Write-Log "  MSI: $_" "ERROR" }
+        # Surface the ACTUAL failing action instead of a blind 100-line dump.
+        # "Action ended ...: <Name>. Return value 3." names the custom action that
+        # rolled the install back; "returned actual error" carries its exit code.
+        # Logged at INFO (not ERROR) so the RMM console shows a few clean lines
+        # rather than wrapping every MSI line in a PowerShell error record.
+        $signal = Select-String -Path $msiLog -Pattern 'Return value 3|returned actual error|error status: 1603|MainEngineThread is returning|Note: 1: 172[123]|Rollback'
+        if ($signal) {
+            Write-Log "--- MSI failure signal (filtered) ---"
+            $signal | ForEach-Object { Write-Log "  MSI: $($_.Line.Trim())" }
+        } else {
+            Write-Log "--- MSI log tail (no explicit failure signal matched) ---"
+            Get-Content $msiLog | Select-Object -Last 40 | ForEach-Object { Write-Log "  MSI: $_" }
+        }
     }
 }
 
@@ -287,6 +335,33 @@ if (Test-Path $installDir) {
 if (-not $msiSuccess -and -not (Test-Path $installDir)) {
     Write-Log "MSI failed and no install dir present -- exiting with error" "ERROR"
     exit $msiExitCode
+}
+
+# -- Ensure scheduled tasks exist (MSI task CAs are best-effort) ---------------
+# InstallScheduledTask / InstallUpdaterTask in the MSI are Return=ignore: a
+# schtasks failure must never roll a committed file install back to 1603. If
+# either CA was skipped or AV-blocked, recreate the task here from the XML the
+# MSI dropped so the agent still launches at logon and the updater stays usable.
+if (Test-Path $installDir) {
+    $taskFallbacks = @(
+        @{ Name = "\Toast2IT\ToastNotificationAgentLogon"; Xml = "$installDir\ToastNotificationLogon.xml" },
+        @{ Name = "\Toast2IT\ToastNotificationUpdater";    Xml = "$installDir\ToastNotificationUpdater.xml" }
+    )
+    foreach ($tf in $taskFallbacks) {
+        try {
+            & "$env:windir\System32\schtasks.exe" /Query /TN $tf.Name 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0 -and (Test-Path $tf.Xml)) {
+                & "$env:windir\System32\schtasks.exe" /Create /TN $tf.Name /XML $tf.Xml /F | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Log "Created missing scheduled task: $($tf.Name)"
+                } else {
+                    Write-Log "Could not create scheduled task $($tf.Name) (schtasks exit $LASTEXITCODE)" "WARN"
+                }
+            }
+        } catch {
+            Write-Log "Task-existence check failed for $($tf.Name): $($_.Exception.Message)" "WARN"
+        }
+    }
 }
 
 # -- Start agent --------------------------------------------------------------

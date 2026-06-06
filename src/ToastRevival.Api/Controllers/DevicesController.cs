@@ -432,7 +432,7 @@ public class DevicesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(body?.AgentVersion))
             device.AgentVersion = body.AgentVersion;
         // M1 — refresh network context every heartbeat so the dashboard tracks
-        // network changes (VPN, DHCP, Wi-Fi roaming) within the ~30-min ping cadence.
+        // network changes (VPN, DHCP, Wi-Fi roaming) within the ~6-min ping cadence.
         // WAN is server-derived (always refresh). LAN only when the agent sends one,
         // so an old agent's empty payload never nulls a stored value.
         device.WanIpAddress = ClampIp(CloudflareIpValidator.ResolveTrustedClientIp(HttpContext));

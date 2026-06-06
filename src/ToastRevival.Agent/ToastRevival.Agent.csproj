@@ -20,9 +20,9 @@
     <AssemblyName>ToastNotification.Agent</AssemblyName>
     <ApplicationIcon>ToastNotification.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.4.41</Version>
-    <AssemblyVersion>0.4.41</AssemblyVersion>
-    <FileVersion>0.4.41</FileVersion>
+    <Version>0.4.42</Version>
+    <AssemblyVersion>0.4.42</AssemblyVersion>
+    <FileVersion>0.4.42</FileVersion>
     <!-- AssemblyTitle / Product / Company / Description populate the exe's
          version-info resource fields that Task Manager, File Properties, and
          the WinAppSDK auto-derived AUMID DisplayName fallback all read from.

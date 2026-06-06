@@ -679,8 +679,9 @@ internal sealed class AgentHubClient : IAsyncDisposable
         // Hub OnConnectedAsync already updates Device.LastPing on every reconnect.
         // This loop is the belt-and-suspenders heartbeat for the case where the
         // hub stays cleanly connected for hours and the server hasn't seen any
-        // signal. 30-minute cadence: 48 calls/day, well under device-per-hour 10/hr.
-        var interval = TimeSpan.FromMinutes(30);
+        // signal. 6-minute cadence: 240 calls/day, exactly 10/hr matching the
+        // device-per-hour rate limit so no pings are dropped.
+        var interval = TimeSpan.FromMinutes(6);
         while (!ct.IsCancellationRequested)
         {
             try

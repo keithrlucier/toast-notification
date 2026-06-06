@@ -57,22 +57,15 @@ public sealed class EndToEndNotificationTests
         var factory    = _load.Factory;
         using var http = factory.CreateClient();
 
-        // 1) Register the tenant + admin user — first session this DB has seen.
-        var registerEmail = $"admin-{Guid.NewGuid():n}@toastrevival.test";
-        var registerReq = new RegisterRequest(
-            TenantName: $"E2E Tenant {Guid.NewGuid():n}",
-            Email: registerEmail,
-            Password: "TestPass123!");
-
-        var registerResp = await http.PostAsJsonAsync("/api/auth/register", registerReq);
-        Assert.Equal(HttpStatusCode.OK, registerResp.StatusCode);
-        var auth = await registerResp.Content.ReadFromJsonAsync<AuthResponse>();
-        Assert.NotNull(auth);
+        // 1) Seed the tenant + admin user directly via DI (the old /api/auth/register
+        //    endpoint was removed in DC-L5; the new flow is a 3-step trial-gate path
+        //    not suitable for integration tests).
+        var auth = await SecurityHarness.SeedTenantAsync(factory);
 
         // 2) Register a device — unauthenticated endpoint, returns the device
         // JWT and the tenant signing key the agent will HMAC-verify against.
         var deviceReq = new RegisterDeviceRequest(
-            TenantId: auth!.TenantId,
+            TenantId: auth.TenantId,
             DeviceName: "E2E-LAB-01",
             Username: "lab-user",
             OsVersion: "Windows 11 26100",
@@ -111,7 +104,7 @@ public sealed class EndToEndNotificationTests
             // 4) Send a notification targeted at this device. Single-device
             // target keeps the test off the broadcast/MFA path.
             http.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", auth.Token);
+                new AuthenticationHeaderValue("Bearer", auth.AdminToken);
 
             var sendReq = new SendNotificationRequest(
                 Title: "E2E test notification",
@@ -195,19 +188,10 @@ public sealed class EndToEndNotificationTests
         var factory    = _load.Factory;
         using var http = factory.CreateClient();
 
-        var registerEmail = $"groups-{Guid.NewGuid():n}@toastrevival.test";
-        var registerReq = new RegisterRequest(
-            TenantName: $"Group Tenant {Guid.NewGuid():n}",
-            Email: registerEmail,
-            Password: "TestPass123!");
-
-        var registerResp = await http.PostAsJsonAsync("/api/auth/register", registerReq);
-        Assert.Equal(HttpStatusCode.OK, registerResp.StatusCode);
-        var auth = await registerResp.Content.ReadFromJsonAsync<AuthResponse>();
-        Assert.NotNull(auth);
+        var auth = await SecurityHarness.SeedTenantAsync(factory);
 
         var serverDeviceResp = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
-            TenantId: auth!.TenantId,
+            TenantId: auth.TenantId,
             DeviceName: "GROUP-SERVER-01",
             Username: "server-user",
             OsVersion: "Windows Server 2025",
@@ -227,7 +211,7 @@ public sealed class EndToEndNotificationTests
         Assert.NotNull(workstationDevice);
 
         http.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", auth.Token);
+            new AuthenticationHeaderValue("Bearer", auth.AdminToken);
 
         var createGroupResp = await http.PostAsJsonAsync("/api/devicegroups", new CreateDeviceGroupRequest(
             Name: "Servers",

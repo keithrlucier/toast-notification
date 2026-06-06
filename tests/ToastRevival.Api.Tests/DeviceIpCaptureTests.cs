@@ -46,7 +46,7 @@ public sealed class DeviceIpCaptureTests
         var factory = _load.Factory;
         using var http = factory.CreateClient();
 
-        var auth = await RegisterTenantAsync(http);
+        var auth = await RegisterTenantAsync(factory);
 
         // Old-agent registration: no lanIpAddress in the payload.
         var deviceResp = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
@@ -71,7 +71,7 @@ public sealed class DeviceIpCaptureTests
         var factory = _load.Factory;
         using var http = factory.CreateClient();
 
-        var auth = await RegisterTenantAsync(http);
+        var auth = await RegisterTenantAsync(factory);
 
         // New-agent (M2) registration carries the LAN IP.
         var deviceResp = await http.PostAsJsonAsync("/api/devices/register", new RegisterDeviceRequest(
@@ -98,7 +98,7 @@ public sealed class DeviceIpCaptureTests
         var factory = _load.Factory;
         using var http = factory.CreateClient();
 
-        var auth = await RegisterTenantAsync(http);
+        var auth = await RegisterTenantAsync(factory);
         var device = await RegisterDeviceAsync(http, auth.TenantId, "IP-PING-01");
 
         http.DefaultRequestHeaders.Authorization =
@@ -121,7 +121,7 @@ public sealed class DeviceIpCaptureTests
         var factory = _load.Factory;
         using var http = factory.CreateClient();
 
-        var auth = await RegisterTenantAsync(http);
+        var auth = await RegisterTenantAsync(factory);
         var device = await RegisterDeviceAsync(http, auth.TenantId, "IP-PING-02");
 
         http.DefaultRequestHeaders.Authorization =
@@ -152,7 +152,7 @@ public sealed class DeviceIpCaptureTests
         var factory = _load.Factory;
         using var http = factory.CreateClient();
 
-        var auth = await RegisterTenantAsync(http);
+        var auth = await RegisterTenantAsync(factory);
         var device = await RegisterDeviceAsync(http, auth.TenantId, "IP-PING-03");
 
         http.DefaultRequestHeaders.Authorization =
@@ -179,12 +179,12 @@ public sealed class DeviceIpCaptureTests
         var factory = _load.Factory;
         using var http = factory.CreateClient();
 
-        var auth = await RegisterTenantAsync(http);
+        var auth = await RegisterTenantAsync(factory);
         var device = await RegisterDeviceAsync(http, auth.TenantId, "IP-LIST-01",
             lanIpAddress: "192.168.7.7");
 
         http.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", auth.Token);
+            new AuthenticationHeaderValue("Bearer", auth.AdminToken);
 
         var devices = await http.GetFromJsonAsync<List<DeviceResponse>>("/api/devices");
         var listed = Assert.Single(devices!, d => d.DeviceId == device.DeviceId);
@@ -194,17 +194,8 @@ public sealed class DeviceIpCaptureTests
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
-    private static async Task<AuthResponse> RegisterTenantAsync(HttpClient http)
-    {
-        var resp = await http.PostAsJsonAsync("/api/auth/register", new RegisterRequest(
-            TenantName: $"IP Tenant {Guid.NewGuid():n}",
-            Email: $"ip-{Guid.NewGuid():n}@toastrevival.test",
-            Password: "TestPass123!"));
-        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
-        var auth = await resp.Content.ReadFromJsonAsync<AuthResponse>();
-        Assert.NotNull(auth);
-        return auth!;
-    }
+    private static Task<SecurityHarness.SeededPenTenant> RegisterTenantAsync(ApiTestFactory factory) =>
+        SecurityHarness.SeedTenantAsync(factory);
 
     private static async Task<DeviceTokenResponse> RegisterDeviceAsync(
         HttpClient http, Guid tenantId, string deviceName, string? lanIpAddress = null)

@@ -705,9 +705,8 @@ public sealed class SecurityTests
 
         using var http = SecurityHarness.AuthedClient(factory, t.AdminToken);
         var inviteReq = new InviteUserRequest(
-            Email:    $"newbie-{Guid.NewGuid():n}@pen.test",
-            Password: "NewbiePass!2026",
-            Role:     UserRole.Admin);
+            Email: $"newbie-{Guid.NewGuid():n}@pen.test",
+            Role:  UserRole.Admin);
 
         var resp = await http.PostAsJsonAsync("/api/users/invite", inviteReq);
         Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);

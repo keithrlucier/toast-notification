@@ -1,3 +1,8 @@
+# DC-I1: ONE-TIME ICON GENERATOR — Generates ToastNotification.ico from source PNG.
+# The output .ico file is committed to the repo. This script is no longer needed
+# unless the brand icon needs regeneration. Last known use: initial project setup.
+# Input PNG required: update $sourcePng path before running.
+
 # Generate ToastNotification.ico from the amber bell PNG.
 # Produces a multi-resolution ICO (16, 32, 48, 256) with PNG-encoded images.
 # Run from repo root:   .\scripts\generate-app-icon.ps1

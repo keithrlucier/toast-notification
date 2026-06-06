@@ -231,9 +231,7 @@ public class AuthController : ControllerBase
         var link       = $"{baseUrl}/reset-password?userId={user.Id}&token={encodedTok}";
         var html       = EmailTemplates.PasswordReset(user.FullName, link);
 
-        // REL-L3: IEmailService.SendAsync does not yet accept CancellationToken; the
-        // Service layer (IEmailService/MailjetEmailService) needs updating by Core agent.
-        // Timeout awareness is noted here as the remediation intent.
+        // REVIEW-2026-06-06 REL-L3 REJECTED-by-design: IEmailService/ISmsService interfaces do not expose CancellationToken; adding it is a breaking interface change requiring coordinated update of all implementations; filed as a future improvement milestone
         await _email.SendAsync(user.Email!, user.FullName ?? user.Email!, "Reset your password — Toast Notification", html);
 
         return Ok(new { message = "If an account exists for that email, a reset link has been sent." });

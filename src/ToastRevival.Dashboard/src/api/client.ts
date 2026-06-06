@@ -7,6 +7,7 @@ export const SESSION_EXPIRED_MESSAGE = 'Your session expired. Please sign in aga
 // Bearer-only auth — CSRF is not a risk with this pattern since browser auto-attach
 // (cookies) is not used. Any future cookie-based auth path must add SameSite=Strict
 // or anti-CSRF tokens as a precondition. See REVIEW-2026-06-06 INJ-I1.
+// REVIEW-2026-06-06 INJ-L4 REJECTED-by-design: localStorage JWT is the current session storage mechanism; HttpOnly cookie-based BFF pattern requires server-side session infra not currently present; dangerouslySetInnerHTML is confirmed absent (2026-06-03 pass), so XSS→token risk requires a first-order XSS vulnerability as prerequisite; accepted architectural trade-off, planned as a future hardening milestone
 export function getToken(): string | null {
   return localStorage.getItem('token');
 }

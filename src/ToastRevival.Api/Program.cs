@@ -345,6 +345,9 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationQueueS
 // ContentSafetyService is scoped (M11) — it reads per-tenant policy from AppDbContext
 // on each call. Client construction is amortized through a static (endpoint, key) cache
 // inside the service so the scoped registration doesn't add per-request Azure SDK overhead.
+// REL-M2 (ContentSafety): ContentSafetyService uses Azure.AI.ContentSafety.ContentSafetyClient
+// (Azure SDK), not a raw HttpClient — HttpClient Polly policies cannot be applied here.
+// The Azure SDK has its own built-in retry policy (RetryPolicy on the pipeline). No AddHttpClient registration.
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IContentModerationService, ContentSafetyService>();
 builder.Services.AddScoped<IBlocklistService, BlocklistService>();
@@ -365,7 +368,15 @@ builder.Services.AddSingleton<ISsoConfigService, SsoConfigService>();
 // each call so a platform-panel secret change (written to appsettings.Local.json
 // and reloaded) applies without a restart. Uses IHttpClientFactory for the token
 // exchange; OIDC signing-key metadata is cached statically inside the service.
-builder.Services.AddHttpClient();
+// REL-M2 (MicrosoftSso): MicrosoftSsoService calls _httpFactory.CreateClient() (unnamed default
+// client) for the token exchange POST. Polly retry + circuit-breaker added to match REL-H3 policy.
+builder.Services.AddHttpClient(string.Empty)
+    .AddTransientHttpErrorPolicy(p => p.WaitAndRetryAsync(
+        retryCount: 3,
+        sleepDurationProvider: retry => TimeSpan.FromSeconds(Math.Pow(2, retry))))
+    .AddTransientHttpErrorPolicy(p => p.CircuitBreakerAsync(
+        handledEventsAllowedBeforeBreaking: 5,
+        durationOfBreak: TimeSpan.FromSeconds(30)));
 builder.Services.AddSingleton<IMicrosoftSsoService, MicrosoftSsoService>();
 
 // Transactional messaging (Mailjet email + ClickSend SMS)

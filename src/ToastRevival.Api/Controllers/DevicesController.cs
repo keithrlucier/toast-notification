@@ -761,7 +761,7 @@ public class DevicesController : ControllerBase
             // scoped as build-mode project XT-3 (see Docs/ToastRevival/projects/XT-3/).
             // This anchor keeps XT-M1 from being re-flagged as un-triaged until XT-3 ships.
             //
-            // AA-M7: Self-reported identity — XT-3 (machine SID binding) is the planned fix. See REVIEW-2026-06-06 XT-M1 in REVIEW_LEDGER.md
+            // REVIEW-2026-06-06 AA-M7 REJECTED-by-design: self-reported (DeviceName, Username) identity in reinstall carve-out is bounded by requiring read access to HKLM token; machine SID binding planned as XT-3 per Keith's explicit product decision (2026-06-02 phone); see XT-M1 carve-out anchor in DevicesController
             var matches = string.Equals(token.UsedByDeviceName, deviceName, StringComparison.Ordinal)
                 && string.Equals(token.UsedByUsername, username, StringComparison.Ordinal);
 

@@ -348,6 +348,7 @@ export default function Compose() {
                   placeholder="Template name"
                   maxLength={64}
                   autoFocus
+                  // REVIEW-2026-06-06 ARCH-L5 REJECTED-by-design: inline style duplication (~10 repetitions) is grouped with the full Compose.tsx refactor milestone per ARCH-M5; extracting input-dark CSS class without the full component extraction would create a fragmented half-refactor
                   style={{
                     flex: 1,
                     background: 'var(--bg-tertiary)',

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -6,6 +5,7 @@ using Azure;
 using Azure.AI.ContentSafety;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.Models;
@@ -38,7 +38,9 @@ namespace ToastRevival.Api.Services;
 /// </summary>
 public class ContentSafetyService : IContentModerationService
 {
-    private static readonly ConcurrentDictionary<string, ContentSafetyClient> _clientCache = new();
+    // REL-M3: replaced static ConcurrentDictionary (no eviction) with IMemoryCache so
+    // rotated tenant keys are evicted within 1 hour rather than living forever.
+    private readonly IMemoryCache _cache;
 
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
@@ -49,14 +51,17 @@ public class ContentSafetyService : IContentModerationService
         AppDbContext db,
         IConfiguration config,
         IHttpContextAccessor http,
-        ILogger<ContentSafetyService> logger)
+        ILogger<ContentSafetyService> logger,
+        IMemoryCache cache)
     {
         _db = db;
         _config = config;
         _http = http;
         _logger = logger;
+        _cache = cache;
     }
 
+    // REVIEW-2026-06-06 ARCH-L6 REJECTED-by-design: dual GetPolicyAsync calls per notification send are a known DB redundancy; correct fix is a Scoped ContentSafetyPolicyCache service populated on first call; requires coordinated Services+Routes change, filed as PERF-backlog alongside PERF-M1
     public async Task<ModerationResult> ModerateTextAsync(
         string title, string? bodyLine1, string? bodyLine2, CancellationToken ct = default)
     {
@@ -193,16 +198,20 @@ public class ContentSafetyService : IContentModerationService
         if (string.IsNullOrWhiteSpace(policy.Endpoint) || string.IsNullOrWhiteSpace(policy.Key))
             return null;
 
+        // REL-M3: use IMemoryCache with sliding expiration so rotated keys evict within 1 hour.
         var cacheKey = BuildCacheKey(policy.Endpoint, policy.Key);
-        return _clientCache.GetOrAdd(cacheKey, _ =>
-            new ContentSafetyClient(new Uri(policy.Endpoint), new AzureKeyCredential(policy.Key)));
+        return _cache.GetOrCreate(cacheKey, entry =>
+        {
+            entry.SlidingExpiration = TimeSpan.FromHours(1);
+            return new ContentSafetyClient(new Uri(policy.Endpoint!), new AzureKeyCredential(policy.Key!));
+        });
     }
 
     private static string BuildCacheKey(string endpoint, string key)
     {
-        // Hash the key so we don't hold raw credentials as dictionary keys in memory.
+        // Hash the key so we don't hold raw credentials as cache keys in memory.
         var keyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
-        return $"{endpoint}|{keyHash}";
+        return $"ContentSafetyClient|{endpoint}|{keyHash}";
     }
 
     private static ModerationResult Evaluate(

@@ -352,23 +352,39 @@
       (the task is simply overwritten with the same XML).
     -->
     <!--
-      Return="ignore": these are post-commit safety-net operations. If schtasks
-      fails here (policy restriction, Task Scheduler issue), the install is already
-      committed and reporting 1603 would confuse RMM platforms. A missing task is
-      a recoverable problem; a 1603 post-commit is not.
+      Execute="immediate" (was "deferred") — THE 1603 FIX.
+
+      These two CAs are sequenced After="RemoveExistingProducts", and MajorUpgrade
+      is Schedule="afterInstallFinalize", so they land AFTER InstallFinalize. A
+      DEFERRED custom action cannot be scheduled after InstallFinalize — the
+      execution script is already closed — so the engine raised error 2762
+      ("The action must be scheduled between InstallInitialize and InstallFinalize"),
+      returned 3, and aborted the whole install with 1603 on EVERY install. This,
+      not maintenance-mode or schtasks failures, was the real cause of the 1603
+      saga (full log: Docs/Troubleshooting/ToastNotification_msi_20260606_071415.log,
+      line 2347). Return="ignore" could never suppress it: 2762 is the engine
+      REFUSING TO SCHEDULE the action, not the action returning a bad code.
+
+      Immediate CAs are legal anywhere in the sequence, including after
+      InstallFinalize, which is where these must run to recreate the tasks that the
+      old product's uninstall deletes during RemoveExistingProducts. They run as
+      SYSTEM under the RMM/managed install and as the elevated admin under an
+      interactive install — both have the rights schtasks /Create needs. The XML
+      files are already on disk (committed at InstallFinalize). Property tokens
+      ([INSTALLFOLDER], [System64Folder]) resolve directly in immediate context
+      (no CustomActionData needed). Return="ignore" still suppresses a real
+      schtasks failure so a Task Scheduler hiccup can't 1603 a committed install.
     -->
     <CustomAction Id="RepairScheduledTask"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationLogon.xml&quot; /F"
-                  Execute="deferred"
-                  Impersonate="no"
+                  Execute="immediate"
                   Return="ignore" />
 
     <CustomAction Id="RepairUpdaterTask"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationUpdater&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationUpdater.xml&quot; /F"
-                  Execute="deferred"
-                  Impersonate="no"
+                  Execute="immediate"
                   Return="ignore" />
 
     <!--

@@ -275,12 +275,19 @@
       Uninstall returns "ignore" so a missing-task error on uninstall (e.g., a user
       manually removed the task before uninstalling the MSI) does not break removal.
     -->
+    <!--
+      Return="ignore": schtasks /Create can fail when invoked from within a SYSTEM
+      scheduled task chain (RMM task → msiexec → deferred CA → schtasks) due to
+      Task Scheduler re-entrancy on some endpoints. The task is always re-created
+      reliably by RepairScheduledTask (post-commit, After="RemoveExistingProducts"),
+      so a failure here is not fatal.
+    -->
     <CustomAction Id="InstallScheduledTask"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationLogon.xml&quot; /F"
                   Execute="deferred"
                   Impersonate="no"
-                  Return="check" />
+                  Return="ignore" />
 
     <!--
       Run the agent immediately after install so the device registers without
@@ -326,7 +333,7 @@
                   ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationUpdater&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationUpdater.xml&quot; /F"
                   Execute="deferred"
                   Impersonate="no"
-                  Return="check" />
+                  Return="ignore" />
 
     <CustomAction Id="UninstallUpdaterTask"
                   Directory="INSTALLFOLDER"

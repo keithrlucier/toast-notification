@@ -284,6 +284,23 @@ builder.Services.AddRateLimiter(opts =>
         });
     });
 
+    // DOS-M5: Per-userId SMS send limit (3 sends / 15 min). Prevents IP-rotating
+    // attacker from draining ClickSend budget against a known phone number.
+    // The endpoint is [Authorize] so userId (JWT sub claim) is always available.
+    opts.AddPolicy("login-sms-per-userid", ctx =>
+    {
+        var userId = ctx.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+            ?? ctx.Connection.RemoteIpAddress?.ToString()
+            ?? "anon";
+        return RateLimitPartition.GetSlidingWindowLimiter($"sms-uid:{userId}", _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit       = 3,
+            Window            = TimeSpan.FromMinutes(15),
+            SegmentsPerWindow = 3,
+            AutoReplenishment = true,
+        });
+    });
+
     // Public trial applications: low hourly budget to limit spam and Turnstile
     // validation flooding before any tenant or user is created.
     opts.AddPolicy("trial-register-per-ip", ctx =>

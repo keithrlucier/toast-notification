@@ -102,7 +102,7 @@ public class AuditController : ControllerBase
 
         if (format.Equals("pdf", StringComparison.OrdinalIgnoreCase))
         {
-            var pdfBytes = _pdf.GenerateAuditLogPdf(logs, tenantName, days);
+            var pdfBytes = await _pdf.GenerateAuditLogPdfAsync(logs, tenantName, days);
             var fileName = $"audit-log-{DateTime.UtcNow:yyyy-MM-dd}.pdf";
             return File(pdfBytes, "application/pdf", fileName);
         }

@@ -554,10 +554,10 @@ public class AuthController : ControllerBase
     /// </summary>
     [HttpPost("mfa/send-sms")]
     [Authorize]
-    // DOS-M5: Per-IP rate limit applied. Per-userId limiting is enforced via the
-    // Identity lockout counter (MaxFailedAccessAttempts=5) which blocks after repeated
-    // failed verifications — see MfaVerifySms and RegisterFailedSmsAttemptAsync.
-    [EnableRateLimiting("login-sms-per-ip")]
+    // DOS-M5: Per-userId sliding-window rate limit (3 sends / 15 min) applied.
+    // IP-based limiting is insufficient — an IP-rotating attacker can spam
+    // ClickSend sends against any known phone number without triggering lockout.
+    [EnableRateLimiting("login-sms-per-userid")]
     public async Task<ActionResult> MfaSendSms()
     {
         var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);

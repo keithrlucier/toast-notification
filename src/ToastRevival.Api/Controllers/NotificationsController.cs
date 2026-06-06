@@ -243,7 +243,7 @@ public class NotificationsController : ControllerBase
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<NotificationHistoryItem>>> History(
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 25, [FromQuery] string? search = null)
     {
         // SES-4: This is a user-facing endpoint. A device JWT (type=device) would
         // satisfy the controller-level [Authorize] but must not read tenant-wide
@@ -260,6 +260,7 @@ public class NotificationsController : ControllerBase
 
         var items = await _db.Notifications
             .Where(n => n.TenantId == tenantId)
+            .Where(n => search == null || EF.Functions.ILike(n.Title, $"%{search}%"))
             .OrderByDescending(n => n.CreatedAt)
             .Skip((p - 1) * size)
             .Take(size)
@@ -443,7 +444,7 @@ public class NotificationsController : ControllerBase
 
         if (format.Equals("pdf", StringComparison.OrdinalIgnoreCase))
         {
-            var pdfBytes = _pdf.GenerateDeliveryReportPdf(notification, deliveries, tenantName);
+            var pdfBytes = await _pdf.GenerateDeliveryReportPdfAsync(notification, deliveries, tenantName);
             return File(pdfBytes, "application/pdf", $"delivery-{shortId}.pdf");
         }
 

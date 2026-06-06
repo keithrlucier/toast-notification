@@ -344,19 +344,25 @@
       next user logon picks them up. The /F flag is idempotent — safe on fresh installs too
       (the task is simply overwritten with the same XML).
     -->
+    <!--
+      Return="ignore": these are post-commit safety-net operations. If schtasks
+      fails here (policy restriction, Task Scheduler issue), the install is already
+      committed and reporting 1603 would confuse RMM platforms. A missing task is
+      a recoverable problem; a 1603 post-commit is not.
+    -->
     <CustomAction Id="RepairScheduledTask"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationLogon.xml&quot; /F"
                   Execute="deferred"
                   Impersonate="no"
-                  Return="check" />
+                  Return="ignore" />
 
     <CustomAction Id="RepairUpdaterTask"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /TN &quot;\Toast2IT\ToastNotificationUpdater&quot; /XML &quot;[INSTALLFOLDER]ToastNotificationUpdater.xml&quot; /F"
                   Execute="deferred"
                   Impersonate="no"
-                  Return="check" />
+                  Return="ignore" />
 
     <!--
       v0.4.37: the agent's SelfUpdateService registers a standalone SYSTEM apply task

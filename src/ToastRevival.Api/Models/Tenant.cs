@@ -26,8 +26,6 @@ public class Tenant
     public int ConsumedCount { get; set; }
     public DateTime? LicenseStart { get; set; }
     public DateTime? LicenseEnd { get; set; }
-    // DC-M1: SubscriptionTier dead column removed — BillingController still assigns it
-    // (Routes agent handles that cleanup); the [Obsolete] enum is retained until then.
     public BillingStatus BillingStatus { get; set; } = BillingStatus.Active;
     // Stripe billing
     public string? StripeCustomerId { get; set; }

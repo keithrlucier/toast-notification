@@ -310,8 +310,24 @@ if ($SkipSigning) {
     Write-Host "==> [6/8] Signing MSI: SKIPPED (-SkipSigning)" -ForegroundColor Yellow
 } else {
     Write-Host "==> [6/8] Signing MSI (SafeNet PIN dialog may pop; token caches the unlock)" -ForegroundColor Cyan
-    try { & (Join-Path $PSScriptRoot "sign-msix.ps1") -Path $msiPath }
-    catch { throw "MSI signing failed: $($_.Exception.Message)" }
+    # Real-time AV (Windows Defender) scans the freshly-built ~99MB MSI and can hold a
+    # transient lock when signtool opens it ("file is being used by another process"),
+    # failing the sign. Retry with a short backoff so a scan window can't kill a build
+    # the token already unlocked. The token caches the PIN, so retries don't re-prompt.
+    $msiSigned = $false
+    for ($attempt = 1; $attempt -le 4 -and -not $msiSigned; $attempt++) {
+        try { & (Join-Path $PSScriptRoot "sign-msix.ps1") -Path $msiPath; $msiSigned = $true }
+        catch {
+            $sm = $_.Exception.Message
+            $transient = $sm -match 'being used by another process|cannot access the file|Access is denied|denied'
+            if ($attempt -lt 4 -and $transient) {
+                Write-Host "    MSI sign attempt $attempt hit a transient lock (AV scan?); retrying in 5s..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 5
+            } else {
+                throw "MSI signing failed after $attempt attempt(s): $sm"
+            }
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------

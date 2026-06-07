@@ -198,6 +198,14 @@ builder.Services.AddAuthorization(opts =>
 {
     opts.AddPolicy("PlatformAdmin", policy =>
         policy.RequireClaim("platformAdmin", "true"));
+    // SEC-001/002-R: central token-type policies close the device/user trust boundary.
+    // Dashboard controllers use [Authorize(Policy = "UserToken")]; device-facing
+    // endpoints use [Authorize(Policy = "DeviceToken")].  Plain [Authorize] on any
+    // remaining endpoint is a gap — add the appropriate policy when adding new routes.
+    opts.AddPolicy("UserToken", policy =>
+        policy.RequireClaim("type", "user"));
+    opts.AddPolicy("DeviceToken", policy =>
+        policy.RequireClaim("type", "device"));
 });
 
 // Rate limiting (D7)

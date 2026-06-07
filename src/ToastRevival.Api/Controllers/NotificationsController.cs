@@ -218,11 +218,15 @@ public class NotificationsController : ControllerBase
             new { req.Title, req.TargetType, deviceCount = deviceIds.Count, moderation = moderationResult.Decision.ToString() },
             HttpContext.Connection.RemoteIpAddress?.ToString());
 
-        // Only enqueue if content passed moderation and is not future-scheduled
+        // REL-002-R: check return value — a false means the bounded channel is full.
+        // Return 503 so the caller knows to retry; do NOT return 2xx for an un-enqueued
+        // notification (the startup recovery sweep will pick it up on restart, but that
+        // can be many seconds away and the caller deserves an honest response now).
         if (initialStatus == NotificationStatus.Queued &&
             (req.ScheduledAt is null || req.ScheduledAt <= DateTime.UtcNow))
         {
-            _queue.Enqueue(notification.Id);
+            if (!_queue.Enqueue(notification.Id))
+                return StatusCode(503, new { error = "queue_full", message = "Notification queue is at capacity. Retry shortly." });
         }
 
         return Accepted(new NotificationResponse(

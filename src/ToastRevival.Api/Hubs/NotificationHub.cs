@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.Models;
+using ToastRevival.Api.Services;
 
 namespace ToastRevival.Api.Hubs;
 
@@ -155,6 +156,51 @@ public class NotificationHub : Hub
             await Clients.Group($"dashboard-{tenantId}")
                 .SendAsync("DeliveryUpdate", notificationId, deviceId, action);
         }
+    }
+
+    // Called by a device after it has fired its own MSI uninstall (CR-P0-006
+    // follow-on / DEP-002). Finalizes decommission and decrements license + billing
+    // so the dashboard reflects real removal, not just "uninstall requested". The
+    // device identity comes from the connection's deviceId claim, so a device can
+    // only acknowledge its OWN uninstall -- there is no peer-spoofing surface.
+    public async Task UninstallAck()
+    {
+        var deviceId = GetDeviceId();
+        var tenantId = GetTenantId();
+        if (deviceId is null || tenantId is null) return;
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Atomic compare-and-set: only the caller that actually flips
+        // PendingUninstall -> Decommissioned (rows == 1) goes on to decrement. A
+        // replay, a second concurrent ack, or a non-pending/foreign device all get
+        // rows == 0 and no-op -- so the agent re-acking on every reconnect can never
+        // double-decrement this device's seat, and a live device can't self-decommission.
+        // (A concurrent admin ConfirmDecommission on the same device is the one remaining
+        // double-count window -- pre-existing on that HTTP path; SyncConsumedCountAsync
+        // self-heals it and a tenant-wide concurrency token is the real fix.)
+        var rows = await db.Devices.IgnoreQueryFilters()
+            .Where(d => d.Id == deviceId.Value
+                     && d.TenantId == tenantId.Value
+                     && d.Status == DeviceStatus.PendingUninstall)
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.Status, DeviceStatus.Decommissioned));
+        if (rows == 0) return;
+
+        var tenant = await db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId.Value);
+        if (tenant is not null)
+        {
+            await scope.ServiceProvider.GetRequiredService<ILicenseService>().DecrementConsumedAsync(tenant);
+            await scope.ServiceProvider.GetRequiredService<IStripeBillingSyncService>().SyncSubscriptionQuantityAsync(tenant);
+        }
+
+        // Device-initiated finalization: no user principal, so userId is null.
+        await scope.ServiceProvider.GetRequiredService<IAuditService>()
+            .LogAsync(tenantId.Value, null, "device.uninstall-acked", "Device", deviceId.Value.ToString());
+
+        await Clients.Group($"dashboard-{tenantId}")
+            .SendAsync("DeviceDisconnected", deviceId);
     }
 
     private Guid? GetTenantId()

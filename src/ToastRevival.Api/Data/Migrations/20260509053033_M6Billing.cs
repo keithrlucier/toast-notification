@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace ToastRevival.Api.Migrations
+namespace ToastRevival.Api.Data.Migrations
 {
     /// <inheritdoc />
     public partial class M6Billing : Migration

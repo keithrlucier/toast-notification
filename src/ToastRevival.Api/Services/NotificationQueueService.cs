@@ -132,11 +132,14 @@ public class NotificationQueueService : BackgroundService, INotificationQueueSer
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+            // REL-002-R: include immediate notifications (ScheduledAt == null) in startup
+            // backfill. Previously these were excluded, leaving any notification committed
+            // to the DB but not enqueued (e.g. process crash between SaveChanges and
+            // Enqueue) stranded forever with no recovery path.
             var due = await db.Notifications
                 .IgnoreQueryFilters()
                 .Where(n => n.Status == NotificationStatus.Queued
-                         && n.ScheduledAt != null
-                         && n.ScheduledAt <= DateTime.UtcNow)
+                         && (n.ScheduledAt == null || n.ScheduledAt <= DateTime.UtcNow))
                 .Select(n => n.Id)
                 .ToListAsync(ct);
 

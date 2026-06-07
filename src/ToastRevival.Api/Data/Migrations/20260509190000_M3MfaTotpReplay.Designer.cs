@@ -9,7 +9,7 @@ using ToastRevival.Api.Data;
 
 #nullable disable
 
-namespace ToastRevival.Api.Migrations
+namespace ToastRevival.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
     [Migration("20260509190000_M3MfaTotpReplay")]

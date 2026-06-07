@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace ToastRevival.Api.Migrations
+namespace ToastRevival.Api.Data.Migrations
 {
     /// <summary>
     /// Adds AppUser.LastTotpStep so MfaService.Verify can reject TOTP code

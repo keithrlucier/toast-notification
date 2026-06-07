@@ -11,7 +11,7 @@ namespace ToastRevival.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Policy = "UserToken")]
 [EnableRateLimiting("tenant-per-minute")]
 public class TemplatesController : ControllerBase
 {

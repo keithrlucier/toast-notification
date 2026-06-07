@@ -130,8 +130,10 @@ internal static class SelfUpdateService
         if (msiPath is null) return;
 
         WriteTrigger($"update|{msiPath}");
-        FireUpdaterTask();
-        DiagLog.Write($"SelfUpdateService: update trigger written; SYSTEM task fired for v{serverVer}.");
+        var fired = FireUpdaterTask();
+        DiagLog.Write(fired
+            ? $"SelfUpdateService: update trigger written; SYSTEM task fired for v{serverVer}."
+            : $"SelfUpdateService: update trigger written for v{serverVer} but updater task launch FAILED — update will not apply until task is repaired.");
     }
 
     // ─── Remote uninstall ───────────────────────────────────────────────────
@@ -140,8 +142,10 @@ internal static class SelfUpdateService
     /// Called from the hub "UninstallAgent" handler. Restores the lock screen,
     /// writes an uninstall trigger, and fires the SYSTEM updater task. The task
     /// runs msiexec /x which kills this process and removes the product.
+    /// Returns true if the SYSTEM updater task fired (so the caller can ack the
+    /// server); false if no product code was found or the task did not launch.
     /// </summary>
-    public static async Task RequestUninstallAsync(CancellationToken ct)
+    public static async Task<bool> RequestUninstallAsync(CancellationToken ct)
     {
         DiagLog.Write("SelfUpdateService: remote uninstall requested.");
 
@@ -149,15 +153,17 @@ internal static class SelfUpdateService
         if (string.IsNullOrWhiteSpace(productCode))
         {
             DiagLog.Write("SelfUpdateService: no InstalledProductCode in registry — cannot trigger MSI uninstall. Agent will exit without removing software.");
-            return;
+            return false;
         }
 
         // Write trigger and fire SYSTEM task first — must succeed before process exits.
         // Lock screen revert is best-effort and runs after the trigger is committed so
         // a slow revert or an early process exit cannot silently drop the uninstall.
         WriteTrigger($"uninstall|{productCode}");
-        FireUpdaterTask();
-        DiagLog.Write($"SelfUpdateService: uninstall trigger written for product {productCode}; SYSTEM task fired.");
+        var fired = FireUpdaterTask();
+        DiagLog.Write(fired
+            ? $"SelfUpdateService: uninstall trigger written for product {productCode}; SYSTEM task fired."
+            : $"SelfUpdateService: uninstall trigger written for product {productCode} but updater task launch FAILED — uninstall will not execute until task is repaired.");
 
         try
         {
@@ -168,6 +174,10 @@ internal static class SelfUpdateService
         {
             DiagLog.Write($"SelfUpdateService: lock screen restore failed (non-fatal): {ex.GetType().Name}: {ex.Message}");
         }
+
+        // Returned to the hub handler so it only sends UninstallAck when the SYSTEM
+        // uninstall task actually fired (REL-004-R / CR-P0-006 follow-on).
+        return fired;
     }
 
     // ─── Updater task mode (--run-updater, runs as SYSTEM) ──────────────────
@@ -577,7 +587,11 @@ internal static class SelfUpdateService
         DiagLog.Write($"SelfUpdateService: trigger written to '{path}'.");
     }
 
-    private static void FireUpdaterTask()
+    // REL-007-R: wait for schtasks.exe to exit and capture its output so a missing
+    // or disabled task surfaces as a logged failure rather than silent "task fired."
+    // Returns true when schtasks reports the task was successfully queued (exit 0);
+    // false on non-zero exit, timeout, or the task not existing at all.
+    private static bool FireUpdaterTask()
     {
         var schtasks = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe");
@@ -585,17 +599,44 @@ internal static class SelfUpdateService
         {
             var psi = new System.Diagnostics.ProcessStartInfo
             {
-                FileName        = schtasks,
-                Arguments       = $"/Run /TN \"{UpdaterTaskName}\"",
-                UseShellExecute = false,
-                CreateNoWindow  = true,
+                FileName               = schtasks,
+                Arguments              = $"/Run /TN \"{UpdaterTaskName}\"",
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
             };
-            System.Diagnostics.Process.Start(psi);
-            DiagLog.Write("SelfUpdateService: updater task fired.");
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc is null)
+            {
+                DiagLog.Write("SelfUpdateService: schtasks.exe could not be started.");
+                return false;
+            }
+
+            bool exited = proc.WaitForExit(10_000); // 10s — task trigger is near-instant
+            var stdout = proc.StandardOutput.ReadToEnd().Trim();
+            var stderr = proc.StandardError.ReadToEnd().Trim();
+
+            if (!exited)
+            {
+                DiagLog.Write("SelfUpdateService: schtasks.exe timed out waiting for exit.");
+                try { proc.Kill(); } catch { /* best-effort */ }
+                return false;
+            }
+
+            if (proc.ExitCode != 0)
+            {
+                DiagLog.Write($"SelfUpdateService: schtasks /Run exited {proc.ExitCode}. stdout={stdout} stderr={stderr}");
+                return false;
+            }
+
+            DiagLog.Write($"SelfUpdateService: updater task fired (exit 0). stdout={stdout}");
+            return true;
         }
         catch (Exception ex)
         {
             DiagLog.Write($"SelfUpdateService: failed to fire updater task: {ex.GetType().Name}: {ex.Message}");
+            return false;
         }
     }
 

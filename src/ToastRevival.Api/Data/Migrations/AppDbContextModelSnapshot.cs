@@ -2,25 +2,22 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using ToastRevival.Api.Data;
 
 #nullable disable
 
-namespace ToastRevival.Api.Migrations
+namespace ToastRevival.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260509024211_M3SecurityHardening")]
-    partial class M3SecurityHardening
+    partial class AppDbContextModelSnapshot : ModelSnapshot
     {
-        /// <inheritdoc />
-        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.15")
+                .HasAnnotation("ProductVersion", "9.0.16")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -178,14 +175,32 @@ namespace ToastRevival.Api.Migrations
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("ExternalId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ExternalProvider")
+                        .HasColumnType("text");
+
+                    b.Property<string>("FullName")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsPlatformAdmin")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime?>("LastLogin")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("LastTotpStep")
+                        .HasColumnType("bigint");
 
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset?>("LockoutEnd")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MfaPendingSecret")
+                        .HasColumnType("text");
 
                     b.Property<string>("MfaSecret")
                         .HasColumnType("text");
@@ -207,10 +222,19 @@ namespace ToastRevival.Api.Migrations
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("RegistrationStep")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Role")
                         .HasColumnType("integer");
 
                     b.Property<string>("SecurityStamp")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("SmsCodeExpiry")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SmsVerificationCode")
                         .HasColumnType("text");
 
                     b.Property<Guid>("TenantId")
@@ -311,6 +335,8 @@ namespace ToastRevival.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Timestamp");
+
                     b.HasIndex("TenantId", "Timestamp");
 
                     b.ToTable("AuditLogs");
@@ -328,6 +354,10 @@ namespace ToastRevival.Api.Migrations
                     b.Property<string>("DeviceName")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("LanIpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<DateTime?>("LastPing")
                         .HasColumnType("timestamp with time zone");
@@ -352,12 +382,17 @@ namespace ToastRevival.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("WanIpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("RegistrationToken")
                         .IsUnique();
 
-                    b.HasIndex("TenantId");
+                    b.HasIndex("TenantId", "Status")
+                        .HasDatabaseName("IX_Devices_TenantId_Status");
 
                     b.ToTable("Devices");
                 });
@@ -407,6 +442,58 @@ namespace ToastRevival.Api.Migrations
                     b.HasIndex("DeviceId");
 
                     b.ToTable("DeviceGroupMembers");
+                });
+
+            modelBuilder.Entity("ToastRevival.Api.Models.EnrollmentToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RevokedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UsedByDeviceName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("UsedByUsername")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("EnrollmentTokens");
                 });
 
             modelBuilder.Entity("ToastRevival.Api.Models.Notification", b =>
@@ -480,7 +567,15 @@ namespace ToastRevival.Api.Migrations
 
                     b.HasIndex("SenderId");
 
-                    b.HasIndex("TenantId");
+                    b.HasIndex("TenantId")
+                        .HasDatabaseName("IX_Notifications_TenantId");
+
+                    b.HasIndex("Status", "ScheduledAt")
+                        .HasFilter("scheduled_at IS NOT NULL");
+
+                    b.HasIndex("TenantId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_Notifications_TenantId_CreatedAt");
 
                     b.ToTable("Notifications");
                 });
@@ -520,6 +615,9 @@ namespace ToastRevival.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("TenantId")
+                        .HasDatabaseName("IX_NotificationDeliveries_TenantId");
+
                     b.HasIndex("NotificationId", "DeviceId")
                         .IsUnique();
 
@@ -555,11 +653,17 @@ namespace ToastRevival.Api.Migrations
                     b.Property<Guid?>("HeroImageId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("HeroImageUrl")
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean");
 
                     b.Property<Guid?>("LogoImageId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("LogoImageUrl")
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -584,14 +688,59 @@ namespace ToastRevival.Api.Migrations
                     b.ToTable("NotificationTemplates");
                 });
 
+            modelBuilder.Entity("ToastRevival.Api.Models.StripeWebhookEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("text");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_StripeWebhookEvents_EventId");
+
+                    b.ToTable("StripeWebhookEvents");
+                });
+
             modelBuilder.Entity("ToastRevival.Api.Models.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AzureAdTenantId")
+                        .HasColumnType("text");
+
                     b.Property<int>("BillingStatus")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ComplimentaryReason")
+                        .HasColumnType("text");
 
                     b.Property<int>("ConsumedCount")
                         .HasColumnType("integer");
@@ -599,11 +748,32 @@ namespace ToastRevival.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DefaultAudioSetting")
+                        .HasColumnType("text");
+
+                    b.Property<int>("DefaultScenario")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DesktopOverlayCustomText")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("DesktopOverlayEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("DesktopOverlayFields")
+                        .HasColumnType("text");
+
+                    b.Property<int>("DesktopOverlayOpacityPercent")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DesktopOverlayPosition")
+                        .HasColumnType("text");
+
                     b.Property<string>("EnrollmentKey")
                         .HasColumnType("text");
 
-                    b.Property<int>("LicenseCount")
-                        .HasColumnType("integer");
+                    b.Property<bool>("IsComplimentary")
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime?>("LicenseEnd")
                         .HasColumnType("timestamp with time zone");
@@ -611,20 +781,83 @@ namespace ToastRevival.Api.Migrations
                     b.Property<DateTime?>("LicenseStart")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("LockScreenEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LockScreenImageUpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LockScreenImageUrl")
+                        .HasColumnType("text");
+
+                    b.Property<string>("LogoUrl")
+                        .HasColumnType("text");
+
+                    b.Property<int>("ModerationBlockSeverity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ModerationBlockedMessage")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ModerationCustomEndpoint")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ModerationCustomKey")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("ModerationEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ModerationRequireApprovalAll")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ModerationReviewSeverity")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ModerationScanImages")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ModerationScanText")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("PastDueAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PrimaryColor")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("RequireMfa")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("SigningKey")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("SsoEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("SsoRequireMfa")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("StripeCustomerId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("StripeSubscriptionId")
                         .HasColumnType("text");
 
                     b.Property<string>("Subdomain")
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("SubscriptionTier")
-                        .HasColumnType("integer");
+                    b.Property<DateTime?>("SuspendedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SuspendedReason")
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -660,6 +893,96 @@ namespace ToastRevival.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("TenantBlocklistEntries");
+                });
+
+            modelBuilder.Entity("ToastRevival.Api.Models.TrialRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CompanyName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("CreatedTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CreatedUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<int>("IntendedUseCase")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("IntendedUseCaseDetails")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("JobTitle")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("RemoteIpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ReviewNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReviewedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TurnstileAction")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("TurnstileHostname")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Website")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email");
+
+                    b.HasIndex("Status", "SubmittedAt");
+
+                    b.ToTable("TrialRequests");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -774,6 +1097,17 @@ namespace ToastRevival.Api.Migrations
                     b.Navigation("Device");
 
                     b.Navigation("DeviceGroup");
+                });
+
+            modelBuilder.Entity("ToastRevival.Api.Models.EnrollmentToken", b =>
+                {
+                    b.HasOne("ToastRevival.Api.Models.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
                 });
 
             modelBuilder.Entity("ToastRevival.Api.Models.Notification", b =>

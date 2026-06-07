@@ -4,7 +4,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace ToastRevival.Api.Migrations
+namespace ToastRevival.Api.Data.Migrations
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration

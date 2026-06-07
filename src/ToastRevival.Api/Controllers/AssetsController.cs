@@ -12,7 +12,7 @@ namespace ToastRevival.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Policy = "UserToken")]
 [EnableRateLimiting("tenant-per-minute")]
 public class AssetsController : ControllerBase
 {
@@ -64,6 +64,7 @@ public class AssetsController : ControllerBase
     }
 
     [HttpPost]
+    [Consumes("multipart/form-data")] // ARCH-001-R: override global application/json filter for upload actions
     [RequestSizeLimit(5 * 1024 * 1024 + 4096)] // file limit + form overhead
     public async Task<ActionResult<AssetResponse>> Upload(
         IFormFile file,

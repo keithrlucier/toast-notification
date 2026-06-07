@@ -9,11 +9,11 @@ using ToastRevival.Api.Data;
 
 #nullable disable
 
-namespace ToastRevival.Api.Migrations
+namespace ToastRevival.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260509035139_M5ApiKeyManagement")]
-    partial class M5ApiKeyManagement
+    [Migration("20260509002218_AddTenantSigningKey")]
+    partial class AddTenantSigningKey
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -520,10 +520,10 @@ namespace ToastRevival.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DeviceId");
+
                     b.HasIndex("NotificationId", "DeviceId")
                         .IsUnique();
-
-                    b.HasIndex("DeviceId", "Status", "CreatedAt");
 
                     b.ToTable("NotificationDeliveries");
                 });
@@ -599,9 +599,6 @@ namespace ToastRevival.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("EnrollmentKey")
-                        .HasColumnType("text");
-
                     b.Property<int>("LicenseCount")
                         .HasColumnType("integer");
 
@@ -632,77 +629,6 @@ namespace ToastRevival.Api.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Tenants");
-                });
-
-            modelBuilder.Entity("ToastRevival.Api.Models.TenantApiKey", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("KeyHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("KeyPrefix")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<DateTime?>("LastUsedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("KeyHash")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId");
-
-                    b.ToTable("TenantApiKeys");
-                });
-
-            modelBuilder.Entity("ToastRevival.Api.Models.TenantBlocklistEntry", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CreatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Term")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TenantId", "Term")
-                        .IsUnique();
-
-                    b.ToTable("TenantBlocklistEntries");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -858,28 +784,6 @@ namespace ToastRevival.Api.Migrations
                 });
 
             modelBuilder.Entity("ToastRevival.Api.Models.NotificationTemplate", b =>
-                {
-                    b.HasOne("ToastRevival.Api.Models.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("ToastRevival.Api.Models.TenantApiKey", b =>
-                {
-                    b.HasOne("ToastRevival.Api.Models.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("ToastRevival.Api.Models.TenantBlocklistEntry", b =>
                 {
                     b.HasOne("ToastRevival.Api.Models.Tenant", "Tenant")
                         .WithMany()

@@ -293,18 +293,42 @@ internal sealed class AgentHubClient : IAsyncDisposable
         _hub.On("UninstallAgent", () =>
         {
             DiagLog.Write("UninstallAgent: remote uninstall command received.");
-            // Fire-and-forget: restore lock screen, write trigger file, fire SYSTEM task.
-            // Cancel shutdown so PrimaryMode exits its wait loop while the async work runs.
+            // Restore lock screen, write trigger file, fire the SYSTEM uninstall task,
+            // and -- only if the task actually fired -- acknowledge to the server BEFORE
+            // tearing down so it can finalize decommission + decrement billing
+            // (CR-P0-006 follow-on). The ack is best-effort: msiexec /x may kill us
+            // first, in which case an admin confirms via confirm-decommission. Teardown
+            // (OnUninstallRequested + _shutdown.Cancel) is deferred to the finally so the
+            // hub stays alive long enough to send the ack. Task.Run keeps the hub message
+            // loop unblocked.
             _ = Task.Run(async () =>
             {
-                try { await SelfUpdateService.RequestUninstallAsync(CancellationToken.None); }
+                try
+                {
+                    var fired = await SelfUpdateService.RequestUninstallAsync(CancellationToken.None);
+                    if (fired)
+                    {
+                        try
+                        {
+                            await _hub.InvokeAsync("UninstallAck");
+                            DiagLog.Write("UninstallAgent: UninstallAck sent to server.");
+                        }
+                        catch (Exception ex)
+                        {
+                            DiagLog.Write($"UninstallAgent: UninstallAck failed (admin can confirm manually): {ex.GetType().Name}: {ex.Message}");
+                        }
+                    }
+                }
                 catch (Exception ex)
                 {
                     DiagLog.Write($"UninstallAgent: RequestUninstallAsync failed: {ex.GetType().Name}: {ex.Message}");
                 }
+                finally
+                {
+                    OnUninstallRequested?.Invoke();
+                    _shutdown.Cancel();
+                }
             });
-            OnUninstallRequested?.Invoke();
-            _shutdown.Cancel();
         });
         // M12.B — admin changed the overlay / lock screen config. Re-fetch + re-apply
         // appearance live instead of waiting for the next agent restart. The handler
@@ -362,9 +386,29 @@ internal sealed class AgentHubClient : IAsyncDisposable
 
     public async Task StartAsync(CancellationToken ct)
     {
+        // REL-001-R: SignalR WithAutomaticReconnect only handles post-connect drops.
+        // The initial StartAsync throws on any transient network/DNS/proxy/TLS failure
+        // at logon time, and the logon scheduled task has no restart-on-failure policy.
+        // Wrap with bounded exponential back-off so the process stays alive and retries
+        // until the network is ready.  Delays: 5s, 10s, 20s, 40s, 60s, then 60s steady.
         DiagLog.Write($"Hub starting: deviceId={_config.DeviceId}");
         ConnectionStateChanged?.Invoke(this, AgentConnectionState.Connecting);
-        await _hub.StartAsync(ct);
+        int attempt = 0;
+        while (true)
+        {
+            try
+            {
+                await _hub.StartAsync(ct);
+                break;
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                var delay = TimeSpan.FromSeconds(Math.Min(60, 5 * Math.Pow(2, attempt)));
+                DiagLog.Write($"Hub start attempt {attempt + 1} failed ({ex.GetType().Name}: {ex.Message}); retrying in {delay.TotalSeconds:0}s");
+                attempt++;
+                await Task.Delay(delay, ct);
+            }
+        }
         DiagLog.Write($"Hub started: state={_hub.State}; connectionId={_hub.ConnectionId}");
         ConnectionStateChanged?.Invoke(this, AgentConnectionState.Connected);
 
@@ -539,9 +583,9 @@ internal sealed class AgentHubClient : IAsyncDisposable
     /// <summary>
     /// Verify HMAC, de-dup, render, and ReportDelivery. Shared between the
     /// hub fanout (OnReceiveNotificationAsync) and the catch-up endpoint
-    /// (RunCatchupAsync). De-dup short-circuits BOTH render and
-    /// ReportDelivery — once we've delivered a notificationId in this
-    /// process, we won't re-acknowledge it through any path.
+    /// (RunCatchupAsync). De-dup short-circuits the RENDER only; the delivery
+    /// ack is always (re)sent, so a notificationId re-served after a dropped
+    /// ack still gets acknowledged (REL-005).
     /// </summary>
     private async Task RenderAndReportAsync(string payloadJson, string signature, string source)
     {
@@ -558,12 +602,15 @@ internal sealed class AgentHubClient : IAsyncDisposable
             return;
         }
 
-        // De-dup BEFORE render. Sliding window resets every time we touch the
-        // entry, so a notification that gets re-served on every reconnect for
-        // an hour stays cached.
+        // De-dup the RENDER only. A cache hit means we already showed this toast,
+        // but the server may still be waiting on the delivery ack (REL-005): a
+        // ReportDelivery that failed mid-reconnect must stay retryable, so on a hit
+        // we re-ack WITHOUT re-rendering instead of returning early and stranding the
+        // delivery as Pending forever. Sliding window resets on every touch.
         if (_renderedCache.TryGetValue(payload.NotificationId, out _))
         {
-            DiagLog.Write($"{source}: notificationId={payload.NotificationId} already rendered — de-dup hit, skipping.");
+            DiagLog.Write($"{source}: notificationId={payload.NotificationId} already rendered -- de-dup hit; re-acking delivery without re-render.");
+            await ReportDeliveryAsync(payload.NotificationId, source);
             return;
         }
 
@@ -590,18 +637,23 @@ internal sealed class AgentHubClient : IAsyncDisposable
             Size = 1,
         });
 
+        await ReportDeliveryAsync(payload.NotificationId, source);
+    }
+
+    // Acknowledge delivery to the server. Best-effort: a failure here (e.g. hub
+    // mid-reconnect) leaves the delivery Pending server-side, and because the
+    // de-dup-hit path re-acks on every catch-up re-serve, the ack is retried until
+    // it lands. Render de-dup and delivery-ack are deliberately decoupled (REL-005)
+    // -- a shown toast must not stay forever-Pending on a dropped ack.
+    private async Task ReportDeliveryAsync(Guid notificationId, string source)
+    {
         try
         {
-            await _hub.InvokeAsync("ReportDelivery", payload.NotificationId);
+            await _hub.InvokeAsync("ReportDelivery", notificationId);
         }
         catch (Exception ex)
         {
-            // Hub may be mid-reconnect during catch-up; the next Reconnected
-            // catch-up cycle will retry because the delivery is still Pending
-            // server-side. The agent dedup cache prevents a re-render but
-            // re-acknowledgement is the explicit goal here, so we don't fight
-            // it — eventual ReportDelivery wins.
-            DiagLog.Write($"{source}: ReportDelivery failed for {payload.NotificationId}: {ex.GetType().Name}: {ex.Message}");
+            DiagLog.Write($"{source}: ReportDelivery failed for {notificationId}: {ex.GetType().Name}: {ex.Message}");
         }
     }
 

@@ -183,7 +183,7 @@ public class DevicesController : ControllerBase
         return Ok(new DeviceTokenResponse(jwt, device.Id, req.TenantId, tenant.SigningKey, tenant.Name));
     }
 
-    [Authorize]
+    [Authorize(Policy = "UserToken")]
     [HttpGet]
     [EnableRateLimiting("tenant-per-minute")]
     public async Task<ActionResult<IEnumerable<DeviceResponse>>> List()
@@ -201,7 +201,7 @@ public class DevicesController : ControllerBase
         return Ok(devices.Select(ToResponse));
     }
 
-    [Authorize]
+    [Authorize(Policy = "UserToken")]
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<DeviceResponse>> Get(Guid id)
     {
@@ -215,11 +215,18 @@ public class DevicesController : ControllerBase
         return device is null ? NotFound() : Ok(ToResponse(device));
     }
 
-    [Authorize]
+    [Authorize(Policy = "UserToken")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Decommission(Guid id)
     {
+        // SEC-001-R: device tokens carry no admin role — this check also closes the
+        // trust-boundary gap. Mutation must not precede authorization validation.
+        if (!IsAdmin()) return Forbid();
+
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        // SEC-001-R: parse the auditable user identity BEFORE any state mutation so a
+        // missing claim aborts cleanly without a committed status change.
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var device = await _db.Devices.FindAsync(id);
         if (device is null) return NotFound();
         if (device.TenantId != tenantId) return NotFound();
@@ -236,7 +243,6 @@ public class DevicesController : ControllerBase
             await _billingSync.SyncSubscriptionQuantityAsync(tenant);
         }
 
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         await _audit.LogAsync(tenantId, userId, "device.decommission", "Device", id.ToString());
 
         return NoContent();
@@ -252,7 +258,7 @@ public class DevicesController : ControllerBase
     /// Issue a single-use enrollment token. The plaintext is returned exactly once;
     /// only its SHA-256 hash is persisted. One token per device.
     /// </summary>
-    [Authorize]
+    [Authorize(Policy = "UserToken")]
     [HttpPost("enrollment-tokens")]
     [EnableRateLimiting("tenant-per-minute")]
     public async Task<ActionResult<IssuedEnrollmentTokenResponse>> IssueEnrollmentToken(
@@ -286,7 +292,7 @@ public class DevicesController : ControllerBase
     }
 
     /// <summary>List this tenant's enrollment tokens (newest first). Never returns plaintext.</summary>
-    [Authorize]
+    [Authorize(Policy = "UserToken")]
     [HttpGet("enrollment-tokens")]
     [EnableRateLimiting("tenant-per-minute")]
     public async Task<ActionResult<IEnumerable<EnrollmentTokenDto>>> ListEnrollmentTokens()
@@ -310,7 +316,7 @@ public class DevicesController : ControllerBase
     /// Revoke an enrollment token. An unredeemed token can no longer be used; a token
     /// already used to register a device is unaffected (the device keeps its JWT).
     /// </summary>
-    [Authorize]
+    [Authorize(Policy = "UserToken")]
     [HttpDelete("enrollment-tokens/{id:guid}")]
     [EnableRateLimiting("tenant-per-minute")]
     public async Task<IActionResult> RevokeEnrollmentToken(Guid id)
@@ -548,7 +554,7 @@ public class DevicesController : ControllerBase
     /// If the device is offline the decommission still happens; the agent software
     /// will not be removed but the device won't be able to reconnect.
     /// </summary>
-    [Authorize]
+    [Authorize(Policy = "UserToken")]
     [HttpPost("{id:guid}/uninstall")]
     [EnableRateLimiting("tenant-per-minute")]
     public async Task<IActionResult> RequestUninstall(Guid id)
@@ -559,6 +565,54 @@ public class DevicesController : ControllerBase
         var device = await _db.Devices.FindAsync(id);
         if (device is null) return NotFound();
         if (device.TenantId != tenantId) return NotFound();
+
+        // REL-004-R: set PendingUninstall rather than Decommissioned immediately.
+        // License decrement and final decommission only happen after the endpoint
+        // confirms local removal via POST .../confirm-decommission, or when an admin
+        // manually confirms via that same endpoint for offline devices.
+        device.Status = DeviceStatus.PendingUninstall;
+        await _db.SaveChangesAsync();
+
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        await _audit.LogAsync(tenantId, userId, "device.uninstall-requested", "Device", id.ToString());
+
+        // Push to the device if it's currently connected on the hub.
+        if (NotificationHub.ConnectedDevices.TryGetValue(id, out var connectionId))
+        {
+            try
+            {
+                await _hubContext.Clients.Client(connectionId).SendAsync("UninstallAgent");
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "UninstallAgent hub push failed for device {DeviceId}", id);
+            }
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// REL-004-R: Finalizes removal of a device that is in PendingUninstall state.
+    /// Used for offline devices (where UninstallAgent hub push could not be delivered)
+    /// or after an admin confirms the endpoint is physically clean. Decrements license
+    /// and billing counts only at this point — not at uninstall-request time.
+    /// </summary>
+    [Authorize(Policy = "UserToken")]
+    [HttpPost("{id:guid}/confirm-decommission")]
+    [EnableRateLimiting("tenant-per-minute")]
+    public async Task<IActionResult> ConfirmDecommission(Guid id)
+    {
+        if (!IsAdmin()) return Forbid();
+
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var device = await _db.Devices.FindAsync(id);
+        if (device is null) return NotFound();
+        if (device.TenantId != tenantId) return NotFound();
+        // REL-004-R: only PendingUninstall can be confirmed — Decommissioned would double-decrement license.
+        if (device.Status != DeviceStatus.PendingUninstall)
+            return BadRequest(new { error = "device_not_pending", message = "Device is not in a pending uninstall state." });
 
         device.Status = DeviceStatus.Decommissioned;
         await _db.SaveChangesAsync();
@@ -571,23 +625,7 @@ public class DevicesController : ControllerBase
             await _billingSync.SyncSubscriptionQuantityAsync(tenant);
         }
 
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        await _audit.LogAsync(tenantId, userId, "device.uninstall", "Device", id.ToString());
-
-        // Push to the device if it's currently connected on the hub.
-        if (NotificationHub.ConnectedDevices.TryGetValue(id, out var connectionId))
-        {
-            try
-            {
-                await _hubContext.Clients.Client(connectionId).SendAsync("UninstallAgent");
-            }
-            catch (Exception ex)
-            {
-                // Non-fatal — device is decommissioned regardless. Agent will
-                // handle DeviceDecommissioned on next reconnect.
-                _logger?.LogWarning(ex, "UninstallAgent hub push failed for device {DeviceId}", id);
-            }
-        }
+        await _audit.LogAsync(tenantId, userId, "device.decommission-confirmed", "Device", id.ToString());
 
         return NoContent();
     }
@@ -600,7 +638,7 @@ public class DevicesController : ControllerBase
     /// (Velopack-managed / DisableAutoUpdate) on receipt, so this never forces an
     /// update against local policy. Returns whether the device was reached.
     /// </summary>
-    [Authorize]
+    [Authorize(Policy = "UserToken")]
     [HttpPost("{id:guid}/check-update")]
     [EnableRateLimiting("tenant-per-minute")]
     public async Task<IActionResult> RequestUpdateCheck(Guid id)
@@ -639,7 +677,7 @@ public class DevicesController : ControllerBase
     /// and update on their next poll. Returns how many online devices were reached
     /// and the tenant's total active device count.
     /// </summary>
-    [Authorize]
+    [Authorize(Policy = "UserToken")]
     [HttpPost("check-update-all")]
     [EnableRateLimiting("tenant-per-minute")]
     public async Task<IActionResult> RequestUpdateCheckAll()

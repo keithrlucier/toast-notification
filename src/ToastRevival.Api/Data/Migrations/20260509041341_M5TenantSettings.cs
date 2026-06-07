@@ -2,7 +2,7 @@
 
 #nullable disable
 
-namespace ToastRevival.Api.Migrations
+namespace ToastRevival.Api.Data.Migrations
 {
     /// <inheritdoc />
     public partial class M5TenantSettings : Migration

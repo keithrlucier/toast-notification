@@ -4,12 +4,15 @@ using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
 
-// DC-M4 — Migration namespace split:
-//   ToastRevival.Api.Migrations      (M1–M6, InitialCreate through PlatformAdminBillingV2)
-//                                    — has the ModelSnapshot; stale as of M9A.
-//   ToastRevival.Api.Data.Migrations (M9A+, RegistrationFlow onward) — ACTIVE namespace.
-// EF Core discovers both at runtime. All new migrations MUST go in Data/Migrations/ and
-// use namespace ToastRevival.Api.Data.Migrations. Never add to the legacy Migrations/ tree.
+// DC-M4 — Migrations are CONSOLIDATED (2026-06-07): a single tree at Data/Migrations/ under
+// the one namespace ToastRevival.Api.Data.Migrations. The full history (InitialCreate ->
+// M18_StripeWebhookInbox) plus the lone AppDbContextModelSnapshot all live there. The legacy
+// Migrations/ folder (namespace ToastRevival.Api.Migrations) that historically held M1-M8 +
+// the snapshot was removed; its files were git-mv'd here and renamespaced. EF identifies a
+// migration by its [Migration("id")] attribute, not its namespace/folder, so the move left
+// __EFMigrationsHistory and all applied state untouched. Standing rule: every new migration
+// goes in Data/Migrations/ with namespace ToastRevival.Api.Data.Migrations (`dotnet ef
+// migrations add <Name> -o Data/Migrations`). There is no second tree to drift against.
 namespace ToastRevival.Api.Data;
 
 public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
@@ -35,6 +38,8 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     // DC-H1: TenantApiKey (dead table) removed — DbSet and entity config dropped.
     public DbSet<TrialRequest> TrialRequests => Set<TrialRequest>();
     public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
+    // REL-003-R: Stripe webhook inbox — durable event log for exactly-once processing.
+    public DbSet<StripeWebhookEvent> StripeWebhookEvents => Set<StripeWebhookEvent>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -215,6 +220,16 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.Property(r => r.TurnstileAction).HasMaxLength(100);
             e.HasIndex(r => new { r.Status, r.SubmittedAt });
             e.HasIndex(r => r.Email);
+        });
+
+        // REL-003-R: Stripe webhook inbox. No tenant filter — this is platform-level state.
+        // EventId unique index enforces exactly-once processing on Stripe replays.
+        builder.Entity<StripeWebhookEvent>(e =>
+        {
+            e.Property(s => s.EventId).HasMaxLength(128);
+            e.Property(s => s.EventType).HasMaxLength(128);
+            e.Property(s => s.Status).HasMaxLength(32);
+            e.HasIndex(s => s.EventId).IsUnique().HasDatabaseName("IX_StripeWebhookEvents_EventId");
         });
     }
 

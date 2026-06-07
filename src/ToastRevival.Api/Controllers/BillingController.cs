@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
+using Npgsql;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -312,19 +313,49 @@ public class BillingController : ControllerBase
             return BadRequest("Invalid signature.");
         }
 
-        // REL-H2: Use IServiceScopeFactory to create a fresh scope in the background task
-        // instead of capturing HttpContext.RequestServices (which is request-scoped and
-        // disposed after the response is sent). Each handler already creates its own scope.
-        // TODO: Store evt.Id as idempotency key to prevent duplicate processing on replay.
+        // REL-003-R: Persist the event record BEFORE returning 2xx. If we crash after
+        // ack but before processing, the row exists for a recovery sweep. If Stripe
+        // replays the same event, the unique index on EventId returns a duplicate-key
+        // exception which we convert to 200 (idempotent accept, already in inbox).
+        var inboxEvent = new StripeWebhookEvent
+        {
+            EventId   = stripeEvent.Id,
+            EventType = stripeEvent.Type,
+            Status    = "received",
+            ReceivedAt = DateTime.UtcNow,
+        };
+        try
+        {
+            _db.StripeWebhookEvents.Add(inboxEvent);
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+            when (ex.InnerException is Npgsql.NpgsqlException pg && pg.SqlState == "23505")
+        {
+            // Stripe replay — already persisted; return 200 to stop retries.
+            _logger.LogInformation("Stripe event {Id} ({Type}) already in inbox — ignoring replay.", stripeEvent.Id, stripeEvent.Type);
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            // Durable accept failed — return 500 so Stripe retries.
+            _logger.LogError(ex, "Failed to persist Stripe event {Id} to webhook inbox.", stripeEvent.Id);
+            return StatusCode(500, "Webhook inbox unavailable.");
+        }
+
         var scopeFactory = HttpContext.RequestServices.GetRequiredService<IServiceScopeFactory>();
-        _ = Task.Run(() => HandleStripeEventAsync(stripeEvent, scopeFactory));
+        _ = Task.Run(() => HandleStripeEventAsync(stripeEvent, inboxEvent.Id, scopeFactory));
         return Ok();
     }
 
     // ── Stripe event handler ──────────────────────────────────────────────────
 
-    private async Task HandleStripeEventAsync(Event evt, IServiceScopeFactory scopeFactory)
+    // REL-003-R: inboxEventId links back to the StripeWebhookEvents row so we can
+    // stamp its Status to processed/failed when the handler completes.
+    private async Task HandleStripeEventAsync(Event evt, Guid inboxEventId, IServiceScopeFactory scopeFactory)
     {
+        string finalStatus;
+        string? errorMessage = null;
         try
         {
             switch (evt.Type)
@@ -353,10 +384,33 @@ public class BillingController : ControllerBase
                     _logger.LogDebug("Unhandled Stripe event type: {Type}", evt.Type);
                     break;
             }
+            finalStatus = "processed";
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing Stripe event {Id} ({Type})", evt.Id, evt.Type);
+            finalStatus = "failed";
+            errorMessage = ex.Message;
+        }
+
+        // Best-effort status update — a failure here does not re-throw; the event
+        // row was already durably accepted, and a future recovery sweep can re-process.
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var row = await db.StripeWebhookEvents.FindAsync(inboxEventId);
+            if (row is not null)
+            {
+                row.Status      = finalStatus;
+                row.ProcessedAt = DateTime.UtcNow;
+                row.ErrorMessage = errorMessage;
+                await db.SaveChangesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not update inbox status for Stripe event {Id}", evt.Id);
         }
     }
 

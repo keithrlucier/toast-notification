@@ -9,11 +9,11 @@ using ToastRevival.Api.Data;
 
 #nullable disable
 
-namespace ToastRevival.Api.Migrations
+namespace ToastRevival.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260509053033_M6Billing")]
-    partial class M6Billing
+    [Migration("20260509041341_M5TenantSettings")]
+    partial class M5TenantSettings
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -311,8 +311,6 @@ namespace ToastRevival.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Timestamp");
-
                     b.HasIndex("TenantId", "Timestamp");
 
                     b.ToTable("AuditLogs");
@@ -484,9 +482,6 @@ namespace ToastRevival.Api.Migrations
 
                     b.HasIndex("TenantId");
 
-                    b.HasIndex("Status", "ScheduledAt")
-                        .HasFilter("scheduled_at IS NOT NULL");
-
                     b.ToTable("Notifications");
                 });
 
@@ -629,20 +624,11 @@ namespace ToastRevival.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("PastDueAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("PrimaryColor")
                         .HasColumnType("text");
 
                     b.Property<string>("SigningKey")
                         .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("StripeCustomerId")
-                        .HasColumnType("text");
-
-                    b.Property<string>("StripeSubscriptionId")
                         .HasColumnType("text");
 
                     b.Property<string>("Subdomain")

@@ -17,7 +17,7 @@ namespace ToastRevival.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Policy = "UserToken")]
 [EnableRateLimiting("tenant-per-minute")]
 public class TenantController : ControllerBase
 {
@@ -198,8 +198,9 @@ public class TenantController : ControllerBase
     /// The URL is stored in Tenant.LogoUrl and used as the notification icon.
     /// </summary>
     [HttpPost("logo")]
+    [Consumes("multipart/form-data")] // ARCH-001-R: override global application/json filter for upload actions
     [RequestSizeLimit(2 * 1024 * 1024 + 4096)]
-    public async Task<ActionResult<object>> UploadLogo(IFormFile file)
+    public async Task<ActionResult<object>> UploadLogo(IFormFile file, [FromServices] IConfiguration config)
     {
         if (!IsAdmin()) return Forbid();
         if (file is null || file.Length == 0) return BadRequest(new { message = "No file uploaded." });
@@ -210,8 +211,12 @@ public class TenantController : ControllerBase
             return BadRequest(new { message = "Unsupported file type. Use PNG, JPG, GIF, or WebP." });
 
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
-        var webRoot  = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
-        var dir      = Path.Combine(webRoot, "assets", "logos");
+        // ARCH-002-R: write to the same persistent Assets:RootPath used by AssetsController
+        // and lock-screen upload so logos survive a redeploy. The old webroot path
+        // (/opt/toast/api/wwwroot/assets/logos) is wiped on every binary deploy.
+        var webRoot    = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
+        var assetsRoot = config["Assets:RootPath"] ?? Path.Combine(webRoot, "assets");
+        var dir        = Path.Combine(assetsRoot, "logos");
         Directory.CreateDirectory(dir);
 
         var fileName = $"{tenantId}{ext}";
@@ -420,6 +425,7 @@ public class TenantController : ControllerBase
     /// size validation only; Windows handles dimension fit on the device.
     /// </summary>
     [HttpPost("lockscreen-image")]
+    [Consumes("multipart/form-data")] // ARCH-001-R: override global application/json filter for upload actions
     [RequestSizeLimit(5 * 1024 * 1024 + 4096)]
     public async Task<ActionResult<object>> UploadLockScreenImage(
         IFormFile file, [FromServices] IConfiguration config)

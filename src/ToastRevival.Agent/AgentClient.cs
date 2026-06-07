@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Windows.AppNotifications;
+using ToastRevival.Agent.Core;
 
 namespace ToastRevival.Agent;
 
@@ -403,7 +404,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                var delay = TimeSpan.FromSeconds(Math.Min(60, 5 * Math.Pow(2, attempt)));
+                var delay = AgentBackoff.ComputeDelay(attempt);
                 DiagLog.Write($"Hub start attempt {attempt + 1} failed ({ex.GetType().Name}: {ex.Message}); retrying in {delay.TotalSeconds:0}s");
                 attempt++;
                 await Task.Delay(delay, ct);

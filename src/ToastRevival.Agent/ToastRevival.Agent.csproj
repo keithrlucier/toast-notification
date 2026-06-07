@@ -20,9 +20,9 @@
     <AssemblyName>ToastNotification.Agent</AssemblyName>
     <ApplicationIcon>ToastNotification.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.4.43</Version>
-    <AssemblyVersion>0.4.43</AssemblyVersion>
-    <FileVersion>0.4.43</FileVersion>
+    <Version>0.4.44</Version>
+    <AssemblyVersion>0.4.44</AssemblyVersion>
+    <FileVersion>0.4.44</FileVersion>
     <!-- AssemblyTitle / Product / Company / Description populate the exe's
          version-info resource fields that Task Manager, File Properties, and
          the WinAppSDK auto-derived AUMID DisplayName fallback all read from.
@@ -48,6 +48,10 @@
     <AppxSymbolPackageEnabled>false</AppxSymbolPackageEnabled>
     <GenerateAppxPackageOnBuild>true</GenerateAppxPackageOnBuild>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ToastRevival.Agent.Core\ToastRevival.Agent.Core.csproj" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.250310001" />

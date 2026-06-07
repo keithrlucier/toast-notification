@@ -416,3 +416,12 @@ Write-Host "     AND /opt/toast/downloads/ToastNotification.Agent-$V4.msi ; sudo
 Write-Host "  3. Set Agent__LatestVersion=$V3 in /opt/toast/.env ; sudo systemctl restart toast-api."
 Write-Host "  4. Verify: curl https://toastnotification.com/api/agent/version  (=> $V3)"
 Write-Host "     and the served-MSI sha256 == manifest sha256 ($msiSha)."
+Write-Host "  5. REFRESH THE .intunewin (admin panel 'Download .intunewin' serves it -- stale = old agent):"
+if ($Intune) {
+    Write-Host "     done by -Intune -> artifacts/intune-out/. scp BOTH ToastNotification.intunewin (canonical)"
+    Write-Host "     + ToastNotification.Agent-$V4.intunewin to /opt/toast/downloads/ ; sudo chown toast:toast."
+} else {
+    Write-Host "     scripts/build-intunewin.ps1 -Version $V4 ; scp ToastNotification.intunewin +"
+    Write-Host "     ToastNotification.Agent-$V4.intunewin to /opt/toast/downloads/ ; sudo chown toast:toast."
+}
+Write-Host "     Verify: curl https://toastnotification.com/api/agent/intunewin-info (=> version $V3, fresh lastModified)."

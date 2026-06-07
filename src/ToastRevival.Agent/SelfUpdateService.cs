@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using Microsoft.Win32;
+using ToastRevival.Agent.Core;
 
 namespace ToastRevival.Agent;
 
@@ -46,6 +47,7 @@ internal static class SelfUpdateService
     private const string UpdatedMsiName  = "ToastNotification.Agent.msi";
     private const string ExpectedSubject = "Toast2IT, LLC";
     private const long   MaxMsiBytes     = 200 * 1024 * 1024; // 200 MB ceiling
+    private const ulong  BitsSizeUnknown = ulong.MaxValue;
 
     // ─── MSI update loop ────────────────────────────────────────────────────
 
@@ -119,7 +121,7 @@ internal static class SelfUpdateService
         if (serverInfo is null) return;
 
         var running = typeof(SelfUpdateService).Assembly.GetName().Version ?? new Version(0, 0);
-        if (!Version.TryParse(serverInfo.Version, out var serverVer) || serverVer <= running)
+        if (!UpdateDecision.TryGetNewerServerVersion(serverInfo.Version, running, out var serverVer))
         {
             DiagLog.Write($"SelfUpdateService: up to date at v{running}.");
             return;
@@ -526,45 +528,27 @@ internal static class SelfUpdateService
         var updateDir = Path.Combine(GetProgramDataDir(), UpdateSubDir);
         Directory.CreateDirectory(updateDir);
         var msiPath = Path.Combine(updateDir, UpdatedMsiName);
+        var tmpPath = msiPath + ".tmp";
 
         try
         {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.UserAgent.Add(
-                new ProductInfoHeaderValue("ToastNotificationAgent", ThisAssembly.Version));
-
-            using var resp = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct);
-            resp.EnsureSuccessStatusCode();
-
-            if (resp.Content.Headers.ContentLength > MaxMsiBytes)
+            TryDeleteFile(tmpPath);
+            var bitsResult = await DownloadFileWithBitsAsync(uri, tmpPath, ct).ConfigureAwait(false);
+            var downloadedBytes = new FileInfo(tmpPath).Length;
+            if (downloadedBytes <= 0 || downloadedBytes > MaxMsiBytes)
             {
-                DiagLog.Write($"SelfUpdateService: MSI Content-Length {resp.Content.Headers.ContentLength} exceeds {MaxMsiBytes} — rejected.");
+                DiagLog.Write($"SelfUpdateService: MSI BITS download size {downloadedBytes:N0} invalid or exceeds {MaxMsiBytes} — rejected.");
+                TryDeleteFile(tmpPath);
                 return null;
             }
 
-            await using var src  = await resp.Content.ReadAsStreamAsync(ct);
-            await using var dest = File.Create(msiPath + ".tmp");
-            var buffer = new byte[81920];
-            long total = 0;
-            int  read;
-            while ((read = await src.ReadAsync(buffer, ct)) > 0)
-            {
-                total += read;
-                if (total > MaxMsiBytes)
-                {
-                    DiagLog.Write($"SelfUpdateService: MSI stream exceeded {MaxMsiBytes} bytes — rejected.");
-                    return null;
-                }
-                await dest.WriteAsync(buffer.AsMemory(0, read), ct);
-            }
-
-            dest.Close();
-            File.Move(msiPath + ".tmp", msiPath, overwrite: true);
-            DiagLog.Write($"SelfUpdateService: MSI downloaded ({total:N0} bytes) to '{msiPath}'.");
+            File.Move(tmpPath, msiPath, overwrite: true);
+            DiagLog.Write($"SelfUpdateService: MSI downloaded via BITS ({downloadedBytes:N0} bytes, job {bitsResult.JobId}) to '{msiPath}'.");
         }
         catch (Exception ex)
         {
             DiagLog.Write($"SelfUpdateService: MSI download failed: {ex.GetType().Name}: {ex.Message}");
+            TryDeleteFile(tmpPath);
             return null;
         }
 
@@ -577,6 +561,89 @@ internal static class SelfUpdateService
 
         DiagLog.Write("SelfUpdateService: MSI Authenticode verified.");
         return msiPath;
+    }
+
+    private static async Task<BitsDownloadResult> DownloadFileWithBitsAsync(Uri source, string destination, CancellationToken ct)
+    {
+        object? managerObject = null;
+        IBackgroundCopyJob? job = null;
+        var jobId = Guid.Empty;
+        var completed = false;
+
+        try
+        {
+            managerObject = new BackgroundCopyManager();
+            var manager = (IBackgroundCopyManager)managerObject;
+            manager.CreateJob("Toast Notification MSI self-update", BG_JOB_TYPE.BG_JOB_TYPE_DOWNLOAD, out jobId, out job);
+            job.SetDescription("Downloads a signed Toast Notification agent MSI update.");
+            job.SetPriority(BG_JOB_PRIORITY.BG_JOB_PRIORITY_FOREGROUND);
+            job.SetMinimumRetryDelay(30);
+            job.SetNoProgressTimeout(300);
+            job.AddFile(source.AbsoluteUri, destination);
+            job.Resume();
+
+            DiagLog.Write($"SelfUpdateService: BITS MSI download job {jobId} started.");
+
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                job.GetProgress(out var progress);
+                if (progress.BytesTotal != BitsSizeUnknown && progress.BytesTotal > (ulong)MaxMsiBytes)
+                    throw new InvalidOperationException($"BITS job {jobId} reports MSI size {progress.BytesTotal:N0}, exceeding {MaxMsiBytes}.");
+                if (progress.BytesTransferred > (ulong)MaxMsiBytes)
+                    throw new InvalidOperationException($"BITS job {jobId} exceeded MSI size cap {MaxMsiBytes}.");
+
+                job.GetState(out var state);
+                switch (state)
+                {
+                    case BG_JOB_STATE.BG_JOB_STATE_TRANSFERRED:
+                        job.Complete();
+                        completed = true;
+                        return new BitsDownloadResult(jobId, progress.BytesTransferred);
+
+                    case BG_JOB_STATE.BG_JOB_STATE_ERROR:
+                        throw new InvalidOperationException($"BITS job {jobId} entered ERROR state.");
+
+                    case BG_JOB_STATE.BG_JOB_STATE_CANCELLED:
+                        throw new InvalidOperationException($"BITS job {jobId} was cancelled.");
+
+                    case BG_JOB_STATE.BG_JOB_STATE_ACKNOWLEDGED:
+                        throw new InvalidOperationException($"BITS job {jobId} was already acknowledged before completion.");
+
+                    case BG_JOB_STATE.BG_JOB_STATE_TRANSIENT_ERROR:
+                        job.Resume();
+                        break;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (!completed && job is not null)
+            {
+                try { job.Cancel(); } catch { /* best-effort BITS cleanup */ }
+            }
+
+            ReleaseComObject(job);
+            ReleaseComObject(managerObject);
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch { /* best-effort cleanup */ }
+    }
+
+    private static void ReleaseComObject(object? obj)
+    {
+        if (obj is not null && Marshal.IsComObject(obj))
+            Marshal.FinalReleaseComObject(obj);
     }
 
     private static void WriteTrigger(string content)
@@ -703,6 +770,126 @@ internal static class SelfUpdateService
     {
         DiagLog.Write(msg);
         return code;
+    }
+
+    private readonly record struct BitsDownloadResult(Guid JobId, ulong BytesTransferred);
+
+    private enum BG_JOB_TYPE
+    {
+        BG_JOB_TYPE_DOWNLOAD = 0,
+    }
+
+    private enum BG_JOB_PRIORITY
+    {
+        BG_JOB_PRIORITY_FOREGROUND = 0,
+        BG_JOB_PRIORITY_HIGH       = 1,
+        BG_JOB_PRIORITY_NORMAL     = 2,
+        BG_JOB_PRIORITY_LOW        = 3,
+    }
+
+    private enum BG_JOB_STATE
+    {
+        BG_JOB_STATE_QUEUED          = 0,
+        BG_JOB_STATE_CONNECTING      = 1,
+        BG_JOB_STATE_TRANSFERRING    = 2,
+        BG_JOB_STATE_SUSPENDED       = 3,
+        BG_JOB_STATE_ERROR           = 4,
+        BG_JOB_STATE_TRANSIENT_ERROR = 5,
+        BG_JOB_STATE_TRANSFERRED     = 6,
+        BG_JOB_STATE_ACKNOWLEDGED    = 7,
+        BG_JOB_STATE_CANCELLED       = 8,
+    }
+
+    private enum BG_JOB_PROXY_USAGE
+    {
+        BG_JOB_PROXY_USAGE_PRECONFIG   = 0,
+        BG_JOB_PROXY_USAGE_NO_PROXY    = 1,
+        BG_JOB_PROXY_USAGE_OVERRIDE    = 2,
+        BG_JOB_PROXY_USAGE_AUTODETECT  = 3,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BG_JOB_PROGRESS
+    {
+        public ulong BytesTotal;
+        public ulong BytesTransferred;
+        public uint  FilesTotal;
+        public uint  FilesTransferred;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BG_JOB_TIMES
+    {
+        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME ModificationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME TransferCompletionTime;
+    }
+
+    [ComImport]
+    [Guid("4991D34B-80A1-4291-83B6-3328366B9097")]
+    private class BackgroundCopyManager
+    {
+    }
+
+    [ComImport]
+    [Guid("5CE34C0D-0DC9-4C1F-897C-DAA1B78CEE7C")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IBackgroundCopyManager
+    {
+        void CreateJob(
+            [MarshalAs(UnmanagedType.LPWStr)] string displayName,
+            BG_JOB_TYPE type,
+            out Guid jobId,
+            out IBackgroundCopyJob job);
+
+        void GetJob(ref Guid jobId, out IBackgroundCopyJob job);
+        void EnumJobs(uint flags, out IntPtr enumJobs);
+        void GetErrorDescription(int hResult, uint languageId, [MarshalAs(UnmanagedType.LPWStr)] out string errorDescription);
+    }
+
+    [ComImport]
+    [Guid("37668D37-507E-4160-9316-26306D150B12")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IBackgroundCopyJob
+    {
+        void AddFileSet(uint fileCount, IntPtr fileSet);
+        void AddFile([MarshalAs(UnmanagedType.LPWStr)] string remoteUrl, [MarshalAs(UnmanagedType.LPWStr)] string localName);
+        void EnumFiles(out IntPtr enumFiles);
+        void Suspend();
+        void Resume();
+        void Cancel();
+        void Complete();
+        void GetId(out Guid id);
+        void GetType(out BG_JOB_TYPE type);
+        void GetProgress(out BG_JOB_PROGRESS progress);
+        void GetTimes(out BG_JOB_TIMES times);
+        void GetState(out BG_JOB_STATE state);
+        void GetError([MarshalAs(UnmanagedType.Interface)] out object error);
+        void GetOwner([MarshalAs(UnmanagedType.LPWStr)] out string owner);
+        void SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string displayName);
+        void GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string displayName);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string description);
+        void GetDescription([MarshalAs(UnmanagedType.LPWStr)] out string description);
+        void SetPriority(BG_JOB_PRIORITY priority);
+        void GetPriority(out BG_JOB_PRIORITY priority);
+        void SetNotifyFlags(uint flags);
+        void GetNotifyFlags(out uint flags);
+        void SetNotifyInterface([MarshalAs(UnmanagedType.IUnknown)] object notifyInterface);
+        void GetNotifyInterface([MarshalAs(UnmanagedType.IUnknown)] out object notifyInterface);
+        void SetMinimumRetryDelay(uint seconds);
+        void GetMinimumRetryDelay(out uint seconds);
+        void SetNoProgressTimeout(uint seconds);
+        void GetNoProgressTimeout(out uint seconds);
+        void GetErrorCount(out uint errors);
+        void SetProxySettings(
+            BG_JOB_PROXY_USAGE proxyUsage,
+            [MarshalAs(UnmanagedType.LPWStr)] string? proxyList,
+            [MarshalAs(UnmanagedType.LPWStr)] string? proxyBypassList);
+        void GetProxySettings(
+            out BG_JOB_PROXY_USAGE proxyUsage,
+            [MarshalAs(UnmanagedType.LPWStr)] out string proxyList,
+            [MarshalAs(UnmanagedType.LPWStr)] out string proxyBypassList);
+        void TakeOwnership();
     }
 
     // ─── Authenticode verification (mirrors UpdateService.IsSignedByToast2IT) ─

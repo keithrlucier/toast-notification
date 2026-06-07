@@ -71,16 +71,31 @@ public class LicenseService : ILicenseService
         return true;
     }
 
+    // BILL-RACE-1: ConsumedCount mutations are atomic in-DB (ExecuteUpdateAsync), not
+    // read-modify-write. The old `tenant.ConsumedCount±1; SaveChanges()` lost updates when
+    // the three lifecycle paths (DevicesController.Decommission / .ConfirmDecommission /
+    // NotificationHub.UninstallAck) ran concurrently for one tenant: two decrements both read
+    // N and both wrote N-1. A single `UPDATE "Tenants" SET "ConsumedCount"="ConsumedCount"-1
+    // WHERE "Id"=@id AND "ConsumedCount">0` is serialized at the row level by Postgres -- no
+    // lost update, no concurrency token, no retry loop, no migration. SyncConsumedCountAsync
+    // stays as the COUNT-based backstop. After the in-DB update the tracked entity is stale, so
+    // ReloadAsync refreshes it for the Stripe quantity sync that callers run immediately after.
     public async Task IncrementConsumedAsync(Tenant tenant, CancellationToken ct = default)
     {
-        tenant.ConsumedCount = Math.Max(0, tenant.ConsumedCount) + 1;
-        await _db.SaveChangesAsync(ct);
+        // Uncapped increment. Capped registration MUST go through TryRegisterDeviceAtomicAsync
+        // (advisory lock + cap check) -- this is the counterpart for non-registration increments.
+        await _db.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == tenant.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.ConsumedCount, t => t.ConsumedCount + 1), ct);
+        await _db.Entry(tenant).ReloadAsync(ct);
     }
 
     public async Task DecrementConsumedAsync(Tenant tenant, CancellationToken ct = default)
     {
-        tenant.ConsumedCount = Math.Max(0, tenant.ConsumedCount - 1);
-        await _db.SaveChangesAsync(ct);
+        await _db.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == tenant.Id && t.ConsumedCount > 0)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.ConsumedCount, t => t.ConsumedCount - 1), ct);
+        await _db.Entry(tenant).ReloadAsync(ct);
     }
 
     public async Task SyncConsumedCountAsync(Tenant tenant, CancellationToken ct = default)

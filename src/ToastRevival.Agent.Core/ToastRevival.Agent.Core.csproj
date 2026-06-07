@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Pure, platform-agnostic agent logic (no WinAppSDK / WinForms / registry / filesystem).
+       Split out so it is unit-testable under the standalone dotnet SDK: a test project that
+       references the WinAppSDK agent exe cannot run `dotnet test` (WinAppSDK PRI generation
+       needs Visual Studio MSBuild). The agent references this; the tests reference only this. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ToastRevival.Agent.Core</RootNamespace>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+</Project>

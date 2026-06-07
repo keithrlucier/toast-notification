@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Win32;
+using ToastRevival.Agent.Core;
 
 namespace ToastRevival.Agent;
 
@@ -124,12 +125,11 @@ internal static class ConfigStore
         //                            WriteBootstrapJson custom action (MSI 1721).
         //                            This is the reliable path on hardened fleets.
         //   3. bootstrap.json      — legacy / Velopack / manual placement.
-        var envTenant = Environment.GetEnvironmentVariable("TOAST_TENANT_ID");
-        var envServer = Environment.GetEnvironmentVariable("TOAST_SERVER_URL");
-        if (Guid.TryParse(envTenant, out var envTenantId) && !string.IsNullOrWhiteSpace(envServer))
-        {
-            return new BootstrapConfig(envTenantId, envServer);
-        }
+        var fromEnv = BootstrapEnv.TryParse(
+            Environment.GetEnvironmentVariable("TOAST_TENANT_ID"),
+            Environment.GetEnvironmentVariable("TOAST_SERVER_URL"));
+        if (fromEnv is not null)
+            return new BootstrapConfig(fromEnv.Value.TenantId, fromEnv.Value.ServerUrl);
 
         var fromRegistry = TryLoadBootstrapFromRegistry();
         if (fromRegistry is not null) return fromRegistry;

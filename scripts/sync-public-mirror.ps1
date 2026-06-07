@@ -286,7 +286,7 @@ try {
             git -C $publicRoot tag -d $Tag 2>$null
             git -C $publicRoot tag -a $Tag -m "Public mirror release $Tag"
             $pushUrl = $PublicRepoUrl -replace 'https://', "https://x-access-token:$Pat@"
-            git -C $publicRoot push $pushUrl --tags --force
+            git -C $publicRoot push $pushUrl --tags --force 2>$null
         }
         return
     }

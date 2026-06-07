@@ -50,7 +50,10 @@ public class LicenseService : ILicenseService
 
         await _db.Database.ExecuteSqlRawAsync(
             "SELECT pg_advisory_xact_lock({0})",
-            new object[] { (long)tenant.Id.GetHashCode() },
+            // BILL-M1: derive the 64-bit advisory-lock key from the full GUID bytes.
+            // Guid.GetHashCode() is a 32-bit signed int — distinct tenant GUIDs collide
+            // (~1.2% at 10k tenants), needlessly serializing their device registrations.
+            new object[] { BitConverter.ToInt64(tenant.Id.ToByteArray(), 0) },
             ct);
 
         // The tenant entity was fetched before the lock — its ConsumedCount may be

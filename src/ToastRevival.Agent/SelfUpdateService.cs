@@ -309,9 +309,19 @@ internal static class SelfUpdateService
             };
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = System.Diagnostics.Process.Start(psi)!;
-            var so = p.StandardOutput.ReadToEnd();
-            var se = p.StandardError.ReadToEnd();
-            p.WaitForExit();
+            // AGENT-L3: drain stdout and stderr concurrently so a full stderr pipe buffer
+            // can't deadlock a blocking ReadToEnd(stdout), and bound the wait so a hung
+            // schtasks can't pin the updater path forever (mirrors FireUpdaterTask's 10s guard).
+            var soTask = p.StandardOutput.ReadToEndAsync();
+            var seTask = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(10_000))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { /* best effort */ }
+                DiagLog.Write($"UpdaterMode: schtasks {(args.Length > 0 ? args[0] : "")} timed out after 10s; killed.");
+                return 1;
+            }
+            var so = soTask.GetAwaiter().GetResult();
+            var se = seTask.GetAwaiter().GetResult();
             if (p.ExitCode != 0)
                 DiagLog.Write($"UpdaterMode: schtasks {args[0]} exit {p.ExitCode}: {(so + se).Trim()}");
             return p.ExitCode;

@@ -47,6 +47,23 @@ public class AssetsController : ControllerBase
     private string AssetsRoot =>
         _config["Assets:RootPath"] ?? Path.Combine(_env.WebRootPath, "assets");
 
+    // ASSET-L1: magic-byte signature check mirroring TenantLogoStore.ValidateMagicBytes
+    // (WSEC-M1). Keyed off the already-validated file extension.
+    private static bool HasValidImageMagicBytes(byte[] bytes, string ext)
+    {
+        if (bytes.Length < 4) return false;
+        return ext switch
+        {
+            ".png"            => bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47,
+            ".jpg" or ".jpeg" => bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,
+            ".gif"            => bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46,
+            ".webp"           => bytes.Length >= 12
+                                 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
+                                 && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50,
+            _                 => false,
+        };
+    }
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<AssetResponse>>> List()
     {
@@ -91,6 +108,13 @@ public class AssetsController : ControllerBase
         await using var ms = new MemoryStream((int)file.Length);
         await file.CopyToAsync(ms);
         var bytes = ms.ToArray();
+
+        // ASSET-L1: confirm the bytes start with the signature for the validated extension,
+        // mirroring TenantLogoStore's WSEC-M1 check. Extension-only validation lets a polyglot
+        // (valid image header + arbitrary trailing data, or a renamed non-image) be stored;
+        // the signature check rejects content whose bytes aren't the claimed image type.
+        if (!HasValidImageMagicBytes(bytes, ext))
+            return BadRequest(new { message = "File content does not match a supported image format." });
 
         var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
 

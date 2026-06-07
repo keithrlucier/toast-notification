@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ToastRevival.Api.Data;
 using ToastRevival.Api.DTOs;
+using ToastRevival.Api.Extensions;
 using ToastRevival.Api.Models;
 using ToastRevival.Api.Services;
 
@@ -37,9 +38,14 @@ public class ModerationController : ControllerBase
     [HttpGet("pending")]
     public async Task<ActionResult<IEnumerable<PendingReviewItem>>> GetPending()
     {
-        if (!IsAdminOrAbove()) return Forbid();
+        if (!User.IsAdmin()) return Forbid();
 
+        // MT-MOD-1: explicit tenant predicate first (defense-in-depth) — matches the
+        // explicit predicates in Approve()/Reject() rather than trusting only the global
+        // EF query filter on this sensitive read (sender email + moderation JSON).
+        var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var items = await _db.Notifications
+            .Where(n => n.TenantId == tenantId)
             .Where(n => n.Status == NotificationStatus.PendingReview)
             .OrderBy(n => n.CreatedAt)
             .Select(n => new PendingReviewItem(
@@ -60,7 +66,7 @@ public class ModerationController : ControllerBase
     [HttpPost("{id:guid}/approve")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ModerationActionRequest? req = null)
     {
-        if (!IsAdminOrAbove()) return Forbid();
+        if (!User.IsAdmin()) return Forbid();
 
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var notification = await _db.Notifications
@@ -85,7 +91,7 @@ public class ModerationController : ControllerBase
     [HttpPost("{id:guid}/reject")]
     public async Task<IActionResult> Reject(Guid id, [FromBody] ModerationActionRequest? req = null)
     {
-        if (!IsAdminOrAbove()) return Forbid();
+        if (!User.IsAdmin()) return Forbid();
 
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var notification = await _db.Notifications
@@ -104,10 +110,6 @@ public class ModerationController : ControllerBase
 
         return NoContent();
     }
-
-    private bool IsAdminOrAbove()
-    {
-        var role = User.FindFirstValue("role");
-        return role is nameof(UserRole.Admin) or nameof(UserRole.SuperAdmin);
-    }
+    // ARCH-MOD-1: removed the private IsAdminOrAbove() copy; all three actions now use the
+    // shared User.IsAdmin() (ClaimsPrincipalExtensions), which also honors platformAdmin.
 }

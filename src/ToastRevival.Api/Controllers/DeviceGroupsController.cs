@@ -140,9 +140,17 @@ public class DeviceGroupsController : ControllerBase
             DeviceGroupId = id,
             DeviceId = req.DeviceId,
         });
-
-        group.DeviceCount = await ActiveMemberCount(id) + 1;
         await _db.SaveChangesAsync();
+
+        // GRPS-L1: atomic in-DB increment of the denormalized counter. The prior
+        // `group.DeviceCount = await ActiveMemberCount(id) + 1` was a read-modify-write —
+        // two concurrent AddMember calls both read N and both wrote N+1 (final N+1, not
+        // N+2). A single row-level UPDATE is serialized by Postgres, so no increment is
+        // lost. Matches the BILL-RACE-1 pattern; Update() keeps the COUNT-based recompute
+        // as a self-healing backstop.
+        await _db.DeviceGroups
+            .Where(g => g.Id == id && g.TenantId == tenantId)
+            .ExecuteUpdateAsync(s => s.SetProperty(g => g.DeviceCount, g => g.DeviceCount + 1));
 
         // REST-L8: 204 NoContent is the correct response for a member-add operation with no body.
         return NoContent();

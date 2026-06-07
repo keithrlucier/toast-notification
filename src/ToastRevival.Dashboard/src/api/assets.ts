@@ -21,7 +21,20 @@ export function getModerationStatus(json?: string): ModerationStatus {
   return 'Unknown';
 }
 
-import { api, apiErrorFromResponse, authHeaders } from './client';
+import { ApiError, api, apiErrorFromResponse, authHeaders } from './client';
+
+// FE-L1: runtime shape guard so a malformed/changed upload response is rejected
+// instead of silently resolving as a corrupted AssetRecord via an unchecked cast.
+function isAssetRecord(v: unknown): v is AssetRecord {
+  if (typeof v !== 'object' || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return typeof r.id === 'string'
+    && typeof r.name === 'string'
+    && (r.type === 'HeroImage' || r.type === 'Logo' || r.type === 'Icon')
+    && typeof r.url === 'string'
+    && typeof r.uploadedAt === 'string'
+    && (r.moderationResultJson === undefined || typeof r.moderationResultJson === 'string');
+}
 
 export const assetsApi = {
   list: () => api.get<AssetRecord[]>('/api/assets'),
@@ -44,6 +57,11 @@ export const assetsApi = {
     if (!res.ok) {
       throw await apiErrorFromResponse(res, '/api/assets');
     }
-    return res.json() as Promise<AssetRecord>;
+
+    const data: unknown = await res.json();
+    if (!isAssetRecord(data)) {
+      throw new ApiError(res.status, 'Upload succeeded but the server returned an unexpected response.');
+    }
+    return data;
   },
 };

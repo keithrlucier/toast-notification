@@ -56,5 +56,10 @@ Thumbs.db
 # Playwright MCP browser cache
 .playwright-mcp/
 
+# Post-deploy verification screenshots — the /login shots capture the operator's
+# autofilled email + masked password. Never commit (they leak creds) and never
+# mirror. Kept on disk for the session only.
+post-deploy*.png
+
 # Pasted diagnostic logs — may contain tenant enrollment keys; never commit/mirror.
 Docs/Troubleshooting/

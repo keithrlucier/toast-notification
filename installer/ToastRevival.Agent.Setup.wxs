@@ -55,7 +55,13 @@
         DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="Toast Notification" />
+      <Directory Id="INSTALLFOLDER" Name="Toast Notification">
+        <!-- ToastNotificationHealth lives in its own subfolder: it is published
+             self-contained + trimmed (plain net8.0) and its runtime DLLs would
+             otherwise collide with the agent's self-contained net8.0-windows set
+             that lands directly in INSTALLFOLDER. -->
+        <Directory Id="HEALTHFOLDER" Name="Health" />
+      </Directory>
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder">
@@ -64,6 +70,48 @@
 
     <ComponentGroup Id="AgentFiles" Directory="INSTALLFOLDER">
       <Files Include="$(var.PublishDir)\**" />
+    </ComponentGroup>
+
+    <!--
+      ToastNotificationHealth — the LocalSystem phone-home service. The exe gets an
+      EXPLICIT component (the auto-component from a <Files> glob cannot host a
+      ServiceInstall) with a stable GUID so it is reference-counted across upgrades
+      like the other authored components. The rest of the published worker (runtime
+      DLLs, deps.json, runtimeconfig.json) comes via a glob, excluding the exe.
+    -->
+    <ComponentGroup Id="HealthServiceExe" Directory="HEALTHFOLDER">
+      <Component Id="HealthServiceExeComponent" Guid="D2A7C1E4-9B3F-4A65-8C12-6E0F5A9D4B71">
+        <File Id="HealthServiceExe"
+              Source="$(var.HealthPublishDir)\ToastNotificationHealth.exe"
+              KeyPath="yes" />
+        <ServiceInstall Id="HealthServiceInstall"
+                        Name="ToastNotificationHealth"
+                        DisplayName="Toast Notification Health"
+                        Description="Reports machine liveness to the Toast Notification admin panel so a device shows online whenever the machine is powered on, independent of an interactive logon."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="LocalSystem"
+                        Vital="no" />
+        <!-- Stop+remove on uninstall; start on install. Wait="no" so a slow SCM
+             start (AV scanning a fresh signed binary) never blocks/1603s the install. -->
+        <ServiceControl Id="HealthServiceControl"
+                        Name="ToastNotificationHealth"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="no" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="HealthSupportFiles" Directory="HEALTHFOLDER">
+      <!-- Runtime DLLs + deps/runtimeconfig JSON for the self-contained worker.
+           Globbed BY EXTENSION so the apphost exe (the explicit ServiceInstall
+           component above) is not double-included — WiX 5 <Files> has no Exclude
+           attribute. *.dll + *.json is the complete runnable set; the .pdb and the
+           optional createdump.exe diagnostic tool are intentionally not shipped. -->
+      <Files Include="$(var.HealthPublishDir)\*.dll" />
+      <Files Include="$(var.HealthPublishDir)\*.json" />
     </ComponentGroup>
 
     <ComponentGroup Id="LogonTaskAssets" Directory="INSTALLFOLDER">
@@ -251,6 +299,8 @@
 
     <Feature Id="Main" Title="Toast Notification Agent" Level="1">
       <ComponentGroupRef Id="AgentFiles" />
+      <ComponentGroupRef Id="HealthServiceExe" />
+      <ComponentGroupRef Id="HealthSupportFiles" />
       <ComponentGroupRef Id="LogonTaskAssets" />
       <ComponentGroupRef Id="UpdaterTaskAssets" />
       <ComponentGroupRef Id="Shortcuts" />
@@ -321,6 +371,19 @@
                   ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Delete /TN &quot;\Toast2IT\ToastNotificationAgentLogon&quot; /F"
                   Execute="deferred"
                   Impersonate="no"
+                  Return="ignore" />
+
+    <!--
+      Stop the ToastNotificationHealth service IMMEDIATE (before InstallValidate) so
+      its running exe is not file-locked when new binaries are staged on upgrade.
+      KillAgent does not cover it — that taskkills ToastNotification.Agent.exe, a
+      DIFFERENT image name. Fires on upgrade (Installed) and uninstall (REMOVE=ALL).
+      Return="ignore": the service may not exist yet (fresh install) — that is fine.
+    -->
+    <CustomAction Id="StopHealthService"
+                  Directory="TARGETDIR"
+                  ExeCommand="&quot;[System64Folder]sc.exe&quot; stop ToastNotificationHealth"
+                  Execute="immediate"
                   Return="ignore" />
 
     <!--
@@ -503,6 +566,13 @@
            Runs before InstallValidate so no files are locked when new binaries land,
            eliminating the reboot requirement on upgrade. -->
       <Custom Action="KillAgent"              Before="InstallValidate"       Condition="REMOVE=&quot;ALL&quot; OR Installed" />
+      <!-- Stop the health service before file staging so its exe isn't locked on
+           upgrade (KillAgent only covers the differently-named agent exe). The
+           ServiceInstall component (stable GUID) is reference-counted, so unlike
+           the CA-created scheduled tasks it needs NO post-RemoveExistingProducts
+           repair — a new→newer upgrade keeps the component referenced, and the
+           first 0.4.44→service rollout has no prior service to delete. -->
+      <Custom Action="StopHealthService"      Before="InstallValidate"       Condition="REMOVE=&quot;ALL&quot; OR Installed" />
       <Custom Action="UninstallScheduledTask" Before="DeleteUserConfig"      Condition="REMOVE=&quot;ALL&quot;" />
       <!-- M15: remove the SYSTEM updater task alongside the logon task -->
       <Custom Action="UninstallUpdaterTask"   After="UninstallScheduledTask" Condition="REMOVE=&quot;ALL&quot;" />

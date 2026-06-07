@@ -10,6 +10,8 @@ $repoRoot       = Split-Path -Parent $PSScriptRoot
 $projectPath    = Join-Path $repoRoot "src\ToastRevival.Agent\ToastRevival.Agent.csproj"
 $agentSrcDir    = Join-Path $repoRoot "src\ToastRevival.Agent"
 $publishDir     = Join-Path $repoRoot "artifacts\ToastRevival.Agent\$RuntimeIdentifier-self-contained"
+$healthProject  = Join-Path $repoRoot "src\ToastRevival.AgentHealthService\ToastRevival.AgentHealthService.csproj"
+$healthPublishDir = Join-Path $repoRoot "artifacts\ToastRevival.AgentHealthService\$RuntimeIdentifier-self-contained"
 $installerSrc    = Join-Path $repoRoot "installer\ToastRevival.Agent.Setup.wxs"
 $logonTaskXml    = Join-Path $repoRoot "installer\ToastNotificationLogon.xml"
 $updaterTaskXml  = Join-Path $repoRoot "installer\ToastNotificationUpdater.xml"
@@ -39,6 +41,18 @@ Get-ChildItem $publishDir -Directory |
     ForEach-Object { Remove-Item $_.FullName -Recurse -Force; $stripped++ }
 if ($stripped -gt 0) { Write-Host "==> Stripped $stripped non-English locale folders." }
 
+Write-Host "==> Publishing ToastNotificationHealth service ($RuntimeIdentifier)..."
+dotnet publish $healthProject `
+    --configuration Release `
+    --runtime $RuntimeIdentifier `
+    --self-contained true `
+    -p:SatelliteResourceLanguages=en `
+    --output $healthPublishDir
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish (health service) failed (exit $LASTEXITCODE)" }
+Get-ChildItem $healthPublishDir -Directory |
+    Where-Object { $_.Name -match '^\w{2,3}(-\w+)*$' -and $_.Name -notlike 'en*' } |
+    ForEach-Object { Remove-Item $_.FullName -Recurse -Force }
+
 New-Item -ItemType Directory -Force -Path $installerOut | Out-Null
 
 $wix = Get-Command wix.exe -ErrorAction SilentlyContinue
@@ -54,6 +68,7 @@ Write-Host "==> Building MSI ($Version) -> $msiPath"
     -arch x64 `
     -ext WixToolset.UI.wixext `
     -d "PublishDir=$publishDir" `
+    -d "HealthPublishDir=$healthPublishDir" `
     -d "ProductVersion=$Version" `
     -d "LogonTaskXmlPath=$logonTaskXml" `
     -d "UpdaterTaskXmlPath=$updaterTaskXml" `

@@ -469,6 +469,79 @@ public class DevicesController : ControllerBase
     }
 
     /// <summary>
+    /// Machine-level liveness ping from the SYSTEM-context ToastNotificationHealth
+    /// service. The interactive agent reports liveness via the [Authorize] /ping
+    /// endpoint using its per-user device JWT — but that token is DPAPI-encrypted to
+    /// the user, so a LocalSystem service cannot read it. This endpoint instead keys
+    /// on tenant + machine name and ONLY refreshes LastPing on device row(s) that
+    /// ALREADY exist for that machine. It NEVER creates a device row (no seat
+    /// consumed, no duplicates) and NEVER sets AgentVersion (that is the agent's
+    /// binary version, not the health service's).
+    ///
+    /// Authorization is the row-existence requirement itself: a caller can only mark
+    /// an already-enrolled device online — strictly weaker than the open-registration
+    /// path, which can mint a seat. When the tenant uses the legacy reusable
+    /// EnrollmentKey, it must also match (constant-time). Single-use enrollment tokens
+    /// are intentionally NOT accepted here: they are one-shot, already consumed and
+    /// identity-bound by registration, so they cannot re-authenticate a recurring ping.
+    ///
+    /// Anonymous so the SYSTEM service needs no token; rate-limited per-tenant.
+    /// </summary>
+    [HttpPost("/api/agent/health/{tenantId:guid}")]
+    [AllowAnonymous]
+    [EnableRateLimiting("machine-health-per-tenant")]
+    public async Task<IActionResult> MachineHealthPing(Guid tenantId, [FromBody] MachineHealthRequest body)
+    {
+        var machineName = body.MachineName?.Trim();
+        if (string.IsNullOrWhiteSpace(machineName)) return BadRequest("machineName required.");
+
+        // Tenant must exist; a suspended tenant's devices must NOT show online. The
+        // dashboard's online check only gates on Status==Active, so suspension is
+        // enforced here (mirrors the /ping kill-switch). Return 200/updated=0 rather
+        // than an error so the service treats it as a benign no-op, not a retry storm.
+        var tenant = await _db.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId)
+            .Select(t => new { t.SuspendedAt, t.EnrollmentKey })
+            .FirstOrDefaultAsync();
+        if (tenant is null || tenant.SuspendedAt != null)
+            return Ok(new { updated = 0 });
+
+        // Legacy reusable key (when the tenant has one) must match, constant-time.
+        if (!string.IsNullOrWhiteSpace(tenant.EnrollmentKey))
+        {
+            var presented = body.EnrollmentKey;
+            if (string.IsNullOrWhiteSpace(presented)
+                || !CryptographicOperations.FixedTimeEquals(
+                        Encoding.UTF8.GetBytes(presented),
+                        Encoding.UTF8.GetBytes(tenant.EnrollmentKey)))
+            {
+                return Ok(new { updated = 0 });
+            }
+        }
+
+        var now   = DateTime.UtcNow;
+        var wanIp = ClampIp(CloudflareIpValidator.ResolveTrustedClientIp(HttpContext));
+
+        // Set-based refresh of every existing, non-removed row for this machine
+        // (a machine shared by multiple users has one row per user — all become
+        // online when the machine is up). Never inserts. WAN is only set when the
+        // resolver yields a value, so a null never nulls a previously-captured IP.
+        var query = _db.Devices.IgnoreQueryFilters()
+            .Where(d => d.TenantId == tenantId
+                     && d.DeviceName == machineName
+                     && d.Status != DeviceStatus.Decommissioned
+                     && d.Status != DeviceStatus.PendingUninstall);
+
+        var updated = wanIp is null
+            ? await query.ExecuteUpdateAsync(s => s.SetProperty(d => d.LastPing, now))
+            : await query.ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.LastPing, now)
+                .SetProperty(d => d.WanIpAddress, wanIp));
+
+        return Ok(new { updated });
+    }
+
+    /// <summary>
     /// Metadata for the canonical clean-removal script served statically at
     /// /downloads/ (alongside the MSI). The admin "Remove agent" modal shows the
     /// download link plus the script's real last-modified date. Anonymous and

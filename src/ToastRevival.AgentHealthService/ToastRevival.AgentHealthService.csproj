@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <!--
+    ToastNotificationHealth — a dead-simple LocalSystem Windows service whose ONLY
+    job is to phone home so a device shows "online" based on machine-up, not on
+    whether a user is interactively logged in. The interactive agent
+    (ToastRevival.Agent) is unchanged; this runs alongside it.
+
+    net8.0-windows (NOT WinAppSDK): the -windows TFM only unlocks Win32 APIs we
+    need (the registry) — it pulls NO WinAppSDK and NO WinForms (those require
+    explicit WindowsAppSDK / UseWindowsForms, which we never set). Just a timer,
+    the registry, and an HttpClient. RID + self-contained are applied at PUBLISH
+    time in scripts/release.ps1 (mirrors how the agent is published — multi-file,
+    untrimmed, for robustness), so a plain `dotnet build`/`dotnet test` of the
+    solution stays AnyCPU-clean.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ToastNotificationHealth</AssemblyName>
+    <RootNamespace>ToastRevival.AgentHealthService</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <!-- release.ps1 stamps these from the single -Version arg, like the agent. -->
+    <Version>0.4.45</Version>
+    <AssemblyVersion>0.4.45</AssemblyVersion>
+    <FileVersion>0.4.45</FileVersion>
+    <!-- Trim-safe: we use System.Text.Json source generation (HealthJsonContext),
+         never reflection-based serialization. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reuse the already-unit-tested BootstrapEnv.TryParse (GUID + non-blank URL
+         validation) instead of reinventing config parsing. -->
+    <ProjectReference Include="..\ToastRevival.Agent.Core\ToastRevival.Agent.Core.csproj" />
+  </ItemGroup>
+
+</Project>

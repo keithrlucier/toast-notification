@@ -259,6 +259,28 @@ builder.Services.AddRateLimiter(opts =>
         });
     });
 
+    // Machine-level health pings from the SYSTEM ToastNotificationHealth service.
+    // Keyed on the ROUTE tenantId — NOT deviceId (the service has no device JWT) and
+    // NOT IP/machineName (a large customer behind one NAT egress is a single IP, and
+    // machineName is forgeable with unbounded cardinality). Sliding window, generous:
+    // a 5000-device tenant at the 15-min cadence is ~20k/hr, so size for the biggest
+    // realistic fleet. This is only a coarse DoS backstop — the endpoint's "a device
+    // row for (tenant, machine) must already exist" check is the real authorization,
+    // and the handler does at most one indexed query + a set-based LastPing update.
+    opts.AddPolicy("machine-health-per-tenant", ctx =>
+    {
+        var partitionKey = ctx.Request.RouteValues["tenantId"]?.ToString()
+            ?? CloudflareIpValidator.ResolveTrustedClientIp(ctx);
+        return RateLimitPartition.GetSlidingWindowLimiter($"mh:{partitionKey}", _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = 20_000,
+            Window = TimeSpan.FromHours(1),
+            SegmentsPerWindow = 6,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0,
+        });
+    });
+
     // Login brute-force protection: 10 attempts / 5 min per IP.
     // BF-2 (Keith 2026-06-01 — RESOLVED): the partition key now trusts CF-Connecting-IP
     // ONLY when the socket peer is a verified Cloudflare egress IP (or a loopback reverse

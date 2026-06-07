@@ -94,10 +94,19 @@ $manifestOut    = Join-Path $installerOut "ToastNotification.Agent-$V4.release.j
 $exeName        = "ToastNotification.Agent.exe"
 $publishedExe   = Join-Path $publishDir $exeName
 
+# ToastNotificationHealth: the LocalSystem phone-home service, a SECOND signed exe
+# shipped inside the same MSI. Published self-contained (multi-file, untrimmed) to
+# its own dir so its runtime DLLs never collide with the agent's.
+$healthProject      = Join-Path $repoRoot "src\ToastRevival.AgentHealthService\ToastRevival.AgentHealthService.csproj"
+$healthCsprojPath   = $healthProject
+$healthPublishDir   = Join-Path $repoRoot "artifacts\ToastRevival.AgentHealthService\$RuntimeIdentifier-self-contained"
+$healthExeName      = "ToastNotificationHealth.exe"
+$healthPublishedExe = Join-Path $healthPublishDir $healthExeName
+
 # WSEC-L2 / sign-msix.ps1: the one cert allowed to sign Toast artifacts.
 $expectedThumbprint = "19B07B46712C2D87FF6AA99842F7EF6B036FEDA7"
 
-foreach ($p in @($csprojPath, $appsettingsPath, $manifestPath, $installerSrc, $logonTaskXml, $updaterTaskXml, $licenseRtf)) {
+foreach ($p in @($csprojPath, $appsettingsPath, $manifestPath, $installerSrc, $logonTaskXml, $updaterTaskXml, $licenseRtf, $healthCsprojPath)) {
     if (-not (Test-Path -LiteralPath $p)) { throw "Required source not found: $p" }
 }
 
@@ -149,6 +158,13 @@ $csproj = Set-VersionSpan $csproj '(<AssemblyVersion>)[^<]*(</AssemblyVersion>)'
 $csproj = Set-VersionSpan $csproj '(<FileVersion>)[^<]*(</FileVersion>)'         $V3 'csproj <FileVersion>'
 Write-Utf8 $csprojPath $csproj
 
+# Health service csproj: same three version surfaces, same single -Version.
+$healthCsproj = Read-Utf8 $healthCsprojPath
+$healthCsproj = Set-VersionSpan $healthCsproj '(<Version>)[^<]*(</Version>)'                 $V3 'health csproj <Version>'
+$healthCsproj = Set-VersionSpan $healthCsproj '(<AssemblyVersion>)[^<]*(</AssemblyVersion>)' $V3 'health csproj <AssemblyVersion>'
+$healthCsproj = Set-VersionSpan $healthCsproj '(<FileVersion>)[^<]*(</FileVersion>)'         $V3 'health csproj <FileVersion>'
+Write-Utf8 $healthCsprojPath $healthCsproj
+
 $appsettings = Read-Utf8 $appsettingsPath
 $appsettings = Set-VersionSpan $appsettings '("LatestVersion"\s*:\s*")[^"]*(")' $V3 'appsettings Agent:LatestVersion'
 Write-Utf8 $appsettingsPath $appsettings
@@ -168,7 +184,9 @@ if ($csprojCheck -notmatch [regex]::Escape("<AssemblyVersion>$V3</AssemblyVersio
 if ($csprojCheck -notmatch [regex]::Escape("<FileVersion>$V3</FileVersion>"))     { throw "csproj <FileVersion> did not stamp to $V3" }
 if ($appsettingsCheck -notmatch ('"LatestVersion"\s*:\s*"' + [regex]::Escape($V3) + '"')) { throw "appsettings Agent:LatestVersion did not stamp to $V3" }
 if ($manifestCheck -notmatch ('<Identity\b[^>]*?\bVersion="' + [regex]::Escape($V4) + '"'))          { throw "manifest Identity Version did not stamp to $V4" }
-Write-Host "    csproj + appsettings -> $V3 ; manifest -> $V4   (all verified)" -ForegroundColor Green
+$healthCsprojCheck = Read-Utf8 $healthCsprojPath
+if ($healthCsprojCheck -notmatch [regex]::Escape("<FileVersion>$V3</FileVersion>")) { throw "health csproj <FileVersion> did not stamp to $V3" }
+Write-Host "    csproj + appsettings + health -> $V3 ; manifest -> $V4   (all verified)" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 # 2. Publish the self-contained agent ONCE.
@@ -192,6 +210,23 @@ Get-ChildItem $publishDir -Directory |
     ForEach-Object { Remove-Item $_.FullName -Recurse -Force; $stripped++ }
 if ($stripped -gt 0) { Write-Host "    Stripped $stripped non-English locale folders." }
 
+# Publish the health service alongside the agent (self-contained, multi-file,
+# untrimmed — same robustness posture as the agent; the WiX <Files> glob harvests
+# whatever this emits into HEALTHFOLDER).
+Write-Host "    Publishing ToastNotificationHealth ($RuntimeIdentifier)" -ForegroundColor Cyan
+if (Test-Path $healthPublishDir) { Remove-Item $healthPublishDir -Recurse -Force }
+dotnet publish $healthProject `
+    --configuration Release `
+    --runtime $RuntimeIdentifier `
+    --self-contained true `
+    -p:SatelliteResourceLanguages=en `
+    --output $healthPublishDir
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish (health service) failed (exit $LASTEXITCODE)" }
+if (-not (Test-Path $healthPublishedExe)) { throw "Published health exe not found: $healthPublishedExe" }
+Get-ChildItem $healthPublishDir -Directory |
+    Where-Object { $_.Name -match '^\w{2,3}(-\w+)*$' -and $_.Name -notlike 'en*' } |
+    ForEach-Object { Remove-Item $_.FullName -Recurse -Force }
+
 # ---------------------------------------------------------------------------
 # 3. THE GUARD (FIX-BUILD-VERSION-001): published binary version must == -Version.
 # ---------------------------------------------------------------------------
@@ -205,18 +240,29 @@ if ($builtV3 -ne $V3) {
 $publishedExeSha = (Get-FileHash -Algorithm SHA256 $publishedExe).Hash
 Write-Host "    $exeName FileVersion=$builtFileVersion  sha256=$publishedExeSha" -ForegroundColor Green
 
+# Same guard for the health exe — never ship a stale/mismatched second binary.
+$healthFileVersion = (Get-Item $healthPublishedExe).VersionInfo.FileVersion
+$healthV3 = (($healthFileVersion -split '\.')[0..2]) -join '.'
+if ($healthV3 -ne $V3) {
+    throw "HEALTH BINARY VERSION MISMATCH: $healthExeName FileVersion is '$healthFileVersion' (=> $healthV3) but release is $V3."
+}
+$healthExeSha = (Get-FileHash -Algorithm SHA256 $healthPublishedExe).Hash
+Write-Host "    $healthExeName FileVersion=$healthFileVersion  sha256=$healthExeSha" -ForegroundColor Green
+
 # ---------------------------------------------------------------------------
 # 4. Sign the exe (on the token) BEFORE packaging, so the MSI captures signed bytes.
 # ---------------------------------------------------------------------------
 if ($SkipSigning) {
-    Write-Host "==> [4/8] Signing exe: SKIPPED (-SkipSigning)" -ForegroundColor Yellow
+    Write-Host "==> [4/8] Signing exes: SKIPPED (-SkipSigning)" -ForegroundColor Yellow
 } else {
-    Write-Host "==> [4/8] Signing $exeName (SafeNet PIN dialog pops)" -ForegroundColor Cyan
+    Write-Host "==> [4/8] Signing $exeName + $healthExeName (SafeNet PIN dialog pops)" -ForegroundColor Cyan
     # sign-msix.ps1 runs ErrorActionPreference=Stop and THROWS on any failure, which
     # propagates here. Do NOT test $LASTEXITCODE -- it reflects the last external exe
     # (signtool) inside the child, not the script outcome, and could false-positive.
     try { & (Join-Path $PSScriptRoot "sign-msix.ps1") -Path $publishedExe }
     catch { throw "exe signing failed: $($_.Exception.Message)" }
+    try { & (Join-Path $PSScriptRoot "sign-msix.ps1") -Path $healthPublishedExe }
+    catch { throw "health exe signing failed: $($_.Exception.Message)" }
 }
 
 # Signing rewrites the exe IN PLACE (Authenticode embeds the signature), so the bytes now
@@ -227,7 +273,11 @@ if ($SkipSigning) {
 # dry-runs never exercised it (FIX-RELEASE-SIGNED-HASH-001, 2026-06-07). In -SkipSigning the
 # file is unchanged, so this re-hash equals the step-3 value and the check still holds.
 $publishedExeSha = (Get-FileHash -Algorithm SHA256 $publishedExe).Hash
-if (-not $SkipSigning) { Write-Host "    Signed $exeName sha256=$publishedExeSha (re-hashed post-sign)" -ForegroundColor Green }
+$healthExeSha    = (Get-FileHash -Algorithm SHA256 $healthPublishedExe).Hash
+if (-not $SkipSigning) {
+    Write-Host "    Signed $exeName sha256=$publishedExeSha (re-hashed post-sign)" -ForegroundColor Green
+    Write-Host "    Signed $healthExeName sha256=$healthExeSha (re-hashed post-sign)" -ForegroundColor Green
+}
 
 # ---------------------------------------------------------------------------
 # 5. WiX build directly against the (now-signed) publish dir. NEVER re-publishes.
@@ -243,6 +293,7 @@ if (-not $wix) { $wix = Get-Item "$env:USERPROFILE\.dotnet\tools\wix.exe" -Error
     -arch x64 `
     -ext WixToolset.UI.wixext `
     -d "PublishDir=$publishDir" `
+    -d "HealthPublishDir=$healthPublishDir" `
     -d "ProductVersion=$V4" `
     -d "LogonTaskXmlPath=$logonTaskXml" `
     -d "UpdaterTaskXmlPath=$updaterTaskXml" `
@@ -320,16 +371,28 @@ try {
     }
     Write-Host "    Inner exe FileVersion=$innerFileVersion  sha256=$innerSha  (byte-identical to packaged exe)" -ForegroundColor Green
 
+    # Same byte-identity proof for the health service exe inside the MSI.
+    $innerHealthExe = Get-ChildItem $extractDir -Recurse -Filter $healthExeName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $innerHealthExe) { throw "Could not find $healthExeName inside the extracted MSI under $extractDir" }
+    $innerHealthFileVersion = $innerHealthExe.VersionInfo.FileVersion
+    $innerHealthV3 = (($innerHealthFileVersion -split '\.')[0..2]) -join '.'
+    $innerHealthSha = (Get-FileHash -Algorithm SHA256 $innerHealthExe.FullName).Hash
+    if ($innerHealthV3 -ne $V3) { throw "Inner health exe FileVersion '$innerHealthFileVersion' (=> $innerHealthV3) != $V3." }
+    if ($innerHealthSha -ne $healthExeSha) {
+        throw "Inner health exe is NOT byte-identical to the packaged exe.`n  packaged: $healthExeSha`n  in MSI  : $innerHealthSha"
+    }
+    Write-Host "    Inner $healthExeName FileVersion=$innerHealthFileVersion  sha256=$innerHealthSha  (byte-identical)" -ForegroundColor Green
+
     # 7c. Authenticode (only when we actually signed).
     if (-not $SkipSigning) {
-        foreach ($target in @(@{ Name = "MSI"; Path = $msiPath }, @{ Name = "inner exe"; Path = $innerExe.FullName })) {
+        foreach ($target in @(@{ Name = "MSI"; Path = $msiPath }, @{ Name = "inner exe"; Path = $innerExe.FullName }, @{ Name = "inner health exe"; Path = $innerHealthExe.FullName })) {
             $sig = Get-AuthenticodeSignature -LiteralPath $target.Path
             if ($sig.Status -ne "Valid") { throw "$($target.Name) Authenticode is '$($sig.Status)', expected Valid." }
             if ($sig.SignerCertificate.Thumbprint -ne $expectedThumbprint) {
                 throw "$($target.Name) signed with unexpected cert $($sig.SignerCertificate.Thumbprint) (expected $expectedThumbprint)."
             }
         }
-        Write-Host "    Authenticode Valid on MSI + inner exe; cert thumbprint $expectedThumbprint" -ForegroundColor Green
+        Write-Host "    Authenticode Valid on MSI + inner exe + inner health exe; cert thumbprint $expectedThumbprint" -ForegroundColor Green
     }
 } finally {
     if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
@@ -375,6 +438,11 @@ $manifestObj = [ordered]@{
         fileName    = $exeName
         fileVersion = $builtFileVersion
         sha256      = $publishedExeSha
+    }
+    healthExe = [ordered]@{
+        fileName    = $healthExeName
+        fileVersion = $healthFileVersion
+        sha256      = $healthExeSha
     }
     intunewin = $(if ($intunewinPath) { @{ fileName = (Split-Path $intunewinPath -Leaf); sha256 = (Get-FileHash -Algorithm SHA256 $intunewinPath).Hash } } else { $null })
     downloadUrls = [ordered]@{

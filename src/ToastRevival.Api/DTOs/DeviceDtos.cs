@@ -46,6 +46,14 @@ public record InteractionRequest(
 // only reads TenantName continues to deserialize cleanly.
 public record TenantAttributionResponse(string TenantName, string? LogoUrl = null);
 
+// Body for POST /api/agent/health/{tenantId} — sent by the SYSTEM-context
+// ToastNotificationHealth service. MachineName matches Device.DeviceName
+// (Environment.MachineName captured at registration). EnrollmentKey is only needed
+// when the tenant uses the legacy reusable key. The tenant id travels in the route.
+public record MachineHealthRequest(
+    [Required, MaxLength(256)] string MachineName,
+    string? EnrollmentKey = null);
+
 // Body for POST /api/devices/ping. Optional — agents before 0.4.26 send no body.
 // M1 — LanIpAddress optional with a default so a pre-M2 agent sending only
 // { agentVersion } still deserializes; the server only overwrites a stored LAN

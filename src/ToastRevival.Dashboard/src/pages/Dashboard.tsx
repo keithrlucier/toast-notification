@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { devicesApi, type Device } from '../api/devices';
+import { agentApi, isUpToDate } from '../api/agent';
 import { notificationsApi, type NotificationHistoryItem } from '../api/notifications';
 import StatusBadge, { DeviceStatus } from '../components/StatusBadge';
 import { ApiError } from '../api/client';
@@ -19,6 +20,7 @@ function formatRelative(iso: string): string {
 export default function Dashboard() {
   const [devices, setDevices]             = useState<Device[]>([]);
   const [notifications, setNotifications] = useState<NotificationHistoryItem[]>([]);
+  const [targetVersion, setTargetVersion] = useState<string | null>(null);
   const [loading, setLoading]             = useState(true);
   const [error, setError]                 = useState('');
 
@@ -27,10 +29,12 @@ export default function Dashboard() {
     Promise.all([
       devicesApi.list().catch(() => [] as Device[]),
       notificationsApi.list(1, 10).catch(() => [] as NotificationHistoryItem[]),
-    ]).then(([d, n]) => {
+      agentApi.version().then(v => v.version).catch(() => null),
+    ]).then(([d, n, v]) => {
       if (cancelled) return;
       setDevices(d);
       setNotifications(n);
+      setTargetVersion(v);
       setLoading(false);
     }).catch(err => {
       if (cancelled) return;
@@ -54,6 +58,13 @@ export default function Dashboard() {
     const delivered = relevant.reduce((s, n) => s + n.deliveredCount, 0);
     return Math.round((delivered / total) * 100);
   }, [notifications]);
+
+  // How many registered devices are reporting the latest released version.
+  // Devices report 4-part ("0.4.44.0"); the feed target is 3-part ("0.4.44").
+  const upToDate = useMemo(
+    () => targetVersion ? devices.filter(d => isUpToDate(d.agentVersion, targetVersion)).length : 0,
+    [devices, targetVersion],
+  );
 
   if (loading) {
     return (
@@ -86,7 +97,18 @@ export default function Dashboard() {
       {devices.length === 0 && !loading && <DeployCommand />}
 
       {/* Metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
+        <div className="metric-card">
+          <div className="metric-label">Agent Version</div>
+          <div className="metric-value" style={{ fontFamily: 'var(--font-mono, monospace)' }}>
+            {targetVersion ? `v${targetVersion}` : '—'}
+          </div>
+          <div className="metric-sub">
+            {targetVersion
+              ? `latest release · ${upToDate} of ${devices.length} up to date`
+              : 'latest release version'}
+          </div>
+        </div>
         <div className="metric-card">
           <div className="metric-label">Total Devices</div>
           <div className="metric-value">{devices.length}</div>

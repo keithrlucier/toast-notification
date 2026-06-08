@@ -11,15 +11,26 @@
       Compressed="yes"
       InstallerVersion="500">
 
-    <SummaryInformation Description="Toast Notification Agent installer" />
+    <SummaryInformation
+        Description="Toast Notification Agent"
+        Comments="Managed Windows toast notifications for MSP-administered endpoints. Published by Toast2IT, LLC. https://toastnotification.com"
+        Keywords="Toast2IT,MSP,Windows,Notifications,Agent" />
 
     <Icon Id="ProductIcon" SourceFile="$(var.AgentSrcDir)\ToastNotification.ico" />
-    <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
-    <Property Id="ARPHELPLINK"    Value="https://toastnotification.com/docs/getting-started" />
+    <Property Id="ARPPRODUCTICON"  Value="ProductIcon" />
+    <Property Id="ARPHELPLINK"     Value="https://toastnotification.com/docs/getting-started" />
     <Property Id="ARPURLINFOABOUT" Value="https://toastnotification.com" />
+    <Property Id="ARPCONTACT"      Value="support@toastnotification.com" />
+    <Property Id="ARPCOMMENTS"     Value="Managed Windows toast notifications for MSP-administered endpoints." />
 
     <!-- EULA dialog (WixUI_Minimal: one screen with license acceptance). -->
-    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    <WixVariable Id="WixUILicenseRtf"  Value="$(var.LicenseRtf)" />
+    <!-- Branded installer UI bitmaps.
+         WixUIBannerBmp  : 493x58  — top banner on every dialog.
+         WixUIDialogBmp  : 493x312 — left panel on Welcome/Finish screens.
+         Generated from toast-logo.png + toast-hero.png via scripts/release.ps1 pipeline. -->
+    <WixVariable Id="WixUIBannerBmp"   Value="$(var.InstallerAssetsDir)\ToastBanner.bmp" />
+    <WixVariable Id="WixUIDialogBmp"   Value="$(var.InstallerAssetsDir)\ToastDialog.bmp" />
     <ui:WixUI Id="WixUI_Minimal" />
 
     <!--
@@ -206,7 +217,14 @@
       EnrollmentKey set, this must match or device registration is rejected.
       Pass via: msiexec /i ... /qn CLIENTID=... SERVERURL=... ENROLLMENTKEY=...
     -->
-    <Property Id="ENROLLMENTKEY" />
+    <!--
+      ENROLLMENTKEY is the per-tenant pre-shared secret. RMM/Intune deployments pass
+      it on the msiexec command line with verbose logging (/l*v), which would otherwise
+      write the cleartext value into the MSI log (e.g. C:\Temp\Toast*_msi_*.log) that
+      RMM tooling frequently centralizes off-box. Hidden="yes" causes WiX to add it to
+      MsiHiddenProperties automatically, masking the value as "***" in that log. (SEC-L1)
+    -->
+    <Property Id="ENROLLMENTKEY" Hidden="yes" />
     <!--
       Set DISABLEAUTOUPDATE=1 to write a registry sentinel that tells the agent to
       skip all Velopack update checks. Required for self-hosted deployments pointing

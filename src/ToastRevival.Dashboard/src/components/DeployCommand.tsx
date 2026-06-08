@@ -18,16 +18,27 @@ export default function DeployCommand() {
   const msiUrl     = `${serverUrl}/downloads/ToastNotification.msi`;
   const enrollmentPart = enrollmentKey ? ` ENROLLMENTKEY=${enrollmentKey}` : '';
 
-  // Full one-liner: download from our server, then install elevated.
-  // Start-Process -Verb RunAs triggers UAC so the user doesn't need a pre-elevated shell.
-  // -Wait holds the script until the install finishes.
-  // $f and $env:TEMP are PowerShell variables — not JS template expressions.
-  const args =
-    `/i \`"$f\`" /qn CLIENTID=${tenantId} SERVERURL=${serverUrl}${enrollmentPart}`;
+  // RMM-safe one-liner (runs correctly under SYSTEM via Tactical RMM, Intune, etc.).
+  // C:\Temp instead of $env:TEMP — $env:TEMP resolves to C:\Windows\Temp under SYSTEM,
+  // which EDR products block for IStorage access (MSI error 2203/1619).
+  // MSI staged to C:\Windows\Installer — the trusted package cache path that all
+  // EDR/AV products allow msiexec to open IStorage from.
+  // TLS 1.2 enforced (ServicePointManager value 3072); BITS fallback for endpoints
+  // where SSL inspection or WinINET proxy restrictions block WebClient under SYSTEM.
+  // Authenticode signer gate ($g) is enforced before install — mirrors the signed
+  // install template (install-toast-agent.template.ps1) so the convenience one-liner
+  // is held to the same "Valid + Toast2IT, LLC signer" bar as the hardened path. (RMM-L1)
+  // $f/$s/$g are PowerShell variables set at runtime — not JS template expressions.
   const oneLiner =
-    `$f="$env:TEMP\\ToastNotification.msi"; ` +
-    `Invoke-WebRequest "${msiUrl}" -OutFile $f; ` +
-    `Start-Process msiexec -ArgumentList "${args}" -Verb RunAs -Wait`;
+    `[Net.ServicePointManager]::SecurityProtocol=3072; ` +
+    `if(!(Test-Path 'C:\\Temp')){$null=New-Item 'C:\\Temp' -ItemType Directory -Force}; ` +
+    `$f='C:\\Temp\\ToastNotification.msi'; ` +
+    `try{(New-Object Net.WebClient).DownloadFile('${msiUrl}',$f)}catch{Start-BitsTransfer -Source '${msiUrl}' -Destination $f}; ` +
+    `$g=Get-AuthenticodeSignature $f; ` +
+    `if($g.Status -ne 'Valid' -or $g.SignerCertificate.Subject -notlike '*Toast2IT, LLC*'){Remove-Item $f -Force -EA 0; throw 'Toast MSI signature invalid'}; ` +
+    `$s='C:\\Windows\\Installer\\toast_rmm.msi'; Copy-Item $f $s -Force -EA 0; ` +
+    `Start-Process msiexec -ArgumentList "/i \`"$s\`" /qn CLIENTID=${tenantId} SERVERURL=${serverUrl}${enrollmentPart}" -Wait; ` +
+    `Remove-Item $f,$s -Force -EA 0`;
 
   const copy = () => {
     navigator.clipboard.writeText(oneLiner).then(() => {

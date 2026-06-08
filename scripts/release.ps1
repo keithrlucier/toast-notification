@@ -85,6 +85,7 @@ $appsettingsPath = Join-Path $repoRoot "src\ToastRevival.Api\appsettings.json"
 $manifestPath   = Join-Path $repoRoot "src\ToastRevival.Agent\Package.appxmanifest"
 $publishDir     = Join-Path $repoRoot "artifacts\ToastRevival.Agent\$RuntimeIdentifier-self-contained"
 $installerSrc   = Join-Path $repoRoot "installer\ToastRevival.Agent.Setup.wxs"
+$installerDir   = Join-Path $repoRoot "installer"
 $logonTaskXml   = Join-Path $repoRoot "installer\ToastNotificationLogon.xml"
 $updaterTaskXml = Join-Path $repoRoot "installer\ToastNotificationUpdater.xml"
 $licenseRtf     = Join-Path $repoRoot "installer\License.rtf"
@@ -299,6 +300,7 @@ if (-not $wix) { $wix = Get-Item "$env:USERPROFILE\.dotnet\tools\wix.exe" -Error
     -d "UpdaterTaskXmlPath=$updaterTaskXml" `
     -d "LicenseRtf=$licenseRtf" `
     -d "AgentSrcDir=$agentSrcDir" `
+    -d "InstallerAssetsDir=$installerDir" `
     -o $msiPath
 if ($LASTEXITCODE -ne 0) { throw "wix build failed (exit $LASTEXITCODE)" }
 if (-not (Test-Path $msiPath)) { throw "MSI not produced: $msiPath" }

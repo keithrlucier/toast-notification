@@ -64,6 +64,7 @@ Write-Host "==> Building MSIX (-c Release -p:Platform=$Platform -p:WindowsPackag
     -p:GenerateAppxPackageOnBuild=true `
     -p:AppxPackageSigningEnabled=false `
     -p:AppxPackageVersion=$Version `
+    -p:TargetPlatformIdentifier=Windows `
     -p:TargetPlatformVersion=10.0.22621.0 `
     -p:AppxPackageDir="$outputDir\" `
     -p:AppxBundle=Never `

@@ -44,23 +44,28 @@ function ScriptRow({
 export default function DeploymentScripts() {
   const { user } = useAuth();
   const [busy, setBusy] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
 
   const serverUrl = window.location.origin;
   const tenantId = user?.tenantId ?? '';
 
+  const fillTemplate = async (templatePath: string) => {
+    const tmplRes = await fetch(templatePath);
+    if (!tmplRes.ok) throw new Error(`Template fetch failed (HTTP ${tmplRes.status})`);
+    const tmpl = await tmplRes.text();
+    const enrollmentKey = (await getEnrollmentKey()) ?? '';
+    return tmpl
+      .split('__TENANTID__').join(tenantId)
+      .split('__SERVERURL__').join(serverUrl)
+      .split('__ENROLLMENTKEY__').join(enrollmentKey);
+  };
+
   const downloadInstall = async () => {
     setBusy(true);
     setError(null);
     try {
-      const tmplRes = await fetch('/downloads/install-toast-agent.template.ps1');
-      if (!tmplRes.ok) throw new Error(`Template fetch failed (HTTP ${tmplRes.status})`);
-      const tmpl = await tmplRes.text();
-      const enrollmentKey = (await getEnrollmentKey()) ?? '';
-      const filled = tmpl
-        .split('__TENANTID__').join(tenantId)
-        .split('__SERVERURL__').join(serverUrl)
-        .split('__ENROLLMENTKEY__').join(enrollmentKey);
+      const filled = await fillTemplate('/downloads/install-toast-agent.template.ps1');
       triggerDownload('install-toast-agent.ps1', filled);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate the install script.');
@@ -68,6 +73,7 @@ export default function DeploymentScripts() {
       setBusy(false);
     }
   };
+
 
   const linkBtn: React.CSSProperties = {
     fontSize: 12,

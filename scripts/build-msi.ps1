@@ -13,6 +13,7 @@ $publishDir     = Join-Path $repoRoot "artifacts\ToastRevival.Agent\$RuntimeIden
 $healthProject  = Join-Path $repoRoot "src\ToastRevival.AgentHealthService\ToastRevival.AgentHealthService.csproj"
 $healthPublishDir = Join-Path $repoRoot "artifacts\ToastRevival.AgentHealthService\$RuntimeIdentifier-self-contained"
 $installerSrc    = Join-Path $repoRoot "installer\ToastRevival.Agent.Setup.wxs"
+$installerDir    = Join-Path $repoRoot "installer"
 $logonTaskXml    = Join-Path $repoRoot "installer\ToastNotificationLogon.xml"
 $updaterTaskXml  = Join-Path $repoRoot "installer\ToastNotificationUpdater.xml"
 $installerOut   = Join-Path $repoRoot "artifacts\installer"
@@ -74,6 +75,7 @@ Write-Host "==> Building MSI ($Version) -> $msiPath"
     -d "UpdaterTaskXmlPath=$updaterTaskXml" `
     -d "LicenseRtf=$licenseRtf" `
     -d "AgentSrcDir=$agentSrcDir" `
+    -d "InstallerAssetsDir=$installerDir" `
     -o $msiPath
 if ($LASTEXITCODE -ne 0) { throw "wix build failed (exit $LASTEXITCODE)" }
 

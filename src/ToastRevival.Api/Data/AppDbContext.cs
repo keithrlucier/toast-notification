@@ -71,9 +71,18 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             // M1 — bound IP columns to 64 chars (covers IPv4 + full IPv6 w/ zone ID).
             e.Property(d => d.WanIpAddress).HasMaxLength(64);
             e.Property(d => d.LanIpAddress).HasMaxLength(64);
+            // MachineGuid identity (collector phase) — bound the two new signal columns.
+            e.Property(d => d.MachineGuid).HasMaxLength(64);
+            e.Property(d => d.DnsHostName).HasMaxLength(256);
             e.HasQueryFilter(d => d.TenantId == _tenantProvider.TenantId);
             // PERF-L2: tenant+status composite for device list / active-device count queries.
             e.HasIndex(d => new { d.TenantId, d.Status }).HasDatabaseName("IX_Devices_TenantId_Status");
+            // MachineGuid identity — NON-unique on purpose. In the collector phase a
+            // MachineGuid may legitimately repeat across factory-cloned (non-sysprepped)
+            // boxes; a UNIQUE index would reject their register/ping writes and break
+            // enrollment. This index backs both the lookup a future merge will use and the
+            // duplicate-rate analysis that decides whether MachineGuid is a safe sole key.
+            e.HasIndex(d => new { d.TenantId, d.MachineGuid }).HasDatabaseName("IX_Devices_TenantId_MachineGuid");
         });
 
         builder.Entity<DeviceGroup>(e =>

@@ -68,7 +68,13 @@ internal sealed class HealthReporter : BackgroundService
                 return;
             }
 
-            var payload = new HealthPingPayload(Environment.MachineName, config.EnrollmentKey);
+            // Collector phase — report the stable machine-identity signals alongside the
+            // (UNCHANGED) NetBIOS MachineName. This SYSTEM service is the path that reaches
+            // headless/renamed boxes the per-user agent ping never does, so it is where the
+            // true hostname + MachineGuid for those machines comes from.
+            var (machineGuid, dnsHostName) = ReadMachineIdentity();
+            var payload = new HealthPingPayload(
+                Environment.MachineName, config.EnrollmentKey, machineGuid, dnsHostName);
             var url = new Uri(new Uri(config.ServerUrl), $"/api/agent/health/{config.TenantId}");
 
             using var resp = await _http.PostAsJsonAsync(
@@ -112,6 +118,41 @@ internal sealed class HealthReporter : BackgroundService
         catch (Exception ex)
         {
             _log.LogWarning(ex, "Reading HKLM bootstrap failed: {Type}: {Message}", ex.GetType().Name, ex.Message);
+            return null;
+        }
+    }
+
+    private const string CryptographyKey = @"SOFTWARE\Microsoft\Cryptography";
+    private const string TcpipParamsKey  = @"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters";
+
+    /// <summary>
+    /// Reads MachineGuid (Cryptography) + the full DnsHostName (Tcpip\Parameters\Hostname)
+    /// from HKLM (explicit 64-bit view) and normalizes them via the unit-tested
+    /// <see cref="MachineIdentity"/> helpers — identical rules to the agent's reader. Both
+    /// best-effort: any failure yields null so a ping is never lost over a registry read.
+    ///
+    /// The OS-call boilerplate is deliberately DUPLICATED here rather than shared with the
+    /// agent's MachineIdentityReader: this self-contained, trim-safe service cannot
+    /// reference the WinAppSDK agent project, and Agent.Core stays platform-agnostic (no
+    /// registry). Only the normalization rules — the load-bearing part — are shared via
+    /// Core. Same reason BootstrapRegistryKey is duplicated in this file.
+    /// </summary>
+    private (string? MachineGuid, string? DnsHostName) ReadMachineIdentity()
+        => (ReadHklmValue(CryptographyKey, "MachineGuid", MachineIdentity.NormalizeMachineGuid),
+            ReadHklmValue(TcpipParamsKey,  "Hostname",    MachineIdentity.NormalizeHostName));
+
+    private string? ReadHklmValue(string subKey, string valueName, Func<string?, string?> normalize)
+    {
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+            using var key = baseKey.OpenSubKey(subKey);
+            return normalize(key?.GetValue(valueName) as string);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Reading {SubKey}\\{ValueName} failed: {Type}: {Message}",
+                subKey, valueName, ex.GetType().Name, ex.Message);
             return null;
         }
     }

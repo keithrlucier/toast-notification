@@ -12,7 +12,11 @@ public record RegisterDeviceRequest(
     string? EnrollmentKey = null,
     // M1 — agent-reported LAN IP. Optional with a default so an old agent that
     // omits it (every agent before M2) still deserializes cleanly — no 400.
-    string? LanIpAddress = null);
+    string? LanIpAddress = null,
+    // MachineGuid identity (collector phase) — both optional/defaulted so a pre-collector
+    // agent that omits them still deserializes. STORED only; matching is unchanged.
+    [MaxLength(64)] string? MachineGuid = null,
+    [MaxLength(256)] string? DnsHostName = null);
 
 public record DeviceResponse(
     Guid DeviceId,
@@ -52,10 +56,21 @@ public record TenantAttributionResponse(string TenantName, string? LogoUrl = nul
 // when the tenant uses the legacy reusable key. The tenant id travels in the route.
 public record MachineHealthRequest(
     [Required, MaxLength(256)] string MachineName,
-    string? EnrollmentKey = null);
+    string? EnrollmentKey = null,
+    // MachineGuid identity (collector phase). Optional/defaulted so the 0.4.45 health
+    // service (which sends only MachineName + EnrollmentKey) still deserializes. STORED
+    // only — the endpoint still matches the machine by (tenant, MachineName).
+    [MaxLength(64)] string? MachineGuid = null,
+    [MaxLength(256)] string? DnsHostName = null);
 
 // Body for POST /api/devices/ping. Optional — agents before 0.4.26 send no body.
 // M1 — LanIpAddress optional with a default so a pre-M2 agent sending only
 // { agentVersion } still deserializes; the server only overwrites a stored LAN
 // when the incoming value is non-empty (never nulls a good value).
-public record PingRequest(string? AgentVersion = null, string? LanIpAddress = null);
+public record PingRequest(
+    string? AgentVersion = null,
+    string? LanIpAddress = null,
+    // MachineGuid identity (collector phase) — optional/defaulted so a pre-collector
+    // agent sending only { agentVersion } still deserializes. STORED only.
+    [MaxLength(64)] string? MachineGuid = null,
+    [MaxLength(256)] string? DnsHostName = null);

@@ -28,6 +28,12 @@ internal static class RegistrationService
 
         using var http = new HttpClient { BaseAddress = new Uri(bootstrap.ServerUrl) };
 
+        // Collector phase — report the stable machine-identity signals alongside the
+        // (UNCHANGED) NetBIOS deviceName. deviceName stays Environment.MachineName so the
+        // server's existing dedup match is untouched; machineGuid/dnsHostName are new
+        // additive fields the server simply stores.
+        var (machineGuid, dnsHostName) = MachineIdentityReader.Read();
+
         var request = new
         {
             tenantId      = bootstrap.TenantId,
@@ -37,6 +43,8 @@ internal static class RegistrationService
             agentVersion  = ThisAssembly.Version,
             enrollmentKey = bootstrap.EnrollmentKey,
             lanIpAddress  = NetworkUtils.GetLocalIPv4(),
+            machineGuid,
+            dnsHostName,
         };
 
         try
@@ -714,11 +722,26 @@ internal sealed class AgentHubClient : IAsyncDisposable
         }
     }
 
+    // Collector phase — the heartbeat body. agentVersion + lanIpAddress as before, plus
+    // the machine-identity signals (read fresh each beat so a post-enrollment rename
+    // propagates within the ping cadence). The server stores these; matching is unchanged.
+    private static object BuildPingBody()
+    {
+        var (machineGuid, dnsHostName) = MachineIdentityReader.Read();
+        return new
+        {
+            agentVersion = ThisAssembly.Version,
+            lanIpAddress = NetworkUtils.GetLocalIPv4(),
+            machineGuid,
+            dnsHostName,
+        };
+    }
+
     private async Task ReportVersionAsync(CancellationToken ct)
     {
         try
         {
-            using var resp = await _http.PostAsJsonAsync("/api/devices/ping", new { agentVersion = ThisAssembly.Version, lanIpAddress = NetworkUtils.GetLocalIPv4() }, ct);
+            using var resp = await _http.PostAsJsonAsync("/api/devices/ping", BuildPingBody(), ct);
             DiagLog.Write($"ReportVersion: {ThisAssembly.Version} -> {(int)resp.StatusCode}");
         }
         catch (Exception ex)
@@ -745,7 +768,7 @@ internal sealed class AgentHubClient : IAsyncDisposable
 
             try
             {
-                using var resp = await _http.PostAsJsonAsync("/api/devices/ping", new { agentVersion = ThisAssembly.Version, lanIpAddress = NetworkUtils.GetLocalIPv4() }, ct);
+                using var resp = await _http.PostAsJsonAsync("/api/devices/ping", BuildPingBody(), ct);
                 DiagLog.Write($"Ping: {(int)resp.StatusCode}");
             }
             catch (Exception ex)

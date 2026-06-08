@@ -134,6 +134,12 @@ public class DevicesController : ControllerBase
             existing.WanIpAddress = ClampIp(CloudflareIpValidator.ResolveTrustedClientIp(HttpContext));
             if (!string.IsNullOrWhiteSpace(req.LanIpAddress))
                 existing.LanIpAddress = ClampIp(req.LanIpAddress);
+            // Collector phase — store the machine-identity signals when the agent sends
+            // them; never null a stored value (a pre-collector agent omits them). Device
+            // resolution above is UNCHANGED (still TenantId+DeviceName+Username), so this
+            // can neither merge a row nor mint/move a seat.
+            if (!string.IsNullOrWhiteSpace(req.MachineGuid)) existing.MachineGuid = req.MachineGuid.Trim();
+            if (!string.IsNullOrWhiteSpace(req.DnsHostName)) existing.DnsHostName = req.DnsHostName.Trim();
             device = existing;
             auditAction = "device.re-register";
             await _db.SaveChangesAsync();
@@ -158,6 +164,9 @@ public class DevicesController : ControllerBase
                 // M1 — WAN server-derived; LAN straight from the (new) agent payload.
                 WanIpAddress = ClampIp(CloudflareIpValidator.ResolveTrustedClientIp(HttpContext)),
                 LanIpAddress = ClampIp(req.LanIpAddress),
+                // Collector phase — capture the machine-identity signals on first enrollment.
+                MachineGuid = string.IsNullOrWhiteSpace(req.MachineGuid) ? null : req.MachineGuid.Trim(),
+                DnsHostName = string.IsNullOrWhiteSpace(req.DnsHostName) ? null : req.DnsHostName.Trim(),
             };
 
             if (!await _license.TryRegisterDeviceAtomicAsync(tenant, device))
@@ -444,6 +453,12 @@ public class DevicesController : ControllerBase
         device.WanIpAddress = ClampIp(CloudflareIpValidator.ResolveTrustedClientIp(HttpContext));
         if (!string.IsNullOrWhiteSpace(body?.LanIpAddress))
             device.LanIpAddress = ClampIp(body.LanIpAddress);
+        // Collector phase — refresh the machine-identity signals on every heartbeat so a
+        // post-enrollment rename propagates into DnsHostName. Never null a stored value.
+        // The device was resolved by its deviceId JWT above; storing these changes nothing
+        // about resolution and touches no seat.
+        if (!string.IsNullOrWhiteSpace(body?.MachineGuid)) device.MachineGuid = body.MachineGuid.Trim();
+        if (!string.IsNullOrWhiteSpace(body?.DnsHostName)) device.DnsHostName = body.DnsHostName.Trim();
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -532,11 +547,19 @@ public class DevicesController : ControllerBase
                      && d.Status != DeviceStatus.Decommissioned
                      && d.Status != DeviceStatus.PendingUninstall);
 
-        var updated = wanIp is null
-            ? await query.ExecuteUpdateAsync(s => s.SetProperty(d => d.LastPing, now))
-            : await query.ExecuteUpdateAsync(s => s
-                .SetProperty(d => d.LastPing, now)
-                .SetProperty(d => d.WanIpAddress, wanIp));
+        // Collector phase — also persist MachineGuid + DnsHostName from the SYSTEM health
+        // service (the heartbeat that reaches the headless/renamed boxes the agent's
+        // per-user ping cannot). COALESCE keeps a stored value when the incoming signal is
+        // null, so one statement covers every nullable combination without nulling good
+        // data. The match predicate above is unchanged — still (tenant, MachineName) — so
+        // this stays UPDATE-only and seat-safe exactly as before.
+        var mg  = string.IsNullOrWhiteSpace(body.MachineGuid) ? null : body.MachineGuid.Trim();
+        var dns = string.IsNullOrWhiteSpace(body.DnsHostName) ? null : body.DnsHostName.Trim();
+        var updated = await query.ExecuteUpdateAsync(s => s
+            .SetProperty(d => d.LastPing, now)
+            .SetProperty(d => d.WanIpAddress, d => wanIp ?? d.WanIpAddress)
+            .SetProperty(d => d.MachineGuid, d => mg ?? d.MachineGuid)
+            .SetProperty(d => d.DnsHostName, d => dns ?? d.DnsHostName));
 
         return Ok(new { updated });
     }

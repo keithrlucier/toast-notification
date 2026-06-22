@@ -2,7 +2,7 @@
 
 > **Objective:** Define the architecture, release strategy, and engineering requirements for a publicly distributable, self-hostable version of Toast Notification.
 >
-> **How the public repo gets updated:** Every release tag in the private working repo is mirrored to `keithrlucier/toast-notification` via `scripts/sync-public-mirror.ps1`. The workflow, the sanitization rules, and the audit checklist are documented in [`Docs/PUBLIC-MIRROR.md`](PUBLIC-MIRROR.md).
+> **How the public repo gets updated:** Every release tag in the private working repo is mirrored to `keithrlucier/toast-notification` via `scripts/sync-public-mirror.ps1`. The workflow, the sanitization rules, and the audit checklist are documented in [`Docs/Misc/PUBLIC-MIRROR.md`](PUBLIC-MIRROR.md).
 
 ## 1. The Strategy: Open Core & The SaaS Moat
 

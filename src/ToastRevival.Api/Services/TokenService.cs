@@ -55,12 +55,6 @@ public class TokenService : ITokenService
         return BuildToken(claims, GetExpiresAt("Jwt:DeviceTokenExpiresInDays", 365, isMinutes: false));
     }
 
-    public string CreateRefreshToken()
-    {
-        var bytes = RandomNumberGenerator.GetBytes(64);
-        return Convert.ToBase64String(bytes);
-    }
-
     public string CreateMfaToken(AppUser user)
     {
         var claims = new List<Claim>

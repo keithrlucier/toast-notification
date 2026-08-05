@@ -206,7 +206,7 @@ against the staged public worktree:
 - [ ] `git grep -rn "54.82\|172.26\|52.21\|34.194"` in the public worktree
       returns **no hits** outside fenced code blocks that are clearly examples.
 - [ ] `git grep -rn "LightsailDefaultKey"` returns no hits.
-- [ ] `git grep -rn "CODEX-HANDOFF\|EVIDENCE/\|STATUS\.md\|TEST-LOG"` returns
+- [ ] `git grep -rn "CODEX-HANDOFF\|EVIDENCE/\|STATUS\.md\|TEST-LOG\|councilreports"` returns
       no hits in committed text.
 - [ ] No files under `Docs/ToastRevival/` exist in the public worktree
       (the whole directory is excluded; only `Docs/Misc/rollyourown.md` and

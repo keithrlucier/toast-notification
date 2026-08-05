@@ -174,7 +174,11 @@ public class MicrosoftSsoService : IMicrosoftSsoService
             ValidateLifetime         = true,
             ClockSkew                = TimeSpan.FromMinutes(5),
             ValidateIssuer           = true,
-            IssuerValidator          = ValidateEntraIssuer,
+            // Auth-L2: bind the issuer check to the issuer template published in THIS
+            // authority's OIDC discovery document (oidc.Issuer), not a hardcoded
+            // login.microsoftonline.com — so sovereign clouds (.us/.cn/.de) that
+            // IsTrustedMicrosoftAuthority allows validate instead of failing closed.
+            IssuerValidator          = (iss, tok, _) => ValidateEntraIssuer(iss, tok, oidc.Issuer),
         };
 
         var handler = new JwtSecurityTokenHandler();
@@ -227,14 +231,18 @@ public class MicrosoftSsoService : IMicrosoftSsoService
     /// the token for that directory; the directory→Toast-tenant authorization gate
     /// runs separately in SsoController against our own DB.
     /// </summary>
-    private static string ValidateEntraIssuer(string issuer, SecurityToken token, TokenValidationParameters parameters)
+    private static string ValidateEntraIssuer(string issuer, SecurityToken token, string metadataIssuerTemplate)
     {
         if (token is JwtSecurityToken jwt)
         {
             var tid = jwt.Claims.FirstOrDefault(c => c.Type == "tid")?.Value;
             if (!string.IsNullOrEmpty(tid))
             {
-                var expected = $"https://login.microsoftonline.com/{tid}/v2.0";
+                // The discovery issuer is a per-cloud template ".../{tenantid}/v2.0"; bind it to
+                // the token's own tid. Deriving the host from the discovery metadata (never a
+                // hardcoded .com) makes this correct for global AND sovereign clouds. For a
+                // single-tenant authority the template is already concrete, so Replace is a no-op.
+                var expected = metadataIssuerTemplate.Replace("{tenantid}", tid);
                 if (string.Equals(issuer, expected, StringComparison.Ordinal))
                     return issuer;
             }

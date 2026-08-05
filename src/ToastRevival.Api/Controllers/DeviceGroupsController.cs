@@ -23,6 +23,11 @@ public class DeviceGroupsController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<DeviceGroupResponse>>> List()
     {
+        // SES-4 (Routes-L1): device JWTs satisfy [Authorize] via the tenantId claim but must
+        // not enumerate the tenant's device-group topology — reject token-type confusion.
+        if (User.FindFirstValue("type") == "device")
+            return StatusCode(403, new { error = "forbidden", message = "Device tokens cannot access device groups." });
+
         var groups = await _db.DeviceGroups
             .OrderBy(g => g.Name)
             .Select(g => new DeviceGroupResponse(
@@ -104,6 +109,11 @@ public class DeviceGroupsController : ControllerBase
     [HttpGet("{id:guid}/members")]
     public async Task<ActionResult<IEnumerable<DeviceGroupMemberResponse>>> ListMembers(Guid id)
     {
+        // SES-4 (Routes-L1): reject device JWTs — a device must not read per-member
+        // DeviceName/AgentVersion for its tenant's groups. Mirrors List above.
+        if (User.FindFirstValue("type") == "device")
+            return StatusCode(403, new { error = "forbidden", message = "Device tokens cannot access device groups." });
+
         var exists = await _db.DeviceGroups.AnyAsync(g => g.Id == id && g.TenantId == GetTenantId());
         if (!exists) return NotFound();
 

@@ -210,6 +210,15 @@ public class TenantController : ControllerBase
         if (!AllowedLogoExtensions.Contains(ext))
             return BadRequest(new { message = "Unsupported file type. Use PNG, JPG, GIF, or WebP." });
 
+        // Routes-L2: read the bytes and confirm the file signature matches the claimed
+        // extension before persisting — the same magic-byte gate AssetsController.Upload uses
+        // (ASSET-L1). Extension-only validation lets a renamed non-image be stored and served.
+        await using var logoMs = new MemoryStream((int)file.Length);
+        await file.CopyToAsync(logoMs);
+        var logoBytes = logoMs.ToArray();
+        if (!ImageSignature.HasValidMagicBytes(logoBytes, ext))
+            return BadRequest(new { message = "File content does not match a supported image format." });
+
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         // ARCH-002-R: write to the same persistent Assets:RootPath used by AssetsController
         // and lock-screen upload so logos survive a redeploy. The old webroot path
@@ -222,8 +231,7 @@ public class TenantController : ControllerBase
         var fileName = $"{tenantId}{ext}";
         var filePath = Path.Combine(dir, fileName);
 
-        await using (var stream = System.IO.File.Create(filePath))
-            await file.CopyToAsync(stream);
+        await System.IO.File.WriteAllBytesAsync(filePath, logoBytes);
 
         var url = $"/assets/logos/{fileName}";
 
@@ -453,6 +461,15 @@ public class TenantController : ControllerBase
                 message = "Changing the lock screen requires MFA verification. Verify your authenticator and try again."
             });
 
+        // Routes-L2: read + validate the file signature (mirrors AssetsController ASSET-L1)
+        // BEFORE resolving the target dir or deleting the prior image, so a renamed non-image
+        // is rejected without wiping the tenant's existing lock-screen image.
+        await using var lockMs = new MemoryStream((int)file.Length);
+        await file.CopyToAsync(lockMs);
+        var lockBytes = lockMs.ToArray();
+        if (!ImageSignature.HasValidMagicBytes(lockBytes, ext))
+            return BadRequest(new { message = "File content does not match a supported image format." });
+
         // Same persistent-root resolution as AssetsController so the file lands
         // on /opt/toast/shared/assets in prod and is served at /assets.
         var webRoot    = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
@@ -471,8 +488,7 @@ public class TenantController : ControllerBase
 
         var fileName = $"{tenantId}{ext}";
         var filePath = Path.Combine(dir, fileName);
-        await using (var stream = System.IO.File.Create(filePath))
-            await file.CopyToAsync(stream);
+        await System.IO.File.WriteAllBytesAsync(filePath, lockBytes);
 
         // Relative path (logo-style). The device endpoint absolutizes it via
         // ToPublicUrl for the agent, and the dashboard loads it same-origin. Storing

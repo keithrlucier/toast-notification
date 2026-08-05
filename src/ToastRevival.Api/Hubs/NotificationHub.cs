@@ -98,7 +98,12 @@ public class NotificationHub : Hub
 
         if (deviceId.HasValue)
         {
-            ConnectedDevices.TryRemove(deviceId.Value, out _);
+            // Core-L1: only remove the mapping if THIS connection is still the one on record.
+            // In a reconnect race a stale OnDisconnectedAsync must not delete a
+            // deviceId -> connectionId entry that a newer connection just re-added — the
+            // two-arg TryRemove is an atomic compare-and-remove on the (key, value) pair.
+            // (Distinct from the blessed "dict clears on API restart" behaviour, which is fine.)
+            ConnectedDevices.TryRemove(new KeyValuePair<Guid, string>(deviceId.Value, Context.ConnectionId));
             if (tenantId.HasValue)
                 await Clients.Group($"dashboard-{tenantId}").SendAsync("DeviceDisconnected", deviceId);
             _logger.LogInformation("Device {DeviceId} disconnected", deviceId);
@@ -148,7 +153,12 @@ public class NotificationHub : Hub
 
         if (delivery is not null && delivery.TenantId == tenantId.Value)
         {
-            delivery.Status = action.StartsWith("dismiss") ? DeliveryStatus.Dismissed : DeliveryStatus.Clicked;
+            // Core-L2: guard a null/empty action — a device can invoke this hub method with a
+            // null action, and StartsWith would throw NullReferenceException before the delivery
+            // is recorded. Missing/blank counts as a non-dismiss interaction (Clicked).
+            delivery.Status = !string.IsNullOrEmpty(action) && action.StartsWith("dismiss")
+                ? DeliveryStatus.Dismissed
+                : DeliveryStatus.Clicked;
             delivery.InteractedAt = DateTime.UtcNow;
             delivery.Action = action;
             await db.SaveChangesAsync();

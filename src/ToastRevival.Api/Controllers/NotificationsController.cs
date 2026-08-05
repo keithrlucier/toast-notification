@@ -281,6 +281,11 @@ public class NotificationsController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<NotificationResponse>> Get(Guid id)
     {
+        // SES-4 (Routes-M1): a device JWT carries tenantId and satisfies [Authorize], but must
+        // not read a tenant's notification content — mirror History's device-token rejection.
+        if (User.FindFirstValue("type") == "device")
+            return StatusCode(403, new { error = "forbidden", message = "Device tokens cannot access notification details." });
+
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var n = await _db.Notifications
             .FirstOrDefaultAsync(notif => notif.Id == id && notif.TenantId == tenantId);
@@ -426,6 +431,11 @@ public class NotificationsController : ControllerBase
     [HttpGet("{id:guid}/report")]
     public async Task<IActionResult> DeliveryReport(Guid id, [FromQuery] string format = "csv")
     {
+        // SES-4 (Routes-M1): reject device JWTs — a device must not download the tenant-wide
+        // per-device delivery report (DeviceName/DeviceId/Status/timestamps). Mirrors History.
+        if (User.FindFirstValue("type") == "device")
+            return StatusCode(403, new { error = "forbidden", message = "Device tokens cannot access delivery reports." });
+
         var tenantId = Guid.Parse(User.FindFirstValue("tenantId")!);
         var notification = await _db.Notifications
             .FirstOrDefaultAsync(notif => notif.Id == id && notif.TenantId == tenantId);

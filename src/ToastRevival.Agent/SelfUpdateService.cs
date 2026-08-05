@@ -257,7 +257,14 @@ internal static class SelfUpdateService
     {
         try
         {
-            var verifiedDir = EnsureProtectedVerifiedDir();
+            // Agent-H1: DO NOT re-run EnsureProtectedVerifiedDir() here. It recursively
+            // deletes and recreates the verified dir, which on the update path would wipe
+            // the Authenticode-verified MSI that CopyToProtectedDir just staged, leaving
+            // msiexec /i pointing at a now-missing file (1603) and the agent stuck on the
+            // old version. The dir is prepared exactly ONCE by the caller (CopyToProtectedDir
+            // for update; ExecuteVerifiedMsiUninstall for uninstall); here we only resolve
+            // and re-assert it, never tear it down.
+            var verifiedDir = GetPreparedVerifiedDir();
             var logPath = Path.Combine(GetProgramDataDir(), MsiActionLogName);
             var cmdPath = Path.Combine(verifiedDir, "apply-msi.cmd");
 
@@ -427,6 +434,23 @@ internal static class SelfUpdateService
         return verifiedDir;
     }
 
+    // Agent-H1: non-destructive companion to EnsureProtectedVerifiedDir. The caller has
+    // already prepared (created + SYSTEM-locked) the verified dir for THIS operation and,
+    // on the update path, staged the Authenticode-verified MSI inside it — so ExecuteMsiexec
+    // must NOT rebuild the dir (rebuilding deletes the verified MSI). Resolve the path and
+    // re-assert the invariants (exists, real directory, not a reparse point) without mutating
+    // contents. Runs as SYSTEM.
+    private static string GetPreparedVerifiedDir()
+    {
+        var verifiedDir = Path.Combine(GetProgramDataDir(), VerifiedSubDir);
+        var di = new DirectoryInfo(verifiedDir);
+        if (!di.Exists)
+            throw new IOException($"Verified dir '{verifiedDir}' is missing — expected it prepared by the caller.");
+        if ((di.Attributes & FileAttributes.ReparsePoint) != 0)
+            throw new IOException($"Refusing to use reparse-point dir '{verifiedDir}'.");
+        return verifiedDir;
+    }
+
     // REVIEW Agent-L1 (2026-05-31): ACL set in C# here rather than in WiX is intentional.
     // The verified\ dir is unconditionally recreated, SetOwner'd to SYSTEM, and re-locked
     // + reparse-checked every run before use (see EnsureProtectedVerifiedDir +
@@ -492,6 +516,15 @@ internal static class SelfUpdateService
         if (!s_productCodeRx.IsMatch(productCode))
         {
             DiagLog.Write($"UpdaterMode: uninstall arg is not a valid ProductCode GUID — msiexec aborted.");
+            return 1;
+        }
+        // Agent-H1: prepare (create + SYSTEM-lock) the verified dir ONCE here so ExecuteMsiexec
+        // can write apply-msi.cmd into a tamper-proof dir. The update path prepares it via
+        // CopyToProtectedDir instead; either way ExecuteMsiexec no longer rebuilds the dir.
+        try { EnsureProtectedVerifiedDir(); }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"UpdaterMode: could not prepare protected dir for uninstall: {ex.GetType().Name}: {ex.Message} — msiexec aborted.");
             return 1;
         }
         return ExecuteMsiexec($"/x \"{productCode}\" /qn /norestart");

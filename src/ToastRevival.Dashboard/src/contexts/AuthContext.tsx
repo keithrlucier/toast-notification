@@ -134,12 +134,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           clearStoredSession();
           storeAuthMessage(SESSION_EXPIRED_MESSAGE);
         } else {
+          const restoredIsPlatformAdmin = Boolean(parsed.isPlatformAdmin || tokenInfo.isPlatformAdmin);
           setUser({
             ...parsed,
             token: stored,
             mfaElevated: tokenInfo.mfaElevated,
-            isPlatformAdmin: Boolean(parsed.isPlatformAdmin || tokenInfo.isPlatformAdmin),
+            isPlatformAdmin: restoredIsPlatformAdmin,
           });
+          // Frontend-L1: re-apply the tenant's custom favicon on session restore. Otherwise it
+          // runs only on fresh login/SSO + the branding-update event, so a full page reload
+          // (which resets the module-level _faviconFetched flag) silently reverts a
+          // non-platform-admin tenant's favicon to the default until the next login.
+          maybeUpdateFavicon(restoredIsPlatformAdmin);
         }
       } catch {
         clearStoredSession();

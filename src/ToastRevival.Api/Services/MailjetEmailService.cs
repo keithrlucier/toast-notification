@@ -14,7 +14,13 @@ public class MailjetEmailService : IEmailService
     {
         _http = http;
         var apiKey    = config["Mailjet:ApiKey"]    ?? throw new InvalidOperationException("Mailjet:ApiKey is required.");
-        var secretKey = config["Mailjet:SecretKey"] ?? throw new InvalidOperationException("Mailjet:SecretKey is required.");
+        // Services-H1: the admin panel (MessagingConfigService / SystemController) and
+        // .env.example persist the secret under "Mailjet:ApiSecret" — read that first so
+        // UI-configured email actually works (the consumer previously read the never-written
+        // "Mailjet:SecretKey"). Fall back to the legacy key so any deployment that set
+        // Mailjet__SecretKey out-of-band keeps working through the rename.
+        var secretKey = config["Mailjet:ApiSecret"] ?? config["Mailjet:SecretKey"]
+                        ?? throw new InvalidOperationException("Mailjet:ApiSecret is required.");
         _senderEmail  = config["Mailjet:SenderEmail"] ?? "support@toastnotification.com";
         _senderName   = config["Mailjet:SenderName"]  ?? "Toast Notification";
 

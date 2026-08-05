@@ -48,21 +48,11 @@ public class AssetsController : ControllerBase
         _config["Assets:RootPath"] ?? Path.Combine(_env.WebRootPath, "assets");
 
     // ASSET-L1: magic-byte signature check mirroring TenantLogoStore.ValidateMagicBytes
-    // (WSEC-M1). Keyed off the already-validated file extension.
-    private static bool HasValidImageMagicBytes(byte[] bytes, string ext)
-    {
-        if (bytes.Length < 4) return false;
-        return ext switch
-        {
-            ".png"            => bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47,
-            ".jpg" or ".jpeg" => bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,
-            ".gif"            => bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46,
-            ".webp"           => bytes.Length >= 12
-                                 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
-                                 && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50,
-            _                 => false,
-        };
-    }
+    // (WSEC-M1). Keyed off the already-validated file extension. The logic now lives in the
+    // shared ToastRevival.Api.Utilities.ImageSignature so TenantController's logo /
+    // lock-screen uploads (Routes-L2) enforce the identical gate without a divergent copy.
+    private static bool HasValidImageMagicBytes(byte[] bytes, string ext) =>
+        ToastRevival.Api.Utilities.ImageSignature.HasValidMagicBytes(bytes, ext);
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<AssetResponse>>> List()

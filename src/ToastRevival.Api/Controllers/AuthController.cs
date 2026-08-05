@@ -503,11 +503,23 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(user.MfaSecret))
             return Unauthorized("Authenticator MFA is not set up on this account.");
 
+        // Auth-L1: mirror the SMS paths (VerifyLoginSms) — enforce the per-userId Identity
+        // lockout on authenticator verification too. VerifyAndClaimAsync only advances the
+        // TOTP replay floor, not AccessFailedCount, so without this a wrong code never
+        // increments lockout and the login-TOTP factor is brute-forceable across rotating IPs.
+        if (await _userManager.IsLockedOutAsync(user))
+            return Unauthorized("Too many attempts. Please sign in again later.");
+
         // AUTH-H1 — VerifyAndClaimAsync verifies the code AND advances LastTotpStep
         // in one atomic SQL UPDATE, so a code replayed across concurrent requests is
         // accepted at most once.
         if (!await _mfa.VerifyAndClaimAsync(_db, user, req.Code))
+        {
+            await _userManager.AccessFailedAsync(user);
             return Unauthorized("Invalid or expired authenticator code.");
+        }
+
+        await _userManager.ResetAccessFailedCountAsync(user);
 
         user.LastLogin = DateTime.UtcNow;
         await _db.SaveChangesAsync();
@@ -758,9 +770,18 @@ public class AuthController : ControllerBase
                 message = "Your workspace requires multi-factor authentication. Ask an admin to lift the requirement before disabling it."
             });
 
+        // Auth-L1: enforce the Identity lockout on this TOTP path too (mirrors MfaVerifySms).
+        if (await _userManager.IsLockedOutAsync(user))
+            return Unauthorized("Too many attempts. Please try again later.");
+
         // AUTH-H1 — atomic verify + replay-floor advance (see VerifyLoginTotp).
         if (!await _mfa.VerifyAndClaimAsync(_db, user, req.Code))
+        {
+            await _userManager.AccessFailedAsync(user);
             return Unauthorized("Invalid or expired authenticator code.");
+        }
+
+        await _userManager.ResetAccessFailedCountAsync(user);
 
         user.MfaSecret        = null;
         user.MfaPendingSecret = null;
@@ -787,13 +808,22 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(user.MfaSecret))
             return BadRequest("Authenticator app MFA is not set up on this account.");
 
+        // Auth-L1: enforce the Identity lockout on this TOTP path too (mirrors MfaVerifySms).
+        if (await _userManager.IsLockedOutAsync(user))
+            return Unauthorized("Too many attempts. Please try again later.");
+
         // AUTH-H1 — VerifyAndClaimAsync atomically verifies the code and advances
         // the replay floor (LastTotpStep) at the DB level, so an attacker who
         // intercepts a valid TOTP within its ±1 step window cannot replay it across
         // concurrent step-up requests. The atomic UPDATE has already persisted the
         // floor; the SaveChangesAsync below is a no-op for that column.
         if (!await _mfa.VerifyAndClaimAsync(_db, user, req.Code))
+        {
+            await _userManager.AccessFailedAsync(user);
             return Unauthorized("Invalid or expired TOTP code.");
+        }
+
+        await _userManager.ResetAccessFailedCountAsync(user);
 
         await _db.SaveChangesAsync();
 
